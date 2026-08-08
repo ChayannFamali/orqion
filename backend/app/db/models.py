@@ -96,10 +96,7 @@ class Provider(Base, IdMixin, TimestampMixin, WorkspaceMixin):
         DateTime(timezone=True),
         nullable=True,
     )
-    models: Mapped[list[Model]] = relationship(
-        back_populates="provider",
-        cascade="all, delete-orphan",
-    )
+    models: Mapped[list[Model]] = relationship(back_populates="provider")
 
 
 class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
