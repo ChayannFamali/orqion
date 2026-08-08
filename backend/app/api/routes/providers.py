@@ -138,8 +138,14 @@ async def probe_provider_endpoint(
     provider_id: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    deep: bool = False,
 ) -> dict[str, object]:
-    """Запускает probe провайдера: измеряет возможности, сверяет модели."""
+    """Запускает probe провайдера: измеряет возможности, сверяет модели.
+
+    При deep=true — дополнительно измеряет фактический контекст (observed_context)
+    для каждой available модели. Бинарный поиск, максимум 4 попытки на модель.
+    Дорого: отправляет реальные промпты. Не входит в плановый ре-probe (T-112a).
+    """
     from app.providers.probe import probe_provider
 
     workspace_id = request.app.state.workspace_id
@@ -166,12 +172,30 @@ async def probe_provider_endpoint(
     }
     provider.last_probe_at = probe_result.probed_at
 
-    await session.commit()
-
-    return {
+    response: dict[str, object] = {
         "available_models": probe_result.available_models,
         "supports_streaming": probe_result.supports_streaming,
         "max_parallel": probe_result.max_parallel,
         "model_statuses": [s.model_dump() for s in probe_result.model_statuses],
         "error": probe_result.error,
     }
+
+    if deep and probe_result.error is None:
+        from app.providers.deep_probe import measure_observed_context
+
+        observed: dict[str, int | None] = {}
+        for ms in probe_result.model_statuses:
+            if ms.status == "available":
+                model_obj = next(
+                    (m for m in provider.models if m.id == ms.model_id),
+                    None,
+                )
+                if model_obj is not None:
+                    ctx = await measure_observed_context(provider, model_obj, secret_key)
+                    observed[ms.alias] = ctx
+
+        response["observed_context"] = observed
+
+    await session.commit()
+
+    return response
