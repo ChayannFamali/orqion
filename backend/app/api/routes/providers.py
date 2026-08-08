@@ -38,11 +38,7 @@ def _provider_to_response(provider: Provider) -> ProviderResponse:
         base_url=provider.base_url,
         enabled=provider.enabled,
         capabilities=provider.capabilities,
-        models=[
-            _model_to_response(m)
-            for m in sorted(provider.models, key=lambda m: m.alias)
-            if m.enabled
-        ],
+        models=[_model_to_response(m) for m in sorted(provider.models, key=lambda m: m.alias)],
     )
 
 

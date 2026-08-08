@@ -106,11 +106,15 @@ async def test_model_alias_unique_per_workspace(
 
 
 @pytest.mark.asyncio
-async def test_disabled_model_not_in_provider_list(
+async def test_disabled_model_visible_with_enabled_flag(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
 ) -> None:
-    """Отключённая модель не выдаётся в списке провайдера."""
+    """Отключённая модель видна в списке с enabled=False.
+
+    Управляющий API возвращает все модели — UI решает, как показать.
+    Фильтр enabled=True применяется в маршрутизации (T-114), не здесь.
+    """
     await _login_as_admin(api_client, app_fixture)
     provider_id = await _create_provider(api_client)
 
@@ -133,9 +137,11 @@ async def test_disabled_model_not_in_provider_list(
     response = await api_client.get("/api/providers")
     providers = response.json()["providers"]
     provider = next(p for p in providers if p["id"] == provider_id)
-    aliases = [m["alias"] for m in provider["models"]]
-    assert "local/m1" not in aliases
-    assert "local/m2" in aliases
+    models_by_alias = {m["alias"]: m for m in provider["models"]}
+    assert "local/m1" in models_by_alias
+    assert models_by_alias["local/m1"]["enabled"] is False
+    assert "local/m2" in models_by_alias
+    assert models_by_alias["local/m2"]["enabled"] is True
 
 
 @pytest.mark.asyncio
