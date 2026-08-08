@@ -8,6 +8,7 @@ from app.providers.errors import (
     normalize_error,
 )
 from app.providers.probe import ProbeResult, probe_provider
+from app.providers.probe_scheduler import probe_scheduler
 from app.providers.retry import with_retry
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "ProviderTimeout",
     "normalize_error",
     "probe_provider",
+    "probe_scheduler",
     "with_retry",
 ]

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     session_ttl_days: int = 7
 
+    probe_interval_seconds: int = 900
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

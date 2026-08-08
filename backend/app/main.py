@@ -42,7 +42,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await session.commit()
     app.state.workspace_id = workspace_id
 
+    from app.providers.probe_scheduler import probe_scheduler
+
+    probe_task = asyncio.create_task(
+        probe_scheduler(
+            session_factory,
+            secret_key,
+            settings.probe_interval_seconds,
+        )
+    )
+
     yield
+
+    probe_task.cancel()
+    try:
+        await probe_task
+    except asyncio.CancelledError:
+        pass
 
     await engine.dispose()
 
