@@ -17,6 +17,7 @@ from app.errors import (
 from app.policy.enforce import enforce
 from app.policy.models import Policy
 from app.policy.presets import BUILTIN_ROLES
+from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -194,19 +195,75 @@ class TestEnforceRejects:
         enforce(support, action)
 
     def test_tpm_exceeded(self) -> None:
-        """TPM срабатывает, когда input_tokens > tpm, но <= max_input_tokens."""
+        """TPM token bucket: сумма токенов в окне > tpm → 429."""
         policy = Policy(
             models=["local/*"],
             max_input_tokens=100000,
             tpm=20000,
         )
+        rl = RateLimiter()
         action = FakeAction(
             model_alias="local/qwen3-8b",
             model_locality="local",
-            input_tokens=30000,
+            input_tokens=15000,
         )
-        with pytest.raises(RateLimitExceeded):
-            enforce(policy, action)
+        enforce(policy, action, rate_limiter=rl, user_id="user-1")
+
+        action2 = FakeAction(
+            model_alias="local/qwen3-8b",
+            model_locality="local",
+            input_tokens=10000,
+        )
+        with pytest.raises(RateLimitExceeded) as exc_info:
+            enforce(policy, action2, rate_limiter=rl, user_id="user-1")
+        assert exc_info.value.constraint is not None
+        assert exc_info.value.constraint["type"] == "tpm"
+        assert "reset_in_seconds" in exc_info.value.constraint
+
+    def test_rpm_exceeded(self) -> None:
+        """RPM token bucket: количество запросов в окне > rpm → 429."""
+        policy = Policy(
+            models=["local/*"],
+            max_input_tokens=100000,
+            rpm=2,
+        )
+        rl = RateLimiter()
+        action = FakeAction(
+            model_alias="local/qwen3-8b",
+            model_locality="local",
+            input_tokens=100,
+        )
+        enforce(policy, action, rate_limiter=rl, user_id="user-1")
+        enforce(policy, action, rate_limiter=rl, user_id="user-1")
+
+        with pytest.raises(RateLimitExceeded) as exc_info:
+            enforce(policy, action, rate_limiter=rl, user_id="user-1")
+        assert exc_info.value.constraint is not None
+        assert exc_info.value.constraint["type"] == "rpm"
+        assert "reset_in_seconds" in exc_info.value.constraint
+
+    def test_rate_limiter_isolated_per_user(self) -> None:
+        """Лимиты независимы для разных пользователей."""
+        policy = Policy(models=["local/*"], max_input_tokens=100000, rpm=1)
+        rl = RateLimiter()
+        action = FakeAction(
+            model_alias="local/qwen3-8b",
+            model_locality="local",
+            input_tokens=100,
+        )
+        enforce(policy, action, rate_limiter=rl, user_id="user-1")
+        enforce(policy, action, rate_limiter=rl, user_id="user-2")
+
+    def test_rate_limiter_none_skips_check(self) -> None:
+        """Без rate_limiter проверки rpm/tpm пропускаются."""
+        policy = Policy(models=["*"], max_input_tokens=100000, rpm=1, tpm=1)
+        action = FakeAction(
+            model_alias="local/qwen3-8b",
+            model_locality="local",
+            input_tokens=100,
+        )
+        enforce(policy, action)
+        enforce(policy, action)
 
     def test_budget_exceeded(self) -> None:
         """Бюджет срабатывает, когда input_tokens > budget.tokens_month, но <= max_input_tokens."""

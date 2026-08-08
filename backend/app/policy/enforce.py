@@ -18,6 +18,7 @@ from app.errors import (
     RateLimitExceeded,
 )
 from app.policy.models import WILDCARD, Policy
+from app.policy.rate_limiter import RateLimiter
 
 
 class ChatAction(Protocol):
@@ -38,14 +39,22 @@ def _matches(patterns: list[str], value: str) -> bool:
     return any(fnmatch.fnmatch(value, p) for p in patterns)
 
 
-def enforce(policy: Policy, action: ChatAction) -> None:
+def enforce(
+    policy: Policy,
+    action: ChatAction,
+    rate_limiter: RateLimiter | None = None,
+    user_id: str | None = None,
+) -> None:
     """Проверяет действие против политики. Возбуждает доменное исключение при отказе.
 
     Порядок проверок — arch.md §7.1:
     1. Класс данных корпуса (ADR-12, не обходится никакой ролью)
     2. Видимость модели
     3. Лимит входного контекста
-    4. Бюджет, tpm, rpm
+    4. Лимит выходного контекста (запрошенный max_tokens, не молчаливое усечение)
+    5. RPM (token bucket, если передан rate_limiter)
+    6. TPM (token bucket, если передан rate_limiter)
+    7. Бюджет (tokens_month; cost_month — блокировано T-113)
     """
     # 1. Класс данных — первая проверка, не смотрит на политику
     if action.corpus_data_class in ("К2", "К3") and action.model_locality != "local":
@@ -75,7 +84,7 @@ def enforce(policy: Policy, action: ChatAction) -> None:
             hint="Сократите запрос или выберите модель с большим контекстом",
         )
 
-    # 4. Лимит выходного контекста
+    # 4. Лимит выходного контекста — отказ, не тихая подмена (arch.md §7.3)
     if policy.max_output_tokens is not None and action.output_tokens > policy.max_output_tokens:
         raise ContextLimitExceeded(
             constraint={
@@ -86,19 +95,36 @@ def enforce(policy: Policy, action: ChatAction) -> None:
             hint="Уменьшите ожидаемый объём ответа",
         )
 
-    # 5. RPM
-    if policy.rpm is not None and action.input_tokens > 0:
-        # RPM проверяется по факту вызова, не по токенам — заглушка для T-108
-        pass
+    # 5. RPM — sliding window token bucket
+    if policy.rpm is not None and rate_limiter is not None and user_id is not None:
+        reset_in = rate_limiter.check_rpm(user_id, policy.rpm)
+        if reset_in is not None:
+            raise RateLimitExceeded(
+                constraint={
+                    "limit": policy.rpm,
+                    "type": "rpm",
+                    "reset_in_seconds": round(reset_in, 1),
+                },
+                hint=f"Попробуйте через {reset_in:.0f} секунд",
+            )
 
-    # 6. TPM
-    if policy.tpm is not None and action.input_tokens > policy.tpm:
-        raise RateLimitExceeded(
-            constraint={"limit": policy.tpm, "actual": action.input_tokens, "type": "tpm"},
-            hint="Превышен лимит токенов в минуту",
-        )
+    # 6. TPM — sliding window token bucket
+    if policy.tpm is not None and rate_limiter is not None and user_id is not None:
+        reset_in = rate_limiter.check_tpm(user_id, action.input_tokens, policy.tpm)
+        if reset_in is not None:
+            raise RateLimitExceeded(
+                constraint={
+                    "limit": policy.tpm,
+                    "actual": action.input_tokens,
+                    "type": "tpm",
+                    "reset_in_seconds": round(reset_in, 1),
+                },
+                hint=f"Попробуйте через {reset_in:.0f} секунд",
+            )
 
     # 7. Бюджет
+    # tokens_month проверяется; cost_month — блокировано T-113 (стоимость модели
+    # появится только в таблице model, которая создаётся в T-113).
     if policy.budget is not None:
         tokens_month = policy.budget.get("tokens_month")
         if tokens_month is not None and action.input_tokens > tokens_month:
