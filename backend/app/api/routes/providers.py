@@ -7,11 +7,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.schemas.provider import (
+    ModelCreate,
     ModelResponse,
+    ModelUpdate,
     ProviderCreate,
     ProviderListResponse,
     ProviderResponse,
@@ -21,7 +24,7 @@ from app.auth.dependencies import current_user
 from app.crypto.service import encrypt_api_key
 from app.db.models import Model, Provider
 from app.db.session import get_session
-from app.errors import NotFound
+from app.errors import NotFound, OrqionError
 
 router = APIRouter(
     prefix="/api/providers", tags=["providers"], dependencies=[Depends(current_user)]
@@ -35,7 +38,11 @@ def _provider_to_response(provider: Provider) -> ProviderResponse:
         base_url=provider.base_url,
         enabled=provider.enabled,
         capabilities=provider.capabilities,
-        models=[_model_to_response(m) for m in sorted(provider.models, key=lambda m: m.alias)],
+        models=[
+            _model_to_response(m)
+            for m in sorted(provider.models, key=lambda m: m.alias)
+            if m.enabled
+        ],
     )
 
 
@@ -199,3 +206,86 @@ async def probe_provider_endpoint(
     await session.commit()
 
     return response
+
+
+@router.post("/{provider_id}/models", response_model=ModelResponse, status_code=201)
+async def create_model(
+    provider_id: str,
+    body: ModelCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> ModelResponse:
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Provider).where(Provider.id == provider_id, Provider.workspace_id == workspace_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise NotFound(
+            constraint={"object": "provider", "id": provider_id},
+            hint="Провайдер не найден",
+        )
+
+    model = Model(
+        workspace_id=workspace_id,
+        provider_id=provider_id,
+        alias=body.alias,
+        upstream_name=body.upstream_name,
+        locality=body.locality,
+        max_input_tokens=body.max_input_tokens,
+        max_output_tokens=body.max_output_tokens,
+        supports_reasoning=body.supports_reasoning,
+        cost_in=body.cost_in,
+        cost_out=body.cost_out,
+        enabled=body.enabled,
+    )
+    session.add(model)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise OrqionError(
+            "Алиас модели должен быть уникален в рамках workspace",
+            hint=f"Алиас '{body.alias}' уже существует",
+        )
+    await session.refresh(model)
+
+    return _model_to_response(model)
+
+
+@router.patch("/models/{model_id}", response_model=ModelResponse)
+async def update_model(
+    model_id: str,
+    body: ModelUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> ModelResponse:
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Model).where(Model.id == model_id, Model.workspace_id == workspace_id)
+    )
+    model = result.scalar_one_or_none()
+    if model is None:
+        raise NotFound(
+            constraint={"object": "model", "id": model_id},
+            hint="Модель не найдена",
+        )
+
+    for field in (
+        "alias",
+        "upstream_name",
+        "locality",
+        "max_input_tokens",
+        "max_output_tokens",
+        "supports_reasoning",
+        "cost_in",
+        "cost_out",
+        "enabled",
+    ):
+        value = getattr(body, field)
+        if value is not None:
+            setattr(model, field, value)
+
+    await session.commit()
+    await session.refresh(model)
+
+    return _model_to_response(model)

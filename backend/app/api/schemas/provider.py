@@ -40,5 +40,30 @@ class ProviderResponse(BaseModel):
     models: list[ModelResponse] = []
 
 
+class ModelCreate(BaseModel):
+    provider_id: str
+    alias: str
+    upstream_name: str
+    locality: str = "local"
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    supports_reasoning: bool = False
+    cost_in: float | None = None
+    cost_out: float | None = None
+    enabled: bool = True
+
+
+class ModelUpdate(BaseModel):
+    alias: str | None = None
+    upstream_name: str | None = None
+    locality: str | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    supports_reasoning: bool | None = None
+    cost_in: float | None = None
+    cost_out: float | None = None
+    enabled: bool | None = None
+
+
 class ProviderListResponse(BaseModel):
     providers: list[ProviderResponse]
