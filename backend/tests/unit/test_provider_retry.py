@@ -68,6 +68,30 @@ async def test_no_retry_on_4xx() -> None:
 
 
 @pytest.mark.asyncio
+async def test_no_retry_on_401() -> None:
+    """401 → нормализуется в ProviderAuthError (503), но не ретраится.
+
+    Решение «ретраить или нет» принимается по исходному HTTP-статусу (401 = 4xx),
+    не по итоговому нормализованному классу (503 выглядит как 5xx).
+    Иначе мёртвый API-ключ получил бы 3 бессмысленных попытки.
+    """
+    call_count = 0
+
+    async def operation() -> str:
+        nonlocal call_count
+        call_count += 1
+        request = httpx.Request("POST", "http://localhost")
+        response = httpx.Response(401, request=request)
+        raise httpx.HTTPStatusError("401", request=request, response=response)
+
+    from app.providers.errors import ProviderAuthError
+
+    with pytest.raises(ProviderAuthError):
+        await with_retry(operation, retries=3, initial_delay=0.01)
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_retry_exhausted_raises_provider_unavailable() -> None:
     """Все попытки исчерпаны — ProviderUnavailable."""
     call_count = 0
