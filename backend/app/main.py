@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,7 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.db.migrate import run_migrations_sync
 
-    run_migrations_sync(settings.database_url)
+    await asyncio.to_thread(run_migrations_sync, settings.database_url)
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)

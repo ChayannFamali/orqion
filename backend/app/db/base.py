@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -38,10 +38,14 @@ class TimestampMixin:
 
 
 class WorkspaceMixin:
-    """workspace_id присутствует во всех таблицах кроме workspace (ADR-3)."""
+    """workspace_id присутствует во всех таблицах кроме workspace (ADR-3).
+
+    ForeignKey обеспечивает ссылочную целостность на уровне БД.
+    """
 
     workspace_id: Mapped[str] = mapped_column(
         String(36),
+        ForeignKey("workspace.id"),
         nullable=False,
         index=True,
     )
