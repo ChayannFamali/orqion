@@ -131,3 +131,47 @@ async def update_provider(
     await session.refresh(provider, ["models"])
 
     return _provider_to_response(provider)
+
+
+@router.post("/{provider_id}/probe")
+async def probe_provider_endpoint(
+    provider_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Запускает probe провайдера: измеряет возможности, сверяет модели."""
+    from app.providers.probe import probe_provider
+
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Provider)
+        .where(Provider.id == provider_id, Provider.workspace_id == workspace_id)
+        .options(selectinload(Provider.models))
+    )
+    provider = result.scalar_one_or_none()
+    if provider is None:
+        raise NotFound(
+            constraint={"object": "provider", "id": provider_id},
+            hint="Провайдер не найден",
+        )
+
+    secret_key = request.app.state.secret_key
+    probe_result = await probe_provider(provider, list(provider.models), secret_key)
+
+    provider.capabilities = {
+        "available_models": probe_result.available_models,
+        "supports_streaming": probe_result.supports_streaming,
+        "max_parallel": probe_result.max_parallel,
+        "last_probe_at": probe_result.probed_at.isoformat(),
+    }
+    provider.last_probe_at = probe_result.probed_at
+
+    await session.commit()
+
+    return {
+        "available_models": probe_result.available_models,
+        "supports_streaming": probe_result.supports_streaming,
+        "max_parallel": probe_result.max_parallel,
+        "model_statuses": [s.model_dump() for s in probe_result.model_statuses],
+        "error": probe_result.error,
+    }
