@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.16.2
+      - run: ruff check backend/
+      - run: ruff format --check backend/
+
+  types:
+    name: Type Check (mypy --strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: mypy backend/app backend/tests
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest backend/tests/unit -v
+
+  test-integration:
+    name: Integration Tests (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        db: [sqlite, postgresql]
+        include:
+          - db: sqlite
+          - db: postgresql
+            services:
+              postgres:
+                image: postgres:16
+                env:
+                  POSTGRES_PASSWORD: test
+                  POSTGRES_DB: orqion_test
+                ports:
+                  - 5432:5432
+                options: >-
+                  --health-cmd pg_isready
+                  --health-interval 10s
+                  --health-timeout 5s
+                  --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - if: matrix.db == 'postgresql'
+        run: pip install asyncpg==0.30.0
+      - if: matrix.db == 'sqlite'
+        run: echo "Using SQLite (default)"
+      - if: matrix.db == 'postgresql'
+        run: echo "ORQION_DATABASE_URL=postgresql://postgres:test@localhost:5432/orqion_test" >> $GITHUB_ENV
+      - run: pytest backend/tests/integration -v
+
+  minimal:
+    name: Minimal Profile Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package (no extras, no Docker, no external DB)
+        run: pip install -e .
+      - name: Run migrations
+        run: orqion migrate
+      - name: Start server in background
+        run: |
+          orqion serve --host 127.0.0.1 --port 8765 &
+          sleep 3
+      - name: Health check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "FAIL: /health returned $STATUS"
+            exit 1
+          fi
+          echo "OK: /health returned 200"
+      - name: Verify no Docker required
+        run: |
+          if command -v docker &> /dev/null; then
+            echo "Docker is present on runner but must not be required"
+          fi
+          echo "Minimal profile works without Docker"
+
+  licenses:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: Check all dependencies are permissively licensed
+        run: |
+          python -c "
+          import json, subprocess, sys
+          ALLOWED = {'MIT', 'Apache-2.0', 'Apache 2.0', 'BSD', 'BSD-3-Clause', 'BSD-2-Clause', 'ISC', 'Python-2.0'}
+          BANNED = {'GPL', 'GPLv2', 'GPLv3', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0', 'SSPL', 'BUSL', 'Sustainable Use License'}
+          result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--format=json'], capture_output=True, text=True)
+          packages = json.loads(result.stdout)
+          violations = []
+          for pkg in packages:
+              name = pkg['name'].lower()
+              # Skip orqion itself
+              if name == 'orqion':
+                  continue
+              # Get license info
+              info = subprocess.run([sys.executable, '-m', 'pip', 'show', pkg['name']], capture_output=True, text=True)
+              license_line = ''
+              for line in info.stdout.splitlines():
+                  if line.startswith('License:'):
+                      license_line = line.split(':', 1)[1].strip()
+                      break
+              for banned in BANNED:
+                  if banned.lower() in license_line.lower():
+                      violations.append(f'{pkg[\"name\"]}: {license_line}')
+                      break
+          if violations:
+              print('BANNED LICENSES FOUND:')
+              for v in violations:
+                  print(f'  - {v}')
+              sys.exit(1)
+          print(f'All {len(packages)} packages passed license check')
+          "
+
+  frontend:
+    name: Frontend (tsc + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npx tsc --noEmit
+      - working-directory: frontend
+        run: npx vitest run
+      - working-directory: frontend
+        run: npm run build

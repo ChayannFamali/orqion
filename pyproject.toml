@@ -11,6 +11,7 @@ license = {text = "Apache-2.0"}
 
 dependencies = [
     "fastapi==0.141.1",
+    "uvicorn==0.37.0",
     "sqlalchemy==2.0.51",
     "alembic==1.19.1",
     "pydantic==2.13.4",
@@ -19,6 +20,7 @@ dependencies = [
     "argon2-cffi==25.1.0",
     "tiktoken==0.13.0",
     "sqlite-vec==0.1.9",
+    "aiosqlite==0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -30,12 +32,18 @@ rag = [
 vector-qdrant = [
     "qdrant-client==1.19.0",
 ]
+postgres = [
+    "asyncpg==0.30.0",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.2",
     "mypy==2.3.0",
 ]
+
+[project.scripts]
+orqion = "app.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["backend"]
