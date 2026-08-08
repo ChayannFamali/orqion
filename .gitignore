@@ -9,6 +9,7 @@ node_modules/
 dist/
 build/
 *.db
+.secret_key
 .env
 .env.*
 !.env.example
