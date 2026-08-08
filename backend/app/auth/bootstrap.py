@@ -1,7 +1,9 @@
-"""Создание первого администратора при первом старте.
+"""Создание первого администратора и встроенных ролей при первом старте.
 
 Пароль генерируется и выводится в stdout однократно.
 В логи (stderr/JSON) пароль не попадает никогда (AGENTS.md §14).
+Встроенные роли пересеваются идемпотентно: при каждом старте восстанавливается
+эталонная политика (is_builtin=True).
 """
 
 from __future__ import annotations
@@ -14,14 +16,46 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import hash_password
 from app.db.models import Role, User
+from app.policy.presets import BUILTIN_ROLES
+
+
+async def ensure_builtin_roles(session: AsyncSession, workspace_id: str) -> None:
+    """Создаёт или обновляет встроенные роли с эталонной политикой.
+
+    Идемпотентно: при каждом старте policy builtin-ролей восстанавливается
+    из пресетов. Пользовательские роли (is_builtin=False) не затрагиваются.
+    """
+    result = await session.execute(
+        select(Role).where(
+            Role.workspace_id == workspace_id,
+            Role.is_builtin.is_(True),
+        )
+    )
+    existing = {r.name: r for r in result.scalars().all()}
+
+    for name, policy in BUILTIN_ROLES.items():
+        if name in existing:
+            existing[name].policy = policy.model_dump()
+        else:
+            role = Role(
+                workspace_id=workspace_id,
+                name=name,
+                is_builtin=True,
+                policy=policy.model_dump(),
+            )
+            session.add(role)
+    await session.flush()
 
 
 async def ensure_initial_admin(session: AsyncSession, workspace_id: str) -> bool:
-    """Создаёт роль admin и пользователя admin@orqion.local при первом старте.
+    """Создаёт пользователя admin@orqion.local при первом старте.
 
-    Возвращает True, если администратор был создан (пароль выведен в stdout).
-    Возвращает False, если администратор уже существует.
+    Роль admin создаётся через ensure_builtin_roles.
+    Возвращает True, если пользователь был создан (пароль выведен в stdout).
+    Возвращает False, если пользователь уже существует.
     """
+    await ensure_builtin_roles(session, workspace_id)
+
     result = await session.execute(
         select(User)
         .join(Role, User.role_id == Role.id)
@@ -35,14 +69,14 @@ async def ensure_initial_admin(session: AsyncSession, workspace_id: str) -> bool
     if result.scalar_one_or_none() is not None:
         return False
 
-    role = Role(
-        workspace_id=workspace_id,
-        name="admin",
-        is_builtin=True,
-        policy={},
+    result = await session.execute(
+        select(Role).where(
+            Role.workspace_id == workspace_id,
+            Role.name == "admin",
+            Role.is_builtin.is_(True),
+        )
     )
-    session.add(role)
-    await session.flush()
+    role = result.scalar_one()
 
     password = secrets.token_urlsafe(16)
     user = User(
