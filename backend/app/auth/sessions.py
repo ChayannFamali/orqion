@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.db.models import Session, User
 
-SESSION_TTL_HOURS = 24 * 7  # 7 дней
 COOKIE_NAME = "orqion_session"
 
 
@@ -17,12 +17,13 @@ async def create_session(
     session: AsyncSession,
     user_id: str,
     workspace_id: str,
+    settings: Settings,
 ) -> str:
     """Создаёт сессию, возвращает ID для cookie."""
     record = Session(
         workspace_id=workspace_id,
         user_id=user_id,
-        expires_at=datetime.now(UTC) + timedelta(hours=SESSION_TTL_HOURS),
+        expires_at=datetime.now(UTC) + timedelta(days=settings.session_ttl_days),
     )
     session.add(record)
     await session.flush()

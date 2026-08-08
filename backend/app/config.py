@@ -38,6 +38,9 @@ class Settings(BaseSettings):
 
     secret_key: str | None = Field(default=None)
 
+    session_cookie_secure: bool = False
+    session_ttl_days: int = 7
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

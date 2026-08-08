@@ -8,6 +8,7 @@ import httpx
 import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
+from app.config import Settings
 from app.db.models import Role, Session, User, Workspace
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,7 +126,7 @@ async def test_expired_session_returns_401(
         user, _ = await _seed_test_user(session)
         await session.commit()
 
-        session_id = await create_session(session, user.id, user.workspace_id)
+        session_id = await create_session(session, user.id, user.workspace_id, Settings())
 
         from sqlalchemy import update
 

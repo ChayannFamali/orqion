@@ -10,11 +10,16 @@ from app.api.schemas.auth import LoginRequest, LoginResponse, UserResponse
 from app.auth.dependencies import current_user
 from app.auth.passwords import verify_password
 from app.auth.sessions import COOKIE_NAME, create_session, invalidate_session
+from app.config import Settings
 from app.db.models import User
 from app.db.session import get_session
 from app.errors import OrqionError
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def get_settings() -> Settings:
+    return Settings()
 
 
 class InvalidCredentials(OrqionError):
@@ -28,6 +33,7 @@ async def login(
     body: LoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
     result = await session.execute(
         select(User).where(User.email == body.email, User.is_active.is_(True))
@@ -36,7 +42,7 @@ async def login(
     if user is None or not verify_password(user.password_hash, body.password):
         raise InvalidCredentials()
 
-    session_id = await create_session(session, user.id, user.workspace_id)
+    session_id = await create_session(session, user.id, user.workspace_id, settings)
     await session.commit()
 
     response.set_cookie(
@@ -45,6 +51,7 @@ async def login(
         httponly=True,
         samesite="lax",
         path="/",
+        secure=settings.session_cookie_secure,
     )
     return LoginResponse(user=UserResponse(id=user.id, email=user.email, is_active=user.is_active))
 
