@@ -11,7 +11,7 @@ import fnmatch
 from typing import Protocol
 
 from app.errors import (
-    BudgetExceeded,
+    ConfigurationError,
     ContextLimitExceeded,
     DataClassViolation,
     ModelNotAllowed,
@@ -54,8 +54,13 @@ def enforce(
     4. Лимит выходного контекста (запрошенный max_tokens, не молчаливое усечение)
     5. RPM (token bucket, если передан rate_limiter)
     6. TPM (token bucket, если передан rate_limiter)
-    7. Бюджет (tokens_month; cost_month — блокировано T-113)
+    7. Бюджет (tokens_month — блокировано T-117; cost_month — блокировано T-113)
     """
+    if rate_limiter is not None and user_id is None:
+        raise ConfigurationError(
+            "rate_limiter передан без user_id",
+            hint="Передайте user_id вместе с rate_limiter",
+        )
     # 1. Класс данных — первая проверка, не смотрит на политику
     if action.corpus_data_class in ("К2", "К3") and action.model_locality != "local":
         raise DataClassViolation(
@@ -122,13 +127,9 @@ def enforce(
                 hint=f"Попробуйте через {reset_in:.0f} секунд",
             )
 
-    # 7. Бюджет
-    # tokens_month проверяется; cost_month — блокировано T-113 (стоимость модели
-    # появится только в таблице model, которая создаётся в T-113).
-    if policy.budget is not None:
-        tokens_month = policy.budget.get("tokens_month")
-        if tokens_month is not None and action.input_tokens > tokens_month:
-            raise BudgetExceeded(
-                constraint={"limit": tokens_month, "actual": action.input_tokens},
-                hint="Превышен месячный бюджет токенов",
-            )
+    # 7. Бюджет — блокировано T-117.
+    # Проверка tokens_month требует суммы по usage_event за календарный месяц.
+    # Таблицы usage_event нет до T-117; сравнение одного запроса с месячным
+    # лимитом бессмысленно (один запрос никогда не превысит месячный бюджет).
+    # cost_month — блокировано T-113 (стоимость модели появится в таблице model).
+    # TODO(T-117): реализовать проверку бюджета по агрегату usage_event.

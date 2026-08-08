@@ -8,7 +8,7 @@ import pytest
 from app.db.models import Role, User
 from app.db.workspace import ensure_default_workspace
 from app.errors import (
-    BudgetExceeded,
+    ConfigurationError,
     ContextLimitExceeded,
     DataClassViolation,
     ModelNotAllowed,
@@ -265,8 +265,12 @@ class TestEnforceRejects:
         enforce(policy, action)
         enforce(policy, action)
 
-    def test_budget_exceeded(self) -> None:
-        """Бюджет срабатывает, когда input_tokens > budget.tokens_month, но <= max_input_tokens."""
+    def test_budget_check_is_noop_until_t117(self) -> None:
+        """Проверка бюджета блокирована до T-117 (нет таблицы usage_event).
+
+        Сравнение одного запроса с месячным лимитом бессмысленно —
+        один запрос никогда не превысит месячный бюджет.
+        """
         policy = Policy(
             models=["local/*"],
             max_input_tokens=10_000_000,
@@ -277,8 +281,19 @@ class TestEnforceRejects:
             model_locality="local",
             input_tokens=6_000_000,
         )
-        with pytest.raises(BudgetExceeded):
-            enforce(policy, action)
+        enforce(policy, action)
+
+    def test_rate_limiter_without_user_id_raises(self) -> None:
+        """rate_limiter без user_id — ConfigurationError, не тихий пропуск."""
+        policy = Policy(models=["local/*"], max_input_tokens=100000, rpm=10)
+        rl = RateLimiter()
+        action = FakeAction(
+            model_alias="local/qwen3-8b",
+            model_locality="local",
+            input_tokens=100,
+        )
+        with pytest.raises(ConfigurationError):
+            enforce(policy, action, rate_limiter=rl, user_id=None)
 
 
 class TestEnforceWildcard:

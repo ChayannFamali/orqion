@@ -59,3 +59,24 @@ class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):
         DateTime(timezone=True),
         nullable=False,
     )
+
+
+class AuditLog(Base, IdMixin, WorkspaceMixin):
+    """Журнал действий администратора. Append-only (arch.md §5.3)."""
+
+    __tablename__ = "audit_log"
+
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    actor_user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    object_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    meta: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
