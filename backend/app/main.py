@@ -57,8 +57,10 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     from app.api.health import router as health_router
+    from app.api.routes import auth_router
 
     app.include_router(health_router)
+    app.include_router(auth_router)
 
     _mount_static(app)
 

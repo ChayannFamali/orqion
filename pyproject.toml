@@ -21,6 +21,7 @@ dependencies = [
     "tiktoken==0.13.0",
     "sqlite-vec==0.1.9",
     "aiosqlite==0.21.0",
+    "email-validator==2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +54,9 @@ include = ["app*"]
 line-length = 100
 target-version = "py312"
 exclude = ["backend/app/db/migrations"]
+
+[tool.ruff.lint]
+ignore = ["B008"]  # Depends() in default args — идиоматичный паттерн FastAPI
 
 [tool.mypy]
 strict = true
