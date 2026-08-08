@@ -98,7 +98,12 @@ async def test_impersonate_creates_session_and_audit_entry(
 
 
 @pytest.mark.asyncio
-async def test_impersonate_denied_for_non_admin(db_session: AsyncSession) -> None:
+async def test_impersonate_denied_without_capability(db_session: AsyncSession) -> None:
+    """Роль без 'impersonate' в capabilities → 403.
+
+    Проверка идёт через resolve_policy + capabilities, не по имени роли.
+    Developer не имеет 'impersonate' и '*' в capabilities.
+    """
     ws_id = await ensure_default_workspace(db_session)
     await db_session.flush()
 
