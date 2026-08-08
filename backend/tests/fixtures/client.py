@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest_asyncio
-from app.config import Settings
+from app.config import Settings, get_or_create_secret_key
 from app.db.engine import create_engine, create_session_factory
 from app.db.workspace import ensure_default_workspace
 from fastapi import FastAPI
@@ -40,6 +40,11 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
     app.state.db_engine = engine
     app.state.db_session_factory = session_factory
     app.state.workspace_id = workspace_id
+
+    from pathlib import Path
+
+    secret_key = get_or_create_secret_key(test_settings, Path(test_settings.blob_store_path))
+    app.state.secret_key = secret_key
 
     yield app
 

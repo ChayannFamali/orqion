@@ -24,7 +24,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     data_dir = Path(settings.blob_store_path).parent
     data_dir.mkdir(parents=True, exist_ok=True)
-    get_or_create_secret_key(settings, data_dir)
+    secret_key = get_or_create_secret_key(settings, data_dir)
+    app.state.secret_key = secret_key
 
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
@@ -57,10 +58,11 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     from app.api.health import router as health_router
-    from app.api.routes import auth_router
+    from app.api.routes import auth_router, providers_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(providers_router)
 
     _mount_static(app)
 

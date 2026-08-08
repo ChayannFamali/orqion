@@ -21,6 +21,7 @@ dependencies = [
     "tiktoken==0.13.0",
     "sqlite-vec==0.1.9",
     "aiosqlite==0.21.0",
+    "cryptography==50.0.0",
 ]
 
 [project.optional-dependencies]

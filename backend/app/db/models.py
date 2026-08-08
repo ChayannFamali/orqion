@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin, WorkspaceMixin
 
@@ -80,3 +80,46 @@ class AuditLog(Base, IdMixin, WorkspaceMixin):
     object_type: Mapped[str] = mapped_column(String(50), nullable=False)
     object_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     meta: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class Provider(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Провайдер: kind, base_url, api_key_enc (AES-GCM), enabled, capabilities."""
+
+    __tablename__ = "provider"
+
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    api_key_enc: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    capabilities: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    last_probe_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    models: Mapped[list[Model]] = relationship(
+        back_populates="provider",
+        cascade="all, delete-orphan",
+    )
+
+
+class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Модель провайдера: alias, upstream_name, locality, лимиты, стоимость."""
+
+    __tablename__ = "model"
+    __table_args__ = (UniqueConstraint("workspace_id", "alias", name="uq_model_workspace_alias"),)
+
+    provider_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("provider.id"),
+        nullable=False,
+    )
+    provider: Mapped[Provider] = relationship(back_populates="models")
+    alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    upstream_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    locality: Mapped[str] = mapped_column(String(20), nullable=False)
+    max_input_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    max_output_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    supports_reasoning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cost_in: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_out: Mapped[float | None] = mapped_column(Float, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
