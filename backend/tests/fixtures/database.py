@@ -9,12 +9,12 @@ import pytest
 import pytest_asyncio
 from app.config import Settings
 from app.db.base import Base
+from app.db.engine import create_engine
 from app.db.models import Workspace  # noqa: F401 — регистрация в metadata
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
-    create_async_engine,
 )
 
 
@@ -31,9 +31,11 @@ def test_settings(tmp_path: Path) -> Settings:
 
 @pytest_asyncio.fixture
 async def test_engine(test_settings: Settings) -> AsyncIterator[AsyncEngine]:
-    """Создаёт таблицы, отдаёт движок, уничтожает после теста."""
-    url = test_settings.database_url.replace("sqlite://", "sqlite+aiosqlite://")
-    engine = create_async_engine(url, connect_args={"check_same_thread": False})
+    """Создаёт таблицы, отдаёт движок, уничтожает после теста.
+
+    Использует create_engine из app.db.engine — обеспечивает PRAGMA foreign_keys=ON.
+    """
+    engine = create_engine(test_settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
