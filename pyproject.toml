@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools==84.0.0", "wheel==0.47.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orqion"
+version = "0.1.0"
+description = "Open-source LLM application: chat, provider routing, RAG, role-based access control"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    "fastapi==0.141.1",
+    "sqlalchemy==2.0.51",
+    "alembic==1.19.1",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "httpx==0.28.1",
+    "argon2-cffi==25.1.0",
+    "tiktoken==0.13.0",
+    "sqlite-vec==0.1.9",
+]
+
+[project.optional-dependencies]
+rag = [
+    "FlagEmbedding==1.4.0",
+    "docling==2.118.1",
+    "tree-sitter==0.26.0",
+]
+vector-qdrant = [
+    "qdrant-client==1.19.0",
+]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.2",
+    "mypy==2.3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["backend/app/db/migrations"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "backend"
+files = ["backend/app", "backend/tests"]
+exclude = ["backend/app/db/migrations/"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
