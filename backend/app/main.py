@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.auth.bootstrap import ensure_initial_admin
 from app.config import Settings, get_or_create_secret_key
 from app.db.engine import create_engine, create_session_factory
 from app.db.workspace import ensure_default_workspace
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
+        await ensure_initial_admin(session, workspace_id)
         await session.commit()
     app.state.workspace_id = workspace_id
 

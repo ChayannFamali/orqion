@@ -35,7 +35,7 @@ class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     __table_args__ = (UniqueConstraint("workspace_id", "email", name="uq_user_workspace_email"),)
 
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("role.id"),

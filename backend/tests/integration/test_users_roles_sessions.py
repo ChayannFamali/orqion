@@ -29,7 +29,7 @@ async def test_role_user_session_create_chain(db_session: AsyncSession) -> None:
     user = User(
         workspace_id=ws.id,
         email="admin@orqion.local",
-        password_hash=None,
+        password_hash="$argon2id$stub",
         role_id=role.id,
         is_active=True,
     )
@@ -66,6 +66,7 @@ async def test_user_email_unique_per_workspace(db_session: AsyncSession) -> None
     user1 = User(
         workspace_id=ws.id,
         email="dup@orqion.local",
+        password_hash="$argon2id$stub1",
         role_id=role.id,
     )
     db_session.add(user1)
@@ -74,6 +75,7 @@ async def test_user_email_unique_per_workspace(db_session: AsyncSession) -> None
     user2 = User(
         workspace_id=ws.id,
         email="dup@orqion.local",
+        password_hash="$argon2id$stub2",
         role_id=role.id,
     )
     db_session.add(user2)
