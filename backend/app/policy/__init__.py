@@ -1,6 +1,6 @@
 """Ролевая модель: resolve_policy и enforce. Единственное место, где существует роль."""
 
-from app.policy.enforce import enforce
+from app.policy.enforce import enforce, enforce_budget
 from app.policy.models import Policy
 from app.policy.presets import BUILTIN_ROLES
 from app.policy.rate_limiter import RateLimiter
@@ -11,5 +11,6 @@ __all__ = [
     "Policy",
     "RateLimiter",
     "enforce",
+    "enforce_budget",
     "resolve_policy",
 ]

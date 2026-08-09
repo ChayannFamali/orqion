@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Conversation, Message, Model, Provider, User
 from app.errors import NotFound
-from app.policy.enforce import enforce
+from app.policy.enforce import enforce, enforce_budget
 from app.policy.models import WILDCARD, Policy
 from app.policy.rate_limiter import RateLimiter
 from app.providers.client import ProviderClient
@@ -187,6 +187,22 @@ async def prepare_chat(
         corpus_name=corpus_name,
     )
     enforce(policy, action, rate_limiter=rate_limiter, user_id=user.id)
+
+    # 7. Бюджет — проверка через usage_daily (T-108)
+    pending_tokens = input_tokens + output_tokens
+    pending_cost = 0.0
+    if selected_model.cost_in is not None:
+        pending_cost += input_tokens * selected_model.cost_in
+    if selected_model.cost_out is not None:
+        pending_cost += output_tokens * selected_model.cost_out
+    await enforce_budget(
+        session,
+        policy,
+        user_id=user.id,
+        workspace_id=workspace_id,
+        pending_tokens=pending_tokens,
+        pending_cost=pending_cost,
+    )
 
     chat_ctx = ChatContext(
         user=user,

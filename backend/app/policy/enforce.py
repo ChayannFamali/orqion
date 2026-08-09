@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import fnmatch
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from app.errors import (
+    BudgetExceeded,
     ConfigurationError,
     ContextLimitExceeded,
     DataClassViolation,
@@ -19,6 +20,9 @@ from app.errors import (
 )
 from app.policy.models import WILDCARD, Policy
 from app.policy.rate_limiter import RateLimiter
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class ChatAction(Protocol):
@@ -127,9 +131,80 @@ def enforce(
                 hint=f"Попробуйте через {reset_in:.0f} секунд",
             )
 
-    # 7. Бюджет — блокировано T-117.
-    # Проверка tokens_month требует суммы по usage_event за календарный месяц.
-    # Таблицы usage_event нет до T-117; сравнение одного запроса с месячным
-    # лимитом бессмысленно (один запрос никогда не превысит месячный бюджет).
-    # cost_month — блокировано T-113 (стоимость модели появится в таблице model).
-    # TODO(T-117): реализовать проверку бюджета по агрегату usage_event.
+    # 7. Бюджет — асинхронная проверка, вызывается отдельно (enforce_budget).
+    # T-108: tokens_month и cost_month проверяются через usage_daily.
+
+
+async def enforce_budget(
+    session: AsyncSession,
+    policy: Policy,
+    user_id: str,
+    workspace_id: str,
+    pending_tokens: int = 0,
+    pending_cost: float = 0.0,
+) -> None:
+    """Проверяет месячный бюджет по агрегату usage_daily (T-108).
+
+    Шаг 7 в arch.md §7.1. Вызывается после enforce(), т.к. требует БД-запроса.
+
+    policy.budget = {"tokens_month": int, "cost_month": int} или None.
+    Источник — usage_daily за текущий календарный месяц по user_id.
+    pending_tokens/pending_cost — затраты текущего запроса (ещё не записанные).
+    """
+    if policy.budget is None:
+        return
+
+    tokens_month_limit = policy.budget.get("tokens_month")
+    cost_month_limit = policy.budget.get("cost_month")
+
+    if tokens_month_limit is None and cost_month_limit is None:
+        return
+
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func, select
+
+    from app.db.models import UsageDaily
+
+    today = datetime.now(tz=UTC).date()
+    month_start = today.replace(day=1).isoformat()
+
+    result = await session.execute(
+        select(
+            func.coalesce(func.sum(UsageDaily.tokens_in + UsageDaily.tokens_out), 0).label("total_tokens"),
+            func.coalesce(func.sum(UsageDaily.cost), 0.0).label("total_cost"),
+        ).where(
+            UsageDaily.workspace_id == workspace_id,
+            UsageDaily.user_id == user_id,
+            UsageDaily.date >= month_start,
+        )
+    )
+    row = result.one()
+    used_tokens = int(row.total_tokens)
+    used_cost = float(row.total_cost)
+
+    if tokens_month_limit is not None:
+        projected_tokens = used_tokens + pending_tokens
+        if projected_tokens > tokens_month_limit:
+            raise BudgetExceeded(
+                constraint={
+                    "limit": tokens_month_limit,
+                    "used": used_tokens,
+                    "pending": pending_tokens,
+                    "type": "tokens_month",
+                },
+                hint="Месячный лимит токенов исчерпан",
+            )
+
+    if cost_month_limit is not None:
+        projected_cost = used_cost + pending_cost
+        if projected_cost > cost_month_limit:
+            raise BudgetExceeded(
+                constraint={
+                    "limit": cost_month_limit,
+                    "used": round(used_cost, 4),
+                    "pending": round(pending_cost, 4),
+                    "type": "cost_month",
+                },
+                hint="Месячный лимит расходов исчерпан",
+            )
