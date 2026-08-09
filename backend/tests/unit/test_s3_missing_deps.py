@@ -1,13 +1,19 @@
 """Тест S3BlobStore: отказ при отсутствии aioboto3.
 
-Этот тест не требует установки aioboto3 — проверяет, что при
-отсутствии extras [s3] ошибка человекочитаемая, не ModuleNotFoundError
-со стектрейсом.
+Если aioboto3 установлен — skip, т.к. ConfigurationError не вызывается.
 """
 
 from __future__ import annotations
 
 import pytest
+
+try:
+    import aioboto3  # type: ignore[import-not-found]  # noqa: F401
+
+    pytest.skip("aioboto3 is installed, skipping missing-deps test", allow_module_level=True)
+except ImportError:
+    pass
+
 from app.errors import ConfigurationError
 from app.rag.s3 import S3BlobStore
 

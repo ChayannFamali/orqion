@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -354,3 +355,67 @@ class UsageDaily(Base, WorkspaceMixin):
     cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     errors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     avg_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Corpus(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Корпус документов — контейнер для RAG.
+
+    data_class (К0–К3) — ADR-12: определяет канал вывода.
+    pinned_model_id — для К2/К3 фиксирует модель, не давая пользователю выбирать.
+    active_index_version_id — FK на index_version добавляется в T-205,
+    здесь — nullable str без FK-constraint (таблицы index_version ещё нет).
+    """
+
+    __tablename__ = "corpus"
+    # workspace_id индекс создаётся WorkspaceMixin (index=True)
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    data_class: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # FK добавляется в T-205 через ALTER TABLE после создания index_version
+    active_index_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    pinned_model_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("model.id"),
+        nullable=True,
+    )
+
+    documents: Mapped[list[Document]] = relationship(
+        back_populates="corpus",
+        cascade="all, delete-orphan",
+    )
+
+
+class Document(Base, IdMixin, WorkspaceMixin):
+    """Документ в корпусе.
+
+    blob_uri — sha256 hex (ключ в BlobStore).
+    Удаление корпуса каскадно удаляет документы (ON DELETE CASCADE),
+    но НЕ удаляет байты в blob store — ADR-7: оригинал остаётся источником
+    правды, физическая очистка — отдельная явная операция (T-406).
+    """
+
+    __tablename__ = "document"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "sha256", name="uq_document_workspace_sha256"),
+        # workspace_id индекс создаётся WorkspaceMixin (index=True)
+        Index("ix_document_corpus_id", "corpus_id"),
+    )
+
+    corpus_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("corpus.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    blob_uri: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime: Mapped[str] = mapped_column(String(255), nullable=False, default="application/octet-stream")
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False, default="upload")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
+
+    corpus: Mapped[Corpus] = relationship(back_populates="documents")
