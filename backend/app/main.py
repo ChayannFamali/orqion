@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.rate_limiter = RateLimiter()
 
     from app.providers.probe_scheduler import probe_scheduler
+    from app.usage.scheduler import aggregate_scheduler
 
     probe_task = asyncio.create_task(
         probe_scheduler(
@@ -56,12 +57,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.probe_interval_seconds,
         )
     )
+    aggregate_task = asyncio.create_task(aggregate_scheduler(session_factory, workspace_id))
 
     yield
 
     probe_task.cancel()
+    aggregate_task.cancel()
     try:
         await probe_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await aggregate_task
     except asyncio.CancelledError:
         pass
 

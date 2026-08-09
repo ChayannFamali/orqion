@@ -315,3 +315,42 @@ class Span(Base, IdMixin, WorkspaceMixin):
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class UsageDaily(Base, WorkspaceMixin):
+    """Суточный rollup usage_event. arch.md §5.3, ADR-16.
+
+    Идемпотентен: повторный пересчёт за день заменяет строки, не удваивает.
+    PRIMARY KEY (workspace_id, date, user_id, model_id) — upsert.
+    Хранится бессрочно, usage_event чистятся через 90 дней (T-406).
+    """
+
+    __tablename__ = "usage_daily"
+
+    # Переопределяем workspace_id с primary_key для composite PK
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workspace.id"),
+        nullable=False,
+        primary_key=True,
+    )
+
+    date: Mapped[str] = mapped_column(String(10), nullable=False, primary_key=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=True,
+        primary_key=True,
+    )
+    model_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("model.id"),
+        nullable=True,
+        primary_key=True,
+    )
+    requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    errors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
