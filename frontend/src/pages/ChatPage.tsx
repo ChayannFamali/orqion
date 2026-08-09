@@ -1,0 +1,131 @@
+import { useCallback, useState } from "react";
+import { useConversations, useConversation, useUpdateConversation } from "../hooks/useConversations";
+import { useEnabledModels } from "../hooks/useModels";
+import { useChat } from "../hooks/useChat";
+import { useLogout } from "../hooks/useAuth";
+import { ConversationList } from "../components/ConversationList";
+import { ChatMessages } from "../components/ChatMessages";
+import { ChatInput } from "../components/ChatInput";
+import { ModelSelector } from "../components/ModelSelector";
+import { Button } from "../components/ui/button";
+import type { ChatMessage, MessageResponse } from "../api/types";
+
+export function ChatPage() {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+
+  const conversations = useConversations();
+  const conversation = useConversation(activeId);
+  const models = useEnabledModels();
+  const logout = useLogout();
+  const updateConv = useUpdateConversation();
+  const chat = useChat();
+
+  const displayedMessages: MessageResponse[] = conversation.data?.messages ?? [];
+
+  const handleSelect = useCallback((id: string) => {
+    setActiveId(id);
+    setLocalMessages([]);
+  }, []);
+
+  const handleNew = useCallback(() => {
+    setActiveId(null);
+    setLocalMessages([]);
+  }, []);
+
+  const handleSend = useCallback(
+    (text: string) => {
+      const userMsg: ChatMessage = { role: "user", content: text };
+      const assistantMsg: ChatMessage = { role: "assistant", content: "" };
+
+      const messagesToSend = [...localMessages, userMsg];
+      setLocalMessages([...messagesToSend, assistantMsg]);
+
+      chat.sendMessage({
+        messages: messagesToSend,
+        modelAlias: selectedModel,
+        conversationId: activeId,
+        onDone: (fullContent) => {
+          const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
+          setLocalMessages(updated);
+          if (activeId === null) {
+            conversations.refetch();
+          } else {
+            conversation.refetch();
+          }
+        },
+      });
+    },
+    [localMessages, selectedModel, activeId, chat, conversations, conversation],
+  );
+
+  const handleAbort = useCallback(() => {
+    chat.abort();
+  }, [chat]);
+
+  return (
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <aside className="w-64 shrink-0 border-r border-border bg-background">
+        <div className="flex h-12 items-center justify-between border-b border-border px-3">
+          <span className="text-sm font-bold text-foreground">orqion</span>
+          <Button variant="ghost" size="sm" onClick={() => logout.mutate()}>
+            Выйти
+          </Button>
+        </div>
+        <ConversationList
+          conversations={conversations.data?.conversations ?? []}
+          activeId={activeId}
+          onSelect={handleSelect}
+          onNew={handleNew}
+        />
+      </aside>
+
+      {/* Main chat area */}
+      <main className="flex flex-1 flex-col">
+        {/* Header with model selector */}
+        <div className="flex h-12 items-center gap-3 border-b border-border px-4">
+          {activeId && conversation.data && (
+            <input
+              type="text"
+              value={conversation.data.title}
+              onChange={(e) => {
+                updateConv.mutate({ id: activeId, title: e.target.value });
+              }}
+              className="flex-1 bg-transparent text-sm font-medium text-foreground outline-none"
+              placeholder="Заголовок диалога"
+            />
+          )}
+          {!activeId && (
+            <span className="flex-1 text-sm text-muted-foreground">Новый диалог</span>
+          )}
+          <ModelSelector
+            models={models.data ?? []}
+            value={selectedModel}
+            onChange={setSelectedModel}
+            disabled={chat.isStreaming}
+          />
+        </div>
+
+        {/* Messages */}
+        <ChatMessages
+          messages={displayedMessages}
+          streamingContent={localMessages.length > 0 && localMessages[localMessages.length - 1].role === "assistant"
+            ? localMessages[localMessages.length - 1].content
+            : ""}
+          isStreaming={chat.isStreaming}
+          error={chat.error}
+        />
+
+        {/* Input */}
+        <ChatInput
+          onSend={handleSend}
+          onAbort={handleAbort}
+          isStreaming={chat.isStreaming}
+          disabled={models.data?.length === 0}
+        />
+      </main>
+    </div>
+  );
+}
