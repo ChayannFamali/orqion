@@ -99,3 +99,62 @@ async def aggregate_yesterday(
     """Агрегирует вчерашний день. Вызывается scheduler'ом ночью."""
     yesterday = datetime.now(UTC).date() - timedelta(days=1)
     return await aggregate_day(session, workspace_id, yesterday)
+
+
+async def get_last_aggregated_date(
+    session: AsyncSession,
+    workspace_id: str,
+) -> date | None:
+    """Возвращает последнюю агрегированную дату или None, если данных нет."""
+    result = await session.execute(
+        select(func.max(UsageDaily.date)).where(UsageDaily.workspace_id == workspace_id)
+    )
+    last_str = result.scalar_one_or_none()
+    if last_str is None:
+        return None
+    return date.fromisoformat(last_str)
+
+
+async def catch_up_missing_days(
+    session: AsyncSession,
+    workspace_id: str,
+    today: date | None = None,
+) -> int:
+    """Досчитывает пропущенные дни при старте.
+
+    Профиль minimal: ноутбук не работает 24/7. Если приложение не запускалось
+    несколько дней — aggregate_scheduler не отработал. Эта функция находит
+    последнюю агрегированную дату и досчитывает все дни до вчера включительно.
+
+    today: по умолчанию datetime.now(UTC).date(). Передаётся явно в тестах.
+    Возвращает количество обработанных дней.
+    """
+    if today is None:
+        today = datetime.now(UTC).date()
+    yesterday = today - timedelta(days=1)
+
+    last = await get_last_aggregated_date(session, workspace_id)
+    if last is not None:
+        start_day = last + timedelta(days=1)
+    else:
+        # Ни одного агрегата — найдём первую дату в usage_event
+        first_result = await session.execute(
+            select(func.min(UsageEvent.ts)).where(UsageEvent.workspace_id == workspace_id)
+        )
+        first_ts = first_result.scalar_one_or_none()
+        if first_ts is None:
+            return 0  # Нет событий — нечего агрегировать
+        start_day = first_ts.date()
+
+    if start_day > yesterday:
+        return 0  # Всё актуально
+
+    count = 0
+    current = start_day
+    while current <= yesterday:
+        await aggregate_day(session, workspace_id, current)
+        current += timedelta(days=1)
+        count += 1
+
+    logger.info("Catch-up: aggregated %d missing days for workspace=%s", count, workspace_id)
+    return count

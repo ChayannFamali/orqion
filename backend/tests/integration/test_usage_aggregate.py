@@ -285,3 +285,105 @@ async def test_aggregate_only_same_day_events(
 
     daily2 = await _get_daily(db_session, ws_id, "2026-08-10")
     assert len(daily2) == 0
+
+
+@pytest.mark.asyncio
+async def test_catch_up_no_aggregates_no_events(
+    db_session: AsyncSession,
+) -> None:
+    """Catch-up: нет агрегатов, нет событий → 0 дней."""
+    from app.usage.aggregate import catch_up_missing_days
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    count = await catch_up_missing_days(db_session, ws_id)
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_catch_up_no_aggregates_with_events(
+    db_session: AsyncSession,
+) -> None:
+    """Catch-up: нет агрегатов, есть события за 3 дня → 3 дня досчитаны."""
+    from app.usage.aggregate import catch_up_missing_days
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    day1 = datetime(2026, 8, 7, 12, 0, tzinfo=UTC)
+    day2 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
+    day3 = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+
+    await _seed_usage_event(db_session, ws_id, None, None, day1, tokens_in=100)
+    await _seed_usage_event(db_session, ws_id, None, None, day2, tokens_in=200)
+    await _seed_usage_event(db_session, ws_id, None, None, day3, tokens_in=300)
+    await db_session.flush()
+
+    # Catch-up: досчитает до 2026-08-09 (вчера относительно 2026-08-10)
+    from datetime import date as date_cls
+
+    count = await catch_up_missing_days(db_session, ws_id, today=date_cls(2026, 8, 10))
+
+    assert count == 3
+
+    d1 = await _get_daily(db_session, ws_id, "2026-08-07")
+    d2 = await _get_daily(db_session, ws_id, "2026-08-08")
+    d3 = await _get_daily(db_session, ws_id, "2026-08-09")
+    assert len(d1) == 1 and d1[0].tokens_in == 100
+    assert len(d2) == 1 and d2[0].tokens_in == 200
+    assert len(d3) == 1 and d3[0].tokens_in == 300
+
+
+@pytest.mark.asyncio
+async def test_catch_up_partial_aggregates(
+    db_session: AsyncSession,
+) -> None:
+    """Catch-up: агрегат за день 1, пропущен день 2 → досчитан только день 2."""
+    from app.usage.aggregate import aggregate_day, catch_up_missing_days
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    day1 = datetime(2026, 8, 7, 12, 0, tzinfo=UTC)
+    day2 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
+
+    await _seed_usage_event(db_session, ws_id, None, None, day1, tokens_in=100)
+    await _seed_usage_event(db_session, ws_id, None, None, day2, tokens_in=200)
+    await db_session.flush()
+
+    # Агрегируем день 1 вручную
+    await aggregate_day(db_session, ws_id, day1.date())
+
+    # Catch-up должен досчитать только день 2 (вчера относительно 2026-08-09)
+    from datetime import date as date_cls
+
+    count = await catch_up_missing_days(db_session, ws_id, today=date_cls(2026, 8, 9))
+
+    assert count == 1  # только день 2
+
+    d2 = await _get_daily(db_session, ws_id, "2026-08-08")
+    assert len(d2) == 1
+    assert d2[0].tokens_in == 200
+
+
+@pytest.mark.asyncio
+async def test_catch_up_all_current(
+    db_session: AsyncSession,
+) -> None:
+    """Catch-up: агрегаты актуальны → 0 дней."""
+    from app.usage.aggregate import aggregate_day, catch_up_missing_days
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    day = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+    await _seed_usage_event(db_session, ws_id, None, None, day, tokens_in=100)
+    await db_session.flush()
+    await aggregate_day(db_session, ws_id, day.date())
+
+    from datetime import date as date_cls
+
+    count = await catch_up_missing_days(db_session, ws_id, today=date_cls(2026, 8, 10))
+
+    assert count == 0  # последний агрегат = 2026-08-09, вчера = 2026-08-09
