@@ -53,6 +53,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         period_seconds=settings.login_rate_period_seconds,
     )
 
+    from app.rag.blob import LocalBlobStore
+
+    app.state.blob_store = LocalBlobStore(settings.blob_store_path)
+
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler
 

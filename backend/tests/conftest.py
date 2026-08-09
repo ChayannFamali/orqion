@@ -11,6 +11,7 @@ if _backend not in sys.path:
     sys.path.insert(0, _backend)
 
 # re-export фикстур для автопоиска pytest
+from tests.fixtures.blob import blob_store, blob_store_factory  # noqa: F401
 from tests.fixtures.client import api_client, app_fixture  # noqa: F401
 from tests.fixtures.database import db_session, test_engine, test_settings  # noqa: F401
 from tests.fixtures.factories import make_workspace  # noqa: F401
