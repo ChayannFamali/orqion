@@ -13,6 +13,7 @@ import os
 import socket
 import subprocess
 import time
+import uuid
 
 import pytest
 
@@ -108,7 +109,7 @@ async def blob_store_factory(s3_server: _S3Server) -> object:
 
         return S3BlobStore(
             endpoint_url=s3_server.endpoint_url,
-            bucket=f"test-blobs-{root}",
+            bucket=f"test-blobs-dir-{uuid.uuid4().hex[:8]}",
             access_key="test",
             secret_key="test",
             region="us-east-1",

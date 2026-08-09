@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import AsyncIterator
+from typing import Any
 
 from app.errors import ConfigurationError
 from app.rag.blob import CHUNK_SIZE, BlobRef
@@ -52,8 +53,11 @@ class S3BlobStore:
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=region,
-            endpoint_url=endpoint_url,
         )
+
+    def _s3_client(self) -> Any:
+        """Создаёт S3-клиент с endpoint_url."""
+        return self._session.client("s3", endpoint_url=self._endpoint_url)
 
     def _key(self, sha256_hex: str) -> str:
         """S3-ключ объекта по sha256."""
@@ -61,7 +65,7 @@ class S3BlobStore:
 
     async def _ensure_bucket(self) -> None:
         """Создаёт bucket при первом обращении, если не существует."""
-        async with self._session.client("s3") as s3:  # type: ignore[unused-ignore]
+        async with self._s3_client() as s3:
             try:
                 await s3.head_bucket(Bucket=self._bucket)
             except Exception:  # noqa: BLE001  bucket does not exist
@@ -87,7 +91,7 @@ class S3BlobStore:
         sha256_hex = hasher.hexdigest()
         key = self._key(sha256_hex)
 
-        async with self._session.client("s3") as s3:  # type: ignore[unused-ignore]
+        async with self._s3_client() as s3:
             # Проверяем существование
             try:
                 await s3.head_object(Bucket=self._bucket, Key=key)
@@ -114,7 +118,7 @@ class S3BlobStore:
         """
         key = self._key(uri)
 
-        async with self._session.client("s3") as s3:  # type: ignore[unused-ignore]
+        async with self._s3_client() as s3:
             try:
                 response = await s3.get_object(Bucket=self._bucket, Key=key)
             except Exception as exc:
@@ -128,7 +132,7 @@ class S3BlobStore:
                         break
                     yield chunk
             finally:
-                await body.close()
+                body.close()
 
     async def delete(self, uri: str) -> None:
         """Удаляет blob из S3. Идемпотентна.
@@ -137,7 +141,7 @@ class S3BlobStore:
         это ответственность вызывающего кода (T-204).
         """
         key = self._key(uri)
-        async with self._session.client("s3") as s3:  # type: ignore[unused-ignore]
+        async with self._s3_client() as s3:
             try:
                 await s3.delete_object(Bucket=self._bucket, Key=key)
             except Exception:  # noqa: BLE001, S110  already deleted
@@ -146,7 +150,7 @@ class S3BlobStore:
     async def exists(self, uri: str) -> bool:
         """Проверяет наличие blob в S3."""
         key = self._key(uri)
-        async with self._session.client("s3") as s3:  # type: ignore[unused-ignore]
+        async with self._s3_client() as s3:
             try:
                 await s3.head_object(Bucket=self._bucket, Key=key)
                 return True
