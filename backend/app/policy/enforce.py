@@ -208,3 +208,37 @@ async def enforce_budget(
                 },
                 hint="Месячный лимит расходов исчерпан",
             )
+
+
+async def enforce_all(
+    policy: Policy,
+    action: ChatAction,
+    session: AsyncSession,
+    user_id: str,
+    workspace_id: str,
+    rate_limiter: RateLimiter | None = None,
+    model_cost_in: float | None = None,
+    model_cost_out: float | None = None,
+) -> None:
+    """Фасад: все проверки политики в одном вызове (arch.md §7.1, шаги 1-7).
+
+    Синхронные проверки 1-6 (enforce) + асинхронная проверка 7 (enforce_budget).
+    Вызывающий код передаёт model_cost_in/out — только он знает выбранную модель.
+    pending_tokens = input + output, pending_cost = input*cost_in + output*cost_out.
+    """
+    enforce(policy, action, rate_limiter=rate_limiter, user_id=user_id)
+
+    pending_tokens = action.input_tokens + action.output_tokens
+    pending_cost = 0.0
+    if model_cost_in is not None:
+        pending_cost += action.input_tokens * model_cost_in
+    if model_cost_out is not None:
+        pending_cost += action.output_tokens * model_cost_out
+    await enforce_budget(
+        session,
+        policy,
+        user_id=user_id,
+        workspace_id=workspace_id,
+        pending_tokens=pending_tokens,
+        pending_cost=pending_cost,
+    )
