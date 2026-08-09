@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, IdMixin, TimestampMixin, WorkspaceMixin
+from app.db.base import Base, IdMixin, TimestampMixin, WorkspaceMixin, _utcnow
 
 
 class Workspace(Base, IdMixin, TimestampMixin):
@@ -205,3 +205,48 @@ class Message(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     meta: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class UsageEvent(Base, IdMixin, WorkspaceMixin):
+    """Запись о расходе. arch.md §5.1.
+
+    Содержимое запросов и ответов НЕ пишется (AGENTS.md §5.2, §14).
+    conversation_id/message_id — nullable: при удалении диалога
+    становятся NULL, запись о расходе сохраняется (T-115 пометка).
+    """
+
+    __tablename__ = "usage_event"
+
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=True,
+        index=True,
+    )
+    model_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("model.id"),
+        nullable=True,
+    )
+    conversation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("conversation.id"),
+        nullable=True,
+    )
+    message_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("message.id"),
+        nullable=True,
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+        index=True,
+    )
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -86,6 +87,8 @@ class ChatContext:
     model_id: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    error_code: str | None = None
+    started_at: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -198,6 +201,7 @@ async def prepare_chat(
         conversation_id=conversation_id,
         rate_limiter=rate_limiter,
         tokens_in=input_tokens,
+        model_id=selected_model.id,
     )
 
     return chat_ctx, selected_model, provider, fallbacks
@@ -228,6 +232,7 @@ async def execute_stream(
             yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
     except Exception as exc:  # noqa: BLE001  граница системы: нормализуем любую ошибку провайдера
         err = normalize_error(exc)
+        chat_ctx.error_code = err.error_code
         yield f"data: {json.dumps({'type': 'error', 'code': err.error_code, 'message': err.reason})}\n\n"
     finally:
         chat_ctx.tokens_out = _count_tokens("".join(chat_ctx.accumulated_content))
@@ -269,6 +274,7 @@ async def execute_complete(
         }
     except Exception as exc:  # noqa: BLE001  граница системы: нормализуем любую ошибку провайдера
         err = normalize_error(exc)
+        chat_ctx.error_code = err.error_code
         return {
             "type": "error",
             "code": err.error_code,
@@ -281,11 +287,13 @@ async def save_messages(
     chat_ctx: ChatContext,
     model: Model,
     workspace_id: str,
-) -> str:
-    """Сохраняет user-сообщения и ответ модели. Возвращает conversation_id.
+) -> tuple[str, str | None]:
+    """Сохраняет user-сообщения и ответ модели.
 
+    Возвращает (conversation_id, assistant_message_id).
     Если conversation_id None — создаёт новый диалог.
     Авто-заголовок: первый пользовательский message → title (обрезка 80 символов).
+    assistant_message_id None, если нет содержимого (например, ошибка до стрима).
     """
     conversation_id = chat_ctx.conversation_id
 
@@ -326,20 +334,21 @@ async def save_messages(
 
     # Сохраняем ответ ассистента
     full_content = "".join(chat_ctx.accumulated_content)
+    assistant_message_id: str | None = None
     if full_content:
-        session.add(
-            Message(
-                workspace_id=workspace_id,
-                conversation_id=conversation_id,
-                role="assistant",
-                content=full_content,
-                model_id=model.id,
-                tokens_in=chat_ctx.tokens_in,
-                tokens_out=chat_ctx.tokens_out,
-                meta={},
-            )
+        assistant_msg = Message(
+            workspace_id=workspace_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=full_content,
+            model_id=model.id,
+            tokens_in=chat_ctx.tokens_in,
+            tokens_out=chat_ctx.tokens_out,
+            meta={},
         )
+        session.add(assistant_msg)
+        await session.flush()
+        assistant_message_id = assistant_msg.id
 
-    await session.flush()
     await session.commit()
-    return conversation_id
+    return conversation_id, assistant_message_id

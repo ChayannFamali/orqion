@@ -1,11 +1,12 @@
 """POST /api/chat — полный конвейер arch.md §7.1.
 
-Порядок: аутентификация → resolve_policy → enforce → маршрутизация → стрим/complete → save.
+Порядок: аутентификация → resolve_policy → enforce → маршрутизация → стрим/complete → save + usage.
 S-13: обрыв не теряет учёт, ошибка — событием, не разрывом.
 """
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Request
@@ -26,8 +27,40 @@ from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
+from app.usage.service import UsageRecord, calculate_cost, record_usage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
+
+
+def _build_usage_record(
+    chat_ctx: ChatContext,
+    model: Model,
+    conversation_id: str | None,
+    message_id: str | None = None,
+) -> UsageRecord:
+    """Формирует запись usage_event из контекста чата."""
+    latency_ms = int(
+        (chat_ctx.started_at and (1000 * (time.monotonic() - chat_ctx.started_at))) or 0
+    )
+    status = "error" if chat_ctx.error_code else "ok"
+    cost = calculate_cost(
+        chat_ctx.tokens_in,
+        chat_ctx.tokens_out,
+        model.cost_in,
+        model.cost_out,
+    )
+    return UsageRecord(
+        user_id=chat_ctx.user.id,
+        model_id=model.id,
+        conversation_id=conversation_id,
+        message_id=message_id,
+        tokens_in=chat_ctx.tokens_in,
+        tokens_out=chat_ctx.tokens_out,
+        cost=cost,
+        latency_ms=latency_ms,
+        status=status,
+        error_code=chat_ctx.error_code,
+    )
 
 
 @router.post("", response_model=None)
@@ -44,7 +77,7 @@ async def chat(
     2. enforce (класс данных, модель, контекст, rate limits)
     3. маршрутизация → выбор модели
     4. выполнение запроса
-    5. сохранение сообщений
+    5. сохранение сообщений + usage_event
     """
     secret_key: str = request.app.state.secret_key
     workspace_id: str = request.app.state.workspace_id
@@ -96,7 +129,12 @@ async def chat(
 
     # Non-streaming mode
     result = await execute_complete(chat_ctx, model, provider, secret_key)
-    conv_id = await save_messages(session, chat_ctx, model, workspace_id)
+    conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
+
+    # Запись usage_event (non-stream — та же сессия)
+    usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
+    await record_usage(session, workspace_id, usage_record)
+
     result["conversation_id"] = conv_id
     return result
 
@@ -109,9 +147,9 @@ async def _stream_with_save(
     workspace_id: str,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[str]:
-    """Обёртка: стримит токены, затем сохраняет сообщения в finally.
+    """Обёртка: стримит токены, затем сохраняет сообщения + usage_event в finally.
 
-    S-13: сохранение выполняется даже при обрыве соединения.
+    S-13: сохранение и учёт выполняются даже при обрыве соединения.
     Использует отдельную сессию — роутерная уже закрыта после возврата StreamingResponse.
     """
     try:
@@ -119,4 +157,7 @@ async def _stream_with_save(
             yield chunk
     finally:
         async with session_factory() as save_session:
-            await save_messages(save_session, chat_ctx, model, workspace_id)
+            conv_id, msg_id = await save_messages(save_session, chat_ctx, model, workspace_id)
+
+            usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
+            await record_usage(save_session, workspace_id, usage_record)
