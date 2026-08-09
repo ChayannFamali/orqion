@@ -89,6 +89,7 @@ class ChatContext:
     tokens_out: int | None = None
     error_code: str | None = None
     started_at: float = field(default_factory=time.monotonic)
+    trace_id: str | None = None
 
 
 @dataclass

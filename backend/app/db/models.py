@@ -250,3 +250,68 @@ class UsageEvent(Base, IdMixin, WorkspaceMixin):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class Trace(Base, IdMixin, WorkspaceMixin):
+    """Трассировка запроса. arch.md §5.1, ADR-14.
+
+    Один trace на чат-запрос. span — шаги конвейера.
+    conversation_id/message_id — nullable FK, не каскадные (T-118 пометка).
+    """
+
+    __tablename__ = "trace"
+
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=True,
+        index=True,
+    )
+    conversation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("conversation.id"),
+        nullable=True,
+    )
+    message_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("message.id"),
+        nullable=True,
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+        index=True,
+    )
+    total_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")
+
+
+class Span(Base, IdMixin, WorkspaceMixin):
+    """Шаг конвейера. arch.md §5.1, ADR-14.
+
+    payload JSON — тела шагов (промпты, чанки), отдельный срок хранения (§5.3).
+    parent_id — иерархия span'ов (вложенные шаги).
+    """
+
+    __tablename__ = "span"
+
+    trace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("trace.id"),
+        nullable=False,
+        index=True,
+    )
+    parent_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("span.id"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)

@@ -1,7 +1,8 @@
 """POST /api/chat — полный конвейер arch.md §7.1.
 
-Порядок: аутентификация → resolve_policy → enforce → маршрутизация → стрим/complete → save + usage.
+Порядок: аутентификация → resolve_policy → enforce → маршрутизация → стрим/complete → save + usage + trace.
 S-13: обрыв не теряет учёт, ошибка — событием, не разрывом.
+ADR-14: trace + span для каждого запроса.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
+from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
@@ -77,11 +79,14 @@ async def chat(
     2. enforce (класс данных, модель, контекст, rate limits)
     3. маршрутизация → выбор модели
     4. выполнение запроса
-    5. сохранение сообщений + usage_event
+    5. сохранение сообщений + usage_event + trace
     """
     secret_key: str = request.app.state.secret_key
     workspace_id: str = request.app.state.workspace_id
     rate_limiter: RateLimiter | None = getattr(request.app.state, "rate_limiter", None)
+
+    # Создаём trace
+    trace_ctx = await create_trace(session, workspace_id, user_id=user.id)
 
     policy = await resolve_policy(session, user)
 
@@ -92,24 +97,30 @@ async def chat(
         {"role": m.role, "content": m.content} for m in body.messages
     ]
 
-    chat_ctx, model, provider, _fallbacks = await prepare_chat(
-        session=session,
-        user=user,
-        role_name=role.name,
-        policy=policy,
-        messages=messages_dicts,
-        model_alias=body.model_alias,
-        max_tokens=body.max_tokens,
-        temperature=body.temperature,
-        stream=body.stream,
-        corpus_data_class=body.corpus_data_class,
-        corpus_name=body.corpus_name,
-        task_type=body.task_type,
-        conversation_id=body.conversation_id,
-        rate_limiter=rate_limiter,
-        secret_key=secret_key,
-        workspace_id=workspace_id,
-    )
+    async with span(trace_ctx, "prepare"):
+        chat_ctx, model, provider, _fallbacks = await prepare_chat(
+            session=session,
+            user=user,
+            role_name=role.name,
+            policy=policy,
+            messages=messages_dicts,
+            model_alias=body.model_alias,
+            max_tokens=body.max_tokens,
+            temperature=body.temperature,
+            stream=body.stream,
+            corpus_data_class=body.corpus_data_class,
+            corpus_name=body.corpus_name,
+            task_type=body.task_type,
+            conversation_id=body.conversation_id,
+            rate_limiter=rate_limiter,
+            secret_key=secret_key,
+            workspace_id=workspace_id,
+        )
+        chat_ctx.trace_id = trace_ctx.trace_id
+
+    # Коммитим trace + prepare данные до возврата StreamingResponse,
+    # иначе SQLite блокируется при записи в _stream_with_save
+    await session.commit()
 
     if body.stream:
         session_factory: async_sessionmaker[AsyncSession] = request.app.state.db_session_factory
@@ -122,18 +133,30 @@ async def chat(
                 secret_key,
                 workspace_id,
                 session_factory,
+                trace_ctx,
             ),
             media_type="text/event-stream",
             headers={"X-Accel-Buffering": "no"},
         )
 
     # Non-streaming mode
-    result = await execute_complete(chat_ctx, model, provider, secret_key)
+    async with span(trace_ctx, "execute"):
+        result = await execute_complete(chat_ctx, model, provider, secret_key)
+
     conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
 
     # Запись usage_event (non-stream — та же сессия)
     usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
     await record_usage(session, workspace_id, usage_record)
+
+    # Финализация trace
+    await finalize_trace(
+        session,
+        trace_ctx,
+        conversation_id=conv_id,
+        message_id=msg_id,
+        error=chat_ctx.error_code is not None,
+    )
 
     result["conversation_id"] = conv_id
     return result
@@ -146,18 +169,28 @@ async def _stream_with_save(
     secret_key: str,
     workspace_id: str,
     session_factory: async_sessionmaker[AsyncSession],
+    trace_ctx: TraceContext,
 ) -> AsyncIterator[str]:
-    """Обёртка: стримит токены, затем сохраняет сообщения + usage_event в finally.
+    """Обёртка: стримит токены, затем сохраняет сообщения + usage_event + trace в finally.
 
-    S-13: сохранение и учёт выполняются даже при обрыве соединения.
+    S-13: сохранение, учёт и трассировка выполняются даже при обрыве соединения.
     Использует отдельную сессию — роутерная уже закрыта после возврата StreamingResponse.
     """
     try:
-        async for chunk in execute_stream(chat_ctx, model, provider, secret_key):
-            yield chunk
+        async with span(trace_ctx, "stream"):
+            async for chunk in execute_stream(chat_ctx, model, provider, secret_key):
+                yield chunk
     finally:
         async with session_factory() as save_session:
             conv_id, msg_id = await save_messages(save_session, chat_ctx, model, workspace_id)
 
             usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
             await record_usage(save_session, workspace_id, usage_record)
+
+            await finalize_trace(
+                save_session,
+                trace_ctx,
+                conversation_id=conv_id,
+                message_id=msg_id,
+                error=chat_ctx.error_code is not None,
+            )
