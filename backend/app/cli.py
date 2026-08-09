@@ -105,7 +105,7 @@ async def _run_createuser(email: str, role_name: str, password: str | None) -> N
         if existing.scalar_one_or_none() is not None:
             print(f"Error: user '{email}' already exists", file=sys.stderr, flush=True)
             await engine.dispose()
-            return
+            sys.exit(1)
 
         role_result = await session.execute(
             select(Role).where(
@@ -117,7 +117,7 @@ async def _run_createuser(email: str, role_name: str, password: str | None) -> N
         if role is None:
             print(f"Error: role '{role_name}' not found", file=sys.stderr, flush=True)
             await engine.dispose()
-            return
+            sys.exit(1)
 
         user = User(
             workspace_id=workspace_id,
@@ -156,6 +156,7 @@ async def _run_reset_password(email: str, password: str | None) -> None:
 
     from app.auth.passwords import hash_password
     from app.db.engine import create_engine, create_session_factory
+    from app.db.models import Session as SessionModel
     from app.db.models import User
 
     settings = Settings()
@@ -173,9 +174,14 @@ async def _run_reset_password(email: str, password: str | None) -> None:
         if user is None:
             print(f"Error: user '{email}' not found", file=sys.stderr, flush=True)
             await engine.dispose()
-            return
+            sys.exit(1)
 
         user.password_hash = hash_password(password)
+
+        # Отозвать все активные сессии — скомпрометированный аккаунт не остаётся в системе
+        from sqlalchemy import delete
+
+        await session.execute(delete(SessionModel).where(SessionModel.user_id == user.id))
         await session.commit()
 
     if generated:

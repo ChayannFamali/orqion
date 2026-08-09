@@ -89,7 +89,9 @@ async def test_createuser_duplicate_email(
     from app.cli import _run_createuser
 
     await _run_createuser("dup@orqion.local", "developer", "pass1")
-    await _run_createuser("dup@orqion.local", "developer", "pass2")
+    with pytest.raises(SystemExit) as exc_info:
+        await _run_createuser("dup@orqion.local", "developer", "pass2")
+    assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
     assert "already exists" in captured.err
@@ -115,7 +117,9 @@ async def test_createuser_nonexistent_role(
 
     from app.cli import _run_createuser
 
-    await _run_createuser("x@orqion.local", "nonexistent-role", "pass")
+    with pytest.raises(SystemExit) as exc_info:
+        await _run_createuser("x@orqion.local", "nonexistent-role", "pass")
+    assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
     assert "not found" in captured.err
@@ -190,7 +194,9 @@ async def test_reset_password_nonexistent_user(
 
     from app.cli import _run_reset_password
 
-    await _run_reset_password("ghost@orqion.local", "pass")
+    with pytest.raises(SystemExit) as exc_info:
+        await _run_reset_password("ghost@orqion.local", "pass")
+    assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
     assert "not found" in captured.err
@@ -217,5 +223,44 @@ async def test_reset_password_generated(
     captured = capsys.readouterr()
     assert "Password:" in captured.out
     assert "Save this password" in captured.out
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reset_password_revokes_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """reset-password отзывает все активные сессии пользователя."""
+    from app.auth.sessions import create_session
+    from app.db.models import Session as SessionModel
+
+    tmpdir = tempfile.mkdtemp()
+    db_path = os.path.join(tmpdir, "test.db")
+    settings = _make_test_settings(db_path)
+    engine, session_factory = await _setup_test_db(settings)
+    monkeypatch.setattr("app.cli.Settings", lambda: settings)
+
+    from app.cli import _run_createuser, _run_reset_password
+
+    await _run_createuser("revoke@orqion.local", "developer", "old-pass")
+
+    # Создаём сессию для пользователя
+    async with session_factory() as session:
+        result = await session.execute(select(User).where(User.email == "revoke@orqion.local"))
+        user = result.scalar_one()
+        await create_session(session, user.id, user.workspace_id, settings)
+        await session.commit()
+
+    # Проверяем, что сессия существует
+    async with session_factory() as session:
+        result = await session.execute(select(SessionModel).where(SessionModel.user_id == user.id))
+        assert len(result.scalars().all()) == 1
+
+    # Сбрасываем пароль
+    await _run_reset_password("revoke@orqion.local", "new-pass")
+
+    # Проверяем, что сессия отозвана
+    async with session_factory() as session:
+        result = await session.execute(select(SessionModel).where(SessionModel.user_id == user.id))
+        assert len(result.scalars().all()) == 0
 
     await engine.dispose()
