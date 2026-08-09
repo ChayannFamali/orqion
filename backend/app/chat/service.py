@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Conversation, Message, Model, Provider, User
-from app.errors import NotFound
+from app.errors import NotFound, OrqionError
 from app.policy.enforce import enforce_all
 from app.policy.models import WILDCARD, Policy
 from app.policy.rate_limiter import RateLimiter
@@ -121,10 +121,11 @@ async def prepare_chat(
     rate_limiter: RateLimiter | None,
     secret_key: str,
     workspace_id: str,
-) -> tuple[ChatContext, Model, Provider, list[Model]]:
+) -> tuple[ChatContext, Model, Provider, list[tuple[Model, Provider]]]:
     """Подготовка чат-запроса: enforce, маршрутизация, загрузка модели.
 
-    Возвращает (context, model, provider, fallbacks).
+    Возвращает (context, model, provider, fallbacks) где fallbacks —
+    список (Model, Provider) для переключения при ошибке основной модели.
     Возбуждает доменные исключения при отказе.
     """
     # Если conversation_id задан — проверяем существование и владельца
@@ -214,7 +215,21 @@ async def prepare_chat(
         model_id=selected_model.id,
     )
 
-    return chat_ctx, selected_model, provider, fallbacks
+    # Загружаем провайдеров для fallback-моделей
+    fallback_with_providers: list[tuple[Model, Provider]] = []
+    if fallbacks:
+        provider_ids = {m.provider_id for m in fallbacks}
+        prov_result = await session.execute(
+            select(Provider).where(Provider.id.in_(provider_ids))
+        )
+        providers_by_id = {p.id: p for p in prov_result.scalars().all()}
+        fallback_with_providers = [
+            (m, providers_by_id[m.provider_id])
+            for m in fallbacks
+            if m.provider_id in providers_by_id
+        ]
+
+    return chat_ctx, selected_model, provider, fallback_with_providers
 
 
 async def execute_stream(
@@ -222,28 +237,49 @@ async def execute_stream(
     model: Model,
     provider: Provider,
     secret_key: str,
+    fallbacks: list[tuple[Model, Provider]] | None = None,
 ) -> AsyncIterator[str]:
     """Выполняет стриминговый запрос к провайдеру. SSE-события.
 
     S-13: ошибка — событие error, не обрыв. [DONE] — завершение.
     Накапливает content для сохранения в finally.
+
+    T-116b: fallback применяется только при ошибке **до** первого токена.
+    Если ошибка произошла после начала генерации — fallback невозможен
+    (нельзя подменить модель посреди ответа).
     """
-    client = ProviderClient(provider, secret_key)
-    upstream_name = model.upstream_name
+    attempts: list[tuple[Model, Provider]] = [(model, provider)]
+    if fallbacks:
+        attempts.extend(fallbacks)
 
     try:
-        async for token in client.stream(
-            messages=chat_ctx.messages,
-            model=upstream_name,
-            max_tokens=chat_ctx.max_tokens,
-            temperature=chat_ctx.temperature,
-        ):
-            chat_ctx.accumulated_content.append(token)
-            yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
-    except Exception as exc:  # noqa: BLE001  граница системы: нормализуем любую ошибку провайдера
-        err = normalize_error(exc)
-        chat_ctx.error_code = err.error_code
-        yield f"data: {json.dumps({'type': 'error', 'code': err.error_code, 'message': err.reason})}\n\n"
+        for attempt_idx, (current_model, current_provider) in enumerate(attempts):
+            client = ProviderClient(current_provider, secret_key)
+            upstream_name = current_model.upstream_name
+            got_token = False
+
+            try:
+                async for token in client.stream(
+                    messages=chat_ctx.messages,
+                    model=upstream_name,
+                    max_tokens=chat_ctx.max_tokens,
+                    temperature=chat_ctx.temperature,
+                ):
+                    got_token = True
+                    chat_ctx.accumulated_content.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
+                # Успешное завершение — обновляем model_id на фактическую модель
+                chat_ctx.model_id = current_model.id
+                return
+            except Exception as exc:  # noqa: BLE001  граница системы
+                err = normalize_error(exc)
+                # Fallback возможен только если ни один токен не был отправлен
+                if got_token or attempt_idx == len(attempts) - 1:
+                    chat_ctx.error_code = err.error_code
+                    yield f"data: {json.dumps({'type': 'error', 'code': err.error_code, 'message': err.reason})}\n\n"
+                    break
+                # Ошибка до первого токена, есть ещё fallback — пробуем следующую модель
+                continue
     finally:
         chat_ctx.tokens_out = _count_tokens("".join(chat_ctx.accumulated_content))
         yield "data: [DONE]\n\n"
@@ -254,42 +290,62 @@ async def execute_complete(
     model: Model,
     provider: Provider,
     secret_key: str,
+    fallbacks: list[tuple[Model, Provider]] | None = None,
 ) -> dict[str, object]:
     """Выполняет обычный (не стриминговый) запрос.
 
-    Возвращает dict с ответом и метаданными.
+    T-116b: при ошибке основной модели (после исчерпания ретраев в with_retry)
+    переключается на fallback-модели. Возвращает ответ с фактической моделью.
     """
-    client = ProviderClient(provider, secret_key)
-    upstream_name = model.upstream_name
+    attempts: list[tuple[Model, Provider]] = [(model, provider)]
+    if fallbacks:
+        attempts.extend(fallbacks)
 
-    try:
-        result = await client.complete(
-            messages=chat_ctx.messages,
-            model=upstream_name,
-            max_tokens=chat_ctx.max_tokens,
-            temperature=chat_ctx.temperature,
-        )
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        chat_ctx.accumulated_content.append(content)
-        usage = result.get("usage", {})
-        chat_ctx.tokens_out = usage.get("completion_tokens") or _count_tokens(content)
-        return {
-            "type": "complete",
-            "content": content,
-            "usage": {
-                "tokens_in": chat_ctx.tokens_in,
-                "tokens_out": chat_ctx.tokens_out,
-            },
-            "model": model.alias,
-        }
-    except Exception as exc:  # noqa: BLE001  граница системы: нормализуем любую ошибку провайдера
-        err = normalize_error(exc)
-        chat_ctx.error_code = err.error_code
+    last_error: OrqionError | None = None
+
+    for current_model, current_provider in attempts:
+        client = ProviderClient(current_provider, secret_key)
+        upstream_name = current_model.upstream_name
+
+        try:
+            result = await client.complete(
+                messages=chat_ctx.messages,
+                model=upstream_name,
+                max_tokens=chat_ctx.max_tokens,
+                temperature=chat_ctx.temperature,
+            )
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            chat_ctx.accumulated_content.append(content)
+            usage = result.get("usage", {})
+            chat_ctx.tokens_out = usage.get("completion_tokens") or _count_tokens(content)
+            chat_ctx.model_id = current_model.id
+            return {
+                "type": "complete",
+                "content": content,
+                "usage": {
+                    "tokens_in": chat_ctx.tokens_in,
+                    "tokens_out": chat_ctx.tokens_out,
+                },
+                "model": current_model.alias,
+            }
+        except Exception as exc:  # noqa: BLE001  граница системы
+            last_error = normalize_error(exc)
+            continue
+
+    # Все попытки исчерпаны
+    if last_error is not None:
+        chat_ctx.error_code = last_error.error_code
         return {
             "type": "error",
-            "code": err.error_code,
-            "message": err.reason,
+            "code": last_error.error_code,
+            "message": last_error.reason,
         }
+
+    return {
+        "type": "error",
+        "code": "unknown",
+        "message": "Неизвестная ошибка",
+    }
 
 
 async def save_messages(

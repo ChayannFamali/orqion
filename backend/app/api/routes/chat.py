@@ -98,7 +98,7 @@ async def chat(
     ]
 
     async with span(trace_ctx, "prepare"):
-        chat_ctx, model, provider, _fallbacks = await prepare_chat(
+        chat_ctx, model, provider, fallbacks = await prepare_chat(
             session=session,
             user=user,
             role_name=role.name,
@@ -130,6 +130,7 @@ async def chat(
                 chat_ctx,
                 model,
                 provider,
+                fallbacks,
                 secret_key,
                 workspace_id,
                 session_factory,
@@ -141,12 +142,17 @@ async def chat(
 
     # Non-streaming mode
     async with span(trace_ctx, "execute"):
-        result = await execute_complete(chat_ctx, model, provider, secret_key)
+        result = await execute_complete(chat_ctx, model, provider, secret_key, fallbacks)
 
-    conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
+    # Фактическая модель — могла смениться на fallback
+    actual_model = model
+    if chat_ctx.model_id is not None and chat_ctx.model_id != model.id:
+        actual_model = _find_model(fallbacks, chat_ctx.model_id) or model
+
+    conv_id, msg_id = await save_messages(session, chat_ctx, actual_model, workspace_id)
 
     # Запись usage_event (non-stream — та же сессия)
-    usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
+    usage_record = _build_usage_record(chat_ctx, actual_model, conv_id, msg_id)
     await record_usage(session, workspace_id, usage_record)
 
     # Финализация trace
@@ -166,6 +172,7 @@ async def _stream_with_save(
     chat_ctx: ChatContext,
     model: Model,
     provider: Provider,
+    fallbacks: list[tuple[Model, Provider]],
     secret_key: str,
     workspace_id: str,
     session_factory: async_sessionmaker[AsyncSession],
@@ -175,16 +182,28 @@ async def _stream_with_save(
 
     S-13: сохранение, учёт и трассировка выполняются даже при обрыве соединения.
     Использует отдельную сессию — роутерная уже закрыта после возврата StreamingResponse.
+
+    T-116b: передаёт fallbacks в execute_stream. После выполнения определяет
+    фактическую модель (основная или fallback) по chat_ctx.model_id.
     """
     try:
         async with span(trace_ctx, "stream"):
-            async for chunk in execute_stream(chat_ctx, model, provider, secret_key):
+            async for chunk in execute_stream(
+                chat_ctx, model, provider, secret_key, fallbacks
+            ):
                 yield chunk
     finally:
-        async with session_factory() as save_session:
-            conv_id, msg_id = await save_messages(save_session, chat_ctx, model, workspace_id)
+        # Фактическая модель — могла смениться на fallback
+        actual_model = model
+        if chat_ctx.model_id is not None and chat_ctx.model_id != model.id:
+            actual_model = _find_model(fallbacks, chat_ctx.model_id) or model
 
-            usage_record = _build_usage_record(chat_ctx, model, conv_id, msg_id)
+        async with session_factory() as save_session:
+            conv_id, msg_id = await save_messages(
+                save_session, chat_ctx, actual_model, workspace_id
+            )
+
+            usage_record = _build_usage_record(chat_ctx, actual_model, conv_id, msg_id)
             await record_usage(save_session, workspace_id, usage_record)
 
             await finalize_trace(
@@ -194,3 +213,14 @@ async def _stream_with_save(
                 message_id=msg_id,
                 error=chat_ctx.error_code is not None,
             )
+
+
+def _find_model(
+    fallbacks: list[tuple[Model, Provider]],
+    model_id: str,
+) -> Model | None:
+    """Находит модель по id в списке fallback-моделей."""
+    for m, _ in fallbacks:
+        if m.id == model_id:
+            return m
+    return None
