@@ -40,13 +40,18 @@ def calculate_cost(
     """Расчёт стоимости по параметрам модели на момент запроса.
 
     cost_in/cost_out — за 1M токенов (arch.md §5.1 Model).
-    Возвращает None, если оба rate неизвестны.
+    Возвращает None, если для потраченных токенов неизвестна ставка:
+    tokens_in > 0 and cost_in is None → None (не занижаем).
+    tokens_out > 0 and cost_out is None → None.
+    Если токенов 0 — ставка неважна (0 × что угодно = 0).
     """
-    if cost_in is None and cost_out is None:
+    tin = tokens_in or 0
+    tout = tokens_out or 0
+    if tin > 0 and cost_in is None:
         return None
-    in_cost = (tokens_in or 0) / 1_000_000 * (cost_in or 0)
-    out_cost = (tokens_out or 0) / 1_000_000 * (cost_out or 0)
-    total = in_cost + out_cost
+    if tout > 0 and cost_out is None:
+        return None
+    total = (tin * (cost_in or 0) + tout * (cost_out or 0)) / 1_000_000
     return round(total, 6) if total > 0 else 0.0
 
 

@@ -144,20 +144,43 @@ def test_calculate_cost_with_rates() -> None:
 
 
 def test_calculate_cost_no_rates() -> None:
-    """Оба rate None → cost None."""
+    """Оба rate None, токены > 0 → cost None."""
     assert calculate_cost(1000, 500, None, None) is None
 
 
-def test_calculate_cost_only_in() -> None:
-    """Только cost_in → cost_out = 0."""
-    cost = calculate_cost(1000, 500, 2.0, None)
+def test_calculate_cost_only_in_with_out_tokens() -> None:
+    """Только cost_in известен, tokens_out > 0 → None (не занижаем)."""
+    assert calculate_cost(1000, 500, 2.0, None) is None
+
+
+def test_calculate_cost_only_in_no_out_tokens() -> None:
+    """Только cost_in, tokens_out = 0 → стоимость по входным."""
+    cost = calculate_cost(1000, 0, 2.0, None)
     assert cost is not None
     assert abs(cost - 0.002) < 0.0001
 
 
+def test_calculate_cost_only_out_with_in_tokens() -> None:
+    """Только cost_out известен, tokens_in > 0 → None."""
+    assert calculate_cost(1000, 500, None, 6.0) is None
+
+
+def test_calculate_cost_only_out_no_in_tokens() -> None:
+    """Только cost_out, tokens_in = 0 → стоимость по выходным."""
+    cost = calculate_cost(0, 500, None, 6.0)
+    assert cost is not None
+    assert abs(cost - 0.003) < 0.0001
+
+
 def test_calculate_cost_zero_tokens() -> None:
-    """0 токенов → cost = 0.0 (не None)."""
+    """0 токенов, оба rate известны → cost = 0.0 (не None)."""
     cost = calculate_cost(0, 0, 2.0, 6.0)
+    assert cost == 0.0
+
+
+def test_calculate_cost_zero_tokens_no_rates() -> None:
+    """0 токенов, оба rate None → cost = 0.0 (0 × что угодно = 0)."""
+    cost = calculate_cost(0, 0, None, None)
     assert cost == 0.0
 
 
