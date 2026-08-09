@@ -153,3 +153,55 @@ class RoutingRule(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     allow_locality: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     fallback_models: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     reason: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+
+
+class Conversation(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Диалог: title, archived. Доступ только владельцу.
+
+    Заголовок формируется по первому сообщению (arch.md §5.1).
+    """
+
+    __tablename__ = "conversation"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    messages: Mapped[list[Message]] = relationship(
+        back_populates="conversation",
+        order_by="Message.created_at",
+        cascade="all, delete-orphan",
+    )
+
+
+class Message(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Сообщение диалога: role, content, model_id, tokens, meta.
+
+    arch.md §5.1: message(id, conversation_id, role, content, model_id,
+    tokens_in, tokens_out, created_at, meta JSON).
+    workspace_id — ADR-3, прямо в каждой таблице.
+    """
+
+    __tablename__ = "message"
+
+    conversation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("conversation.id"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("model.id"),
+        nullable=True,
+    )
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    meta: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")
