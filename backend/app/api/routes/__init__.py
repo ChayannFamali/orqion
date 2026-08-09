@@ -6,6 +6,7 @@ from app.api.routes.chat import router as chat_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.models import router as models_router
 from app.api.routes.providers import router as providers_router
+from app.api.routes.routing import router as routing_router
 
 __all__ = [
     "analytics_router",
@@ -14,4 +15,5 @@ __all__ = [
     "conversations_router",
     "models_router",
     "providers_router",
+    "routing_router",
 ]

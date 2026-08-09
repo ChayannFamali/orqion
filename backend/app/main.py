@@ -99,6 +99,7 @@ def create_app() -> FastAPI:
         conversations_router,
         models_router,
         providers_router,
+        routing_router,
     )
 
     app.include_router(health_router)
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations_router)
     app.include_router(models_router)
     app.include_router(providers_router)
+    app.include_router(routing_router)
 
     _mount_static(app)
 

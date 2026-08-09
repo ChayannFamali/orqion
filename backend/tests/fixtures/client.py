@@ -35,6 +35,10 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
+        from app.auth.bootstrap import ensure_builtin_roles
+        await ensure_builtin_roles(session, workspace_id)
+        from app.router.bootstrap import ensure_default_routing_rules
+        await ensure_default_routing_rules(session, workspace_id)
         await session.commit()
 
     app.state.db_engine = engine
