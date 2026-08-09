@@ -74,6 +74,12 @@ class NotFound(OrqionError):
     status_code = 404
 
 
+class NoRouteAvailable(OrqionError):
+    error_code = "no_route_available"
+    reason = "Нет доступного маршрута для запроса"
+    status_code = 503
+
+
 class ConfigurationError(OrqionError):
     error_code = "configuration_error"
     reason = "Ошибка конфигурации"

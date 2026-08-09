@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
         await ensure_initial_admin(session, workspace_id)
+        from app.router.bootstrap import ensure_default_routing_rules
+
+        await ensure_default_routing_rules(session, workspace_id)
         await session.commit()
     app.state.workspace_id = workspace_id
 

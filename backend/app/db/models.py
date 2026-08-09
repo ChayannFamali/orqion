@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin, WorkspaceMixin
@@ -120,3 +129,27 @@ class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     cost_in: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_out: Mapped[float | None] = mapped_column(Float, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class RoutingRule(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Правило маршрутизации. arch.md §7.2, S-12.
+
+    Поля when_* — условия срабатывания (None = не проверяется).
+    to_models — список алиасов для сужения множества.
+    allow_locality — фильтр по locality (local/external).
+    fallback_models — резервные алиасы при недоступности провайдера.
+    """
+
+    __tablename__ = "routing_rule"
+
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    when_corpus_class: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    when_role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    when_task: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    when_model_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    to_models: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    allow_locality: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    fallback_models: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False, default="")
