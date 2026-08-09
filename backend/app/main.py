@@ -15,6 +15,7 @@ from app.config import Settings, get_or_create_secret_key
 from app.db.engine import create_engine, create_session_factory
 from app.db.workspace import ensure_default_workspace
 from app.logging import setup_logging
+from app.policy.rate_limiter import RateLimiter
 
 
 @asynccontextmanager
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await ensure_default_routing_rules(session, workspace_id)
         await session.commit()
     app.state.workspace_id = workspace_id
+    app.state.rate_limiter = RateLimiter()
 
     from app.providers.probe_scheduler import probe_scheduler
 
@@ -77,10 +79,11 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     from app.api.health import router as health_router
-    from app.api.routes import auth_router, conversations_router, providers_router
+    from app.api.routes import auth_router, chat_router, conversations_router, providers_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(chat_router)
     app.include_router(conversations_router)
     app.include_router(providers_router)
 
