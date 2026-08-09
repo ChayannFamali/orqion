@@ -43,8 +43,16 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     from pathlib import Path
 
+    from app.auth.rate_limit import LoginRateLimiter
+    from app.policy.rate_limiter import RateLimiter
+
     secret_key = get_or_create_secret_key(test_settings, Path(test_settings.blob_store_path))
     app.state.secret_key = secret_key
+    app.state.rate_limiter = RateLimiter()
+    app.state.login_rate_limiter = LoginRateLimiter(
+        max_attempts=test_settings.login_max_attempts,
+        period_seconds=test_settings.login_rate_period_seconds,
+    )
 
     yield app
 

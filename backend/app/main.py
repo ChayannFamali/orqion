@@ -46,6 +46,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await session.commit()
     app.state.workspace_id = workspace_id
     app.state.rate_limiter = RateLimiter()
+    from app.auth.rate_limit import LoginRateLimiter
+
+    app.state.login_rate_limiter = LoginRateLimiter(
+        max_attempts=settings.login_max_attempts,
+        period_seconds=settings.login_rate_period_seconds,
+    )
 
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler

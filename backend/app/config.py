@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     probe_interval_seconds: int = 900
 
+    login_max_attempts: int = 5
+    login_rate_period_seconds: int = 300
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.
