@@ -2,6 +2,11 @@
 
 arch.md §5.3: источник — usage_daily, не сырые события.
 Роль подтягивается через JOIN user → role, текущая на момент запроса.
+
+MVP-упрощение: manager видит весь workspace, как admin. Фильтрация по
+подразделению/команде не реализована — нет поля team/department на User.
+См. T-402a. Когда будет добавлено — фильтр по user.team_id должен быть
+на уровне SQL WHERE, не пост-обработкой.
 """
 
 from __future__ import annotations
