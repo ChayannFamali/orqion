@@ -33,6 +33,14 @@ class Settings(BaseSettings):
 
     blob_store_path: str = "./data/blobs"
 
+    # S3-совместимое хранилище (профиль standard/full)
+    blob_store_backend: str = "local"  # local | s3
+    s3_endpoint_url: str = ""
+    s3_bucket: str = "orqion-blobs"
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+
     embeddings_model: str = "BAAI/bge-m3"
     embeddings_backend: str = "local"
 

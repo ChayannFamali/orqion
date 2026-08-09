@@ -55,7 +55,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.rag.blob import LocalBlobStore
 
-    app.state.blob_store = LocalBlobStore(settings.blob_store_path)
+    if settings.blob_store_backend == "s3":
+        from app.rag.s3 import S3BlobStore
+
+        app.state.blob_store = S3BlobStore(
+            endpoint_url=settings.s3_endpoint_url,
+            bucket=settings.s3_bucket,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
+            region=settings.s3_region,
+        )
+    else:
+        app.state.blob_store = LocalBlobStore(settings.blob_store_path)
 
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler

@@ -37,11 +37,15 @@ vector-qdrant = [
 postgres = [
     "asyncpg==0.30.0",
 ]
+s3 = [
+    "aioboto3==13.1.0",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.2",
     "mypy==2.3.0",
+    "moto[server]==5.1.4",
 ]
 
 [project.scripts]
@@ -71,6 +75,14 @@ exclude = ["backend/app/db/migrations/"]
 
 [[tool.mypy.overrides]]
 module = "tiktoken"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aioboto3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "moto.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
