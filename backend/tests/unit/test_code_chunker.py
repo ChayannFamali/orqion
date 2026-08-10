@@ -158,12 +158,8 @@ def test_go_function_and_type() -> None:
     assert "Bar" in symbols
 
 
-def test_go_method_parent() -> None:
-    """Go: метод с receiver — parent определяется по типу receiver.
-
-    Note: Go methods are top-level nodes with a receiver field,
-    not children of type_declaration. Parent is extracted from receiver type.
-    """
+def test_go_method_value_receiver_parent() -> None:
+    """Go: метод с value receiver — parent = имя типа из receiver."""
     code = (
         b"package main\n\n"
         b"type Bar struct {\n    x int\n}\n\n"
@@ -173,10 +169,21 @@ def test_go_method_parent() -> None:
 
     method_chunks = [c for c in chunks if c.symbol == "method"]
     assert len(method_chunks) == 1
-    # Go method_declaration is top-level, parent is not found via tree walk
-    # because the method is not a child of type_declaration in Go AST.
-    # This is a known limitation — parent extraction for Go methods
-    # would require parsing the receiver type name.
+    assert method_chunks[0].parent == "Bar"
+
+
+def test_go_method_pointer_receiver_parent() -> None:
+    """Go: метод с pointer receiver — parent = имя типа, * отброшен."""
+    code = (
+        b"package main\n\n"
+        b"type Server struct {\n    x int\n}\n\n"
+        b"func (s *Server) Method() {\n    println(s.x)\n}\n"
+    )
+    chunks = chunk_code(code, "test.go")
+
+    method_chunks = [c for c in chunks if c.symbol == "Method"]
+    assert len(method_chunks) == 1
+    assert method_chunks[0].parent == "Server"
 
 
 def test_go_imports() -> None:

@@ -123,7 +123,16 @@ def _extract_symbol_name(node: Node, language: str) -> str | None:
 
 
 def _find_parent_name(node: Node, language: str) -> str | None:
-    """Поднимается по дереву до ближайшего контейнера (класс/структура/интерфейс)."""
+    """Поднимается по дереву до ближайшего контейнера (класс/структура/интерфейс).
+
+    Для Go method_declaration — top-level узел с receiver, не child of
+    type_declaration в AST. Тип извлекается из поля receiver (T-209a):
+    parameter_list → parameter_declaration → type → type_identifier,
+    с отбрасыванием pointer_type (*Server → Server).
+    """
+    if language == "go" and node.type == "method_declaration":
+        return _extract_go_receiver_type(node)
+
     container_types = _CONTAINER_TYPES.get(language, set())
     current = node.parent
     while current is not None:
@@ -132,6 +141,35 @@ def _find_parent_name(node: Node, language: str) -> str | None:
             if name is not None:
                 return name
         current = current.parent
+    return None
+
+
+def _extract_go_receiver_type(node: Node) -> str | None:
+    """Извлекает имя типа из receiver Go method_declaration.
+
+    receiver → parameter_list → parameter_declaration → type
+    type может быть type_identifier (Server) или pointer_type (*Server → Server).
+    """
+    recv = node.child_by_field_name("receiver")
+    if recv is None or recv.type != "parameter_list":
+        return None
+
+    for child in recv.children:
+        if child.type != "parameter_declaration":
+            continue
+        type_node = child.child_by_field_name("type")
+        if type_node is None:
+            continue
+        if type_node.type == "type_identifier":
+            text = type_node.text
+            return text.decode() if text is not None else None
+        if type_node.type == "pointer_type":
+            # pointer_type → type_identifier
+            for sub in type_node.children:
+                if sub.type == "type_identifier":
+                    text = sub.text
+                    return text.decode() if text is not None else None
+
     return None
 
 
