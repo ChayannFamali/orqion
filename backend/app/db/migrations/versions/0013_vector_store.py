@@ -1,0 +1,47 @@
+"""Vector store: FTS5 table for chunk search (T-212).
+
+Revision ID: 0013
+Revises: 0012
+Create Date: 2026-08-11
+
+fts_chunks — FTS5 virtual table для разреженного поиска (BM25).
+Фильтрация по index_version_id.
+
+vec_chunks (sqlite-vec) создаётся в runtime SQLiteVectorStore._get_conn,
+т.к. требует загруженного extension — SQLAlchemy async engine не позволяет
+load_extension через SQL.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "0013"
+down_revision: str | None = "0012"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    """Создание FTS5 таблицы.
+
+    FTS5 встроен в SQLite, не требует extension.
+    vec0 таблица (sqlite-vec) создаётся в runtime SQLiteVectorStore.
+    """
+    conn = op.get_bind()
+    conn.execute(
+        sa.text(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks "
+            "USING fts5(text, index_version_id UNINDEXED)"
+        )
+    )
+
+
+def downgrade() -> None:
+    """Удаление FTS5 и vec0 таблиц."""
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP TABLE IF EXISTS vec_chunks"))
+    conn.execute(sa.text("DROP TABLE IF EXISTS fts_chunks"))
