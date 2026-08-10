@@ -139,7 +139,9 @@ async def test_disabled_model_not_listed(
     """disabled-модель не видна через GET /api/models."""
     await _login_with_role(api_client, app_fixture, "admin")
     await _seed_provider_and_model(app_fixture, "local/enabled", "m1", "local", model_enabled=True)
-    await _seed_provider_and_model(app_fixture, "local/disabled", "m2", "local", model_enabled=False)
+    await _seed_provider_and_model(
+        app_fixture, "local/disabled", "m2", "local", model_enabled=False
+    )
 
     response = await api_client.get("/api/models")
     assert response.status_code == 200

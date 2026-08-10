@@ -11,6 +11,7 @@ from app.config import Settings
 from app.db.base import Base
 from app.db.engine import create_engine
 from app.db.models import Workspace  # noqa: F401 — регистрация в metadata
+from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,14 +35,19 @@ async def test_engine(test_settings: Settings) -> AsyncIterator[AsyncEngine]:
     """Создаёт таблицы, отдаёт движок, уничтожает после теста.
 
     Использует create_engine из app.db.engine — обеспечивает PRAGMA foreign_keys=ON.
+    Для drop_all — отдельный sync engine без event listener,
+    т.к. PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK.
     """
     engine = create_engine(test_settings)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+    sync_eng = create_sync_engine(test_settings.database_url)
+    with sync_eng.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        Base.metadata.drop_all(conn)
+    sync_eng.dispose()
 
 
 @pytest_asyncio.fixture

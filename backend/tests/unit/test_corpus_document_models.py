@@ -119,7 +119,7 @@ async def test_document_status_default_pending(db_session: AsyncSession) -> None
 
 @pytest.mark.asyncio
 async def test_document_deduplication(db_session: AsyncSession) -> None:
-    """UniqueConstraint (workspace_id, sha256) — дубликат → IntegrityError."""
+    """UniqueConstraint (corpus_id, sha256) — дубликат в тот же корпус → IntegrityError."""
     corpus = await _make_corpus(db_session, "Dedup")
     doc1 = Document(
         corpus_id=corpus.id,
@@ -201,6 +201,41 @@ async def test_document_different_workspace_same_sha(
         sha256="shared_sha",
     )
     doc2.workspace_id = ws2.id
+    db_session.add_all([doc1, doc2])
+    await db_session.flush()
+
+    assert doc1.id != doc2.id
+
+
+@pytest.mark.asyncio
+async def test_same_content_different_corpus_allowed(
+    db_session: AsyncSession,
+) -> None:
+    """Одинаковый sha256 в разных корпусах одного workspace — не дубликат."""
+    ws = await _make_workspace(db_session, "shared")
+    corpus1 = Corpus(name="C1")
+    corpus1.workspace_id = ws.id
+    corpus2 = Corpus(name="C2")
+    corpus2.workspace_id = ws.id
+    db_session.add_all([corpus1, corpus2])
+    await db_session.flush()
+
+    doc1 = Document(
+        corpus_id=corpus1.id,
+        blob_uri="shared_blob",
+        filename="readme.md",
+        mime="text/markdown",
+        sha256="same_content_sha",
+    )
+    doc1.workspace_id = ws.id
+    doc2 = Document(
+        corpus_id=corpus2.id,
+        blob_uri="shared_blob",
+        filename="readme.md",
+        mime="text/markdown",
+        sha256="same_content_sha",
+    )
+    doc2.workspace_id = ws.id
     db_session.add_all([doc1, doc2])
     await db_session.flush()
 

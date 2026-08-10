@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     login_max_attempts: int = 5
     login_rate_period_seconds: int = 300
 
+    # Загрузка документов (T-204)
+    max_upload_size_mb: int = 50
+    allowed_upload_extensions: str = ".pdf,.docx,.pptx,.xlsx,.py,.cpp,.ts,.go,.java,.sql,.md,.txt"
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

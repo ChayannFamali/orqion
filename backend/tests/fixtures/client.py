@@ -36,8 +36,10 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
         from app.auth.bootstrap import ensure_builtin_roles
+
         await ensure_builtin_roles(session, workspace_id)
         from app.router.bootstrap import ensure_default_routing_rules
+
         await ensure_default_routing_rules(session, workspace_id)
         await session.commit()
 
@@ -58,11 +60,22 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
         period_seconds=test_settings.login_rate_period_seconds,
     )
 
+    from app.rag.blob import LocalBlobStore
+
+    app.state.blob_store = LocalBlobStore(test_settings.blob_store_path)
+
     yield app
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+    # Отдельный sync engine без event listener для drop_all
+    # (PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK)
+    from sqlalchemy import create_engine as create_sync_engine
+
+    sync_eng = create_sync_engine(test_settings.database_url)
+    with sync_eng.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        Base.metadata.drop_all(conn)
+    sync_eng.dispose()
 
 
 @pytest_asyncio.fixture

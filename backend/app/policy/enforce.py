@@ -171,7 +171,9 @@ async def enforce_budget(
 
     result = await session.execute(
         select(
-            func.coalesce(func.sum(UsageDaily.tokens_in + UsageDaily.tokens_out), 0).label("total_tokens"),
+            func.coalesce(func.sum(UsageDaily.tokens_in + UsageDaily.tokens_out), 0).label(
+                "total_tokens"
+            ),
             func.coalesce(func.sum(UsageDaily.cost), 0.0).label("total_cost"),
         ).where(
             UsageDaily.workspace_id == workspace_id,

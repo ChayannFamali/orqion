@@ -67,13 +67,15 @@ async def _get_k2_rule_id(app_fixture: FastAPI) -> str:
     workspace_id = app_fixture.state.workspace_id
     async with factory() as session:
         result = await session.execute(
-            select(RoutingRule).where(
+            select(RoutingRule)
+            .where(
                 RoutingRule.workspace_id == workspace_id,
-            ).order_by(RoutingRule.order)
+            )
+            .order_by(RoutingRule.order)
         )
         for rule in result.scalars().all():
             if rule.when_corpus_class and "К2" in rule.when_corpus_class:
-                return rule.id
+                return str(rule.id)
     # Если не найдено seed-правило К2, ищем по allow_locality=["local"]
     async with factory() as session:
         result = await session.execute(
@@ -84,7 +86,7 @@ async def _get_k2_rule_id(app_fixture: FastAPI) -> str:
         )
         for rule in result.scalars().all():
             if rule.allow_locality == ["local"]:
-                return rule.id
+                return str(rule.id)
     pytest.fail("Seed rule К2/К3→local not found")
 
 

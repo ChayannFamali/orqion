@@ -14,6 +14,7 @@ import socket
 import subprocess
 import time
 import uuid
+from collections.abc import Generator
 
 import pytest
 
@@ -70,7 +71,7 @@ class _S3Server:
 
 
 @pytest.fixture(scope="module")
-def s3_server() -> _S3Server:
+def s3_server() -> Generator[_S3Server, None, None]:
     """Запускает moto_server на фиксированном порту."""
     server = _S3Server()
     server.start()

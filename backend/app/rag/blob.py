@@ -104,6 +104,7 @@ class LocalBlobStore:
         loop = asyncio.get_event_loop()
 
         try:
+
             def _open() -> Any:
                 return open(temp_path, "wb")
 

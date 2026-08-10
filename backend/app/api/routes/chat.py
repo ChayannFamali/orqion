@@ -188,9 +188,7 @@ async def _stream_with_save(
     """
     try:
         async with span(trace_ctx, "stream"):
-            async for chunk in execute_stream(
-                chat_ctx, model, provider, secret_key, fallbacks
-            ):
+            async for chunk in execute_stream(chat_ctx, model, provider, secret_key, fallbacks):
                 yield chunk
     finally:
         # Фактическая модель — могла смениться на fallback

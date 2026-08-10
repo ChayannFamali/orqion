@@ -19,9 +19,7 @@ from app.db.session import get_session
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 
-router = APIRouter(
-    prefix="/api/models", tags=["models"], dependencies=[Depends(current_user)]
-)
+router = APIRouter(prefix="/api/models", tags=["models"], dependencies=[Depends(current_user)])
 
 
 def _filter_by_policy(

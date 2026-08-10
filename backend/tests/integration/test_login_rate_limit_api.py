@@ -57,7 +57,9 @@ async def test_login_rate_limited_after_max_attempts(
             "/api/auth/login",
             json={"email": "login-test@orqion.local", "password": "wrong"},
         )
-        assert response.status_code == 401, f"Attempt {i + 1}: expected 401, got {response.status_code}"
+        assert response.status_code == 401, (
+            f"Attempt {i + 1}: expected 401, got {response.status_code}"
+        )
 
     # 4-я попытка → 429
     response = await api_client.post(

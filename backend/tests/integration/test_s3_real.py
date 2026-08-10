@@ -15,8 +15,8 @@ import pytest
 
 pytest.importorskip("aioboto3")
 
-_s3_endpoint = os.environ.get("ORQION_S3_ENDPOINT_URL")
-_s3_bucket = os.environ.get("ORQION_S3_BUCKET")
+_s3_endpoint = os.environ.get("ORQION_S3_ENDPOINT_URL", "")
+_s3_bucket = os.environ.get("ORQION_S3_BUCKET", "")
 
 skip_reason = "Set ORQION_S3_ENDPOINT_URL and ORQION_S3_BUCKET to run real S3 tests"
 

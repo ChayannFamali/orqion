@@ -140,7 +140,9 @@ async def test_fallback_on_primary_5xx_non_stream(
     """Основная модель 5xx → fallback → успех → usage_event записан с fallback-моделью."""
     await _login_with_role(api_client, app_fixture, "admin")
     primary_id, _ = await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream")
-    fallback_id, _ = await _seed_provider_and_model(app_fixture, "local/fallback", "fallback-upstream")
+    fallback_id, _ = await _seed_provider_and_model(
+        app_fixture, "local/fallback", "fallback-upstream"
+    )
     await _seed_routing_rule_with_fallback(app_fixture, "local/primary", "local/fallback")
 
     call_count = {"primary": 0, "fallback": 0}
@@ -208,7 +210,9 @@ async def test_fallback_on_primary_5xx_stream(
     """Stream: основная модель 5xx до первого токена → fallback → стриминг успешно."""
     await _login_with_role(api_client, app_fixture, "admin")
     await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream")
-    fallback_id, _ = await _seed_provider_and_model(app_fixture, "local/fallback", "fallback-upstream")
+    fallback_id, _ = await _seed_provider_and_model(
+        app_fixture, "local/fallback", "fallback-upstream"
+    )
     await _seed_routing_rule_with_fallback(app_fixture, "local/primary", "local/fallback")
 
     async def _stub_stream(
@@ -302,9 +306,7 @@ async def test_no_fallback_after_first_token(
 
     assert response.status_code == 200
     lines = response.text.strip().split("\n")
-    events = [
-        json.loads(l[6:]) for l in lines if l.startswith("data: ") and "[DONE]" not in l
-    ]
+    events = [json.loads(l[6:]) for l in lines if l.startswith("data: ") and "[DONE]" not in l]
     token_events = [e for e in events if e["type"] == "token"]
     error_events = [e for e in events if e["type"] == "error"]
 
@@ -326,7 +328,9 @@ async def test_support_role_fallback_stays_local(
     await _login_with_role(api_client, app_fixture, "support", policy=support_policy)
 
     await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream", "local")
-    await _seed_provider_and_model(app_fixture, "external/fallback", "external-upstream", "external")
+    await _seed_provider_and_model(
+        app_fixture, "external/fallback", "external-upstream", "external"
+    )
     await _seed_routing_rule_with_fallback(app_fixture, "local/primary", "external/fallback")
 
     fallback_called = {"yes": False}

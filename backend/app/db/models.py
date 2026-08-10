@@ -372,7 +372,18 @@ class Corpus(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     data_class: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # FK добавляется в T-205 через ALTER TABLE после создания index_version
-    active_index_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # use_alter=True: разрывает цикл corpus↔index_version для DDL-сортировки
+    # ondelete=SET NULL: удаление index_version не блокирует corpus
+    active_index_version_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "index_version.id",
+            use_alter=True,
+            name="fk_corpus_active_index_version_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     pinned_model_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("model.id"),
@@ -382,6 +393,11 @@ class Corpus(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     documents: Mapped[list[Document]] = relationship(
         back_populates="corpus",
         cascade="all, delete-orphan",
+    )
+    index_versions: Mapped[list[IndexVersion]] = relationship(
+        back_populates="corpus",
+        cascade="all, delete-orphan",
+        foreign_keys="IndexVersion.corpus_id",
     )
 
 
@@ -396,7 +412,7 @@ class Document(Base, IdMixin, WorkspaceMixin):
 
     __tablename__ = "document"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "sha256", name="uq_document_workspace_sha256"),
+        UniqueConstraint("corpus_id", "sha256", name="uq_document_corpus_sha256"),
         # workspace_id индекс создаётся WorkspaceMixin (index=True)
         Index("ix_document_corpus_id", "corpus_id"),
     )
@@ -408,7 +424,9 @@ class Document(Base, IdMixin, WorkspaceMixin):
     )
     blob_uri: Mapped[str] = mapped_column(String(64), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    mime: Mapped[str] = mapped_column(String(255), nullable=False, default="application/octet-stream")
+    mime: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="application/octet-stream"
+    )
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, default="upload")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
@@ -419,3 +437,64 @@ class Document(Base, IdMixin, WorkspaceMixin):
     )
 
     corpus: Mapped[Corpus] = relationship(back_populates="documents")
+
+
+class IndexVersion(Base, IdMixin, WorkspaceMixin, TimestampMixin):
+    """Версия индекса корпуса (ADR-8: blue-green переиндексация).
+
+    Статусы: building → active → retired.
+    active_index_version_id в Corpus ссылается на одну из этих записей.
+    """
+
+    __tablename__ = "index_version"
+    __table_args__ = (Index("ix_index_version_corpus_id", "corpus_id"),)
+
+    corpus_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("corpus.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    embedding_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    chunker: Mapped[str] = mapped_column(String(50), nullable=False)
+    chunker_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="building")
+    stats: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+
+    chunks: Mapped[list[Chunk]] = relationship(
+        back_populates="index_version",
+        cascade="all, delete-orphan",
+    )
+    corpus: Mapped[Corpus] = relationship(
+        back_populates="index_versions",
+        foreign_keys=[corpus_id],
+    )
+
+
+class Chunk(Base, IdMixin, WorkspaceMixin):
+    """Чанк документа в версии индекса (ADR-9).
+
+    Метаданные зависят от типа: путь заголовков для документов,
+    файл/язык/символ/класс/импорты для кода.
+    """
+
+    __tablename__ = "chunk"
+    __table_args__ = (
+        Index("ix_chunk_index_version_id", "index_version_id"),
+        Index("ix_chunk_document_id", "document_id"),
+    )
+
+    index_version_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("index_version.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("document.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    meta: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+
+    index_version: Mapped[IndexVersion] = relationship(back_populates="chunks")

@@ -219,9 +219,7 @@ async def prepare_chat(
     fallback_with_providers: list[tuple[Model, Provider]] = []
     if fallbacks:
         provider_ids = {m.provider_id for m in fallbacks}
-        prov_result = await session.execute(
-            select(Provider).where(Provider.id.in_(provider_ids))
-        )
+        prov_result = await session.execute(select(Provider).where(Provider.id.in_(provider_ids)))
         providers_by_id = {p.id: p for p in prov_result.scalars().all()}
         fallback_with_providers = [
             (m, providers_by_id[m.provider_id])

@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    import aioboto3  # type: ignore[import-not-found]  # noqa: F401
+    import aioboto3  # noqa: F401
 
     pytest.skip("aioboto3 is installed, skipping missing-deps test", allow_module_level=True)
 except ImportError:

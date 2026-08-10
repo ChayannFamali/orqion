@@ -81,9 +81,9 @@ def upgrade() -> None:
         ),
         sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
-            "workspace_id",
+            "corpus_id",
             "sha256",
-            name="uq_document_workspace_sha256",
+            name="uq_document_corpus_sha256",
         ),
     )
     # workspace_id индекс создаётся автоматически через index=True в WorkspaceMixin

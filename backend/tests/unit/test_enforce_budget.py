@@ -130,9 +130,7 @@ async def test_budget_tokens_month_exceeded(db_session: AsyncSession) -> None:
 
     policy = _make_policy(budget={"tokens_month": 1_000_000})
     with pytest.raises(BudgetExceeded) as exc_info:
-        await enforce_budget(
-            db_session, policy, "user-1", "ws-1", pending_tokens=10_000
-        )
+        await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=10_000)
     assert exc_info.value.status_code == 429
     constraint = exc_info.value.constraint
     assert constraint is not None
@@ -150,9 +148,7 @@ async def test_budget_cost_month_exceeded(db_session: AsyncSession) -> None:
 
     policy = _make_policy(budget={"cost_month": 10})
     with pytest.raises(BudgetExceeded) as exc_info:
-        await enforce_budget(
-            db_session, policy, "user-1", "ws-1", pending_cost=3.0
-        )
+        await enforce_budget(db_session, policy, "user-1", "ws-1", pending_cost=3.0)
     assert exc_info.value.status_code == 429
     constraint = exc_info.value.constraint
     assert constraint is not None
@@ -177,9 +173,7 @@ async def test_budget_ignores_other_users(db_session: AsyncSession) -> None:
     await _seed_usage(db_session, "ws-1", "other-user", "model-1", 900_000, 100_000)
 
     policy = _make_policy(budget={"tokens_month": 1_000_000})
-    await enforce_budget(
-        db_session, policy, "user-1", "ws-1", pending_tokens=100_000
-    )
+    await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=100_000)
 
 
 @pytest.mark.asyncio
@@ -189,6 +183,4 @@ async def test_budget_ignores_other_workspaces(db_session: AsyncSession) -> None
     await _seed_usage(db_session, "other-ws", "user-1", "model-1", 900_000, 100_000)
 
     policy = _make_policy(budget={"tokens_month": 1_000_000})
-    await enforce_budget(
-        db_session, policy, "user-1", "ws-1", pending_tokens=100_000
-    )
+    await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=100_000)

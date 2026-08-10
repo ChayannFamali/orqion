@@ -78,9 +78,7 @@ async def test_put_deduplication(blob_store: object, tmp_path: str) -> None:
     assert ref1.sha256 == ref2.sha256
 
 
-async def test_put_different_content_different_uri(
-    blob_store: object, tmp_path: str
-) -> None:
+async def test_put_different_content_different_uri(blob_store: object, tmp_path: str) -> None:
     """Разное содержимое → разный URI."""
     ref1 = await blob_store.put(_async_iter(b"content A"))  # type: ignore[attr-defined]
     ref2 = await blob_store.put(_async_iter(b"content B"))  # type: ignore[attr-defined]
@@ -136,9 +134,7 @@ async def test_delete(blob_store: object, tmp_path: str) -> None:
     await blob_store.delete(ref.uri)  # type: ignore[attr-defined]
 
 
-async def test_directory_auto_created(
-    blob_store_factory: BlobStoreFactory, tmp_path: str
-) -> None:
+async def test_directory_auto_created(blob_store_factory: BlobStoreFactory, tmp_path: str) -> None:
     """Каталог создаётся сам при первом put."""
     import os
 
@@ -151,9 +147,7 @@ async def test_directory_auto_created(
     assert os.path.exists(root)
 
 
-async def test_interrupted_put_leaves_no_blob(
-    blob_store: object, tmp_path: str
-) -> None:
+async def test_interrupted_put_leaves_no_blob(blob_store: object, tmp_path: str) -> None:
     """Исключение в середине потока: exists возвращает False, мусора нет."""
     data = b"x" * 500
     stream = _InterruptedStream(data, fail_after=2)

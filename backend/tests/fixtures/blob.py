@@ -25,6 +25,7 @@ async def blob_store_factory() -> object:
 
     T-202 передаст S3BlobStore-фабрику с тем же протоколом.
     """
+
     def factory(root: str) -> LocalBlobStore:
         return LocalBlobStore(root)
 

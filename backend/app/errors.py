@@ -84,3 +84,21 @@ class ConfigurationError(OrqionError):
     error_code = "configuration_error"
     reason = "Ошибка конфигурации"
     status_code = 500
+
+
+class FileTooLarge(OrqionError):
+    error_code = "file_too_large"
+    reason = "Размер файла превышает допустимый лимит"
+    status_code = 413
+
+
+class FileTypeNotAllowed(OrqionError):
+    error_code = "file_type_not_allowed"
+    reason = "Тип файла не поддерживается"
+    status_code = 415
+
+
+class DuplicateDocument(OrqionError):
+    error_code = "duplicate_document"
+    reason = "Документ с таким содержимым уже загружен"
+    status_code = 409
