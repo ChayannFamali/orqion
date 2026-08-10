@@ -46,7 +46,7 @@ class BlobStore(Protocol):
         """
         ...
 
-    async def get(self, uri: str) -> AsyncIterator[bytes]:
+    def get(self, uri: str) -> AsyncIterator[bytes]:
         """Потоковое чтение blob по uri.
 
         Возбуждает KeyError, если blob не найден.

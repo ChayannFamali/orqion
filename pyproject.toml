@@ -24,12 +24,12 @@ dependencies = [
     "cryptography==50.0.0",
     "anyio==4.14.2",
     "python-multipart==0.0.20",
+    "docling-slim[format-pdf,format-office,feat-chunking,convert-core]==2.119.0",
 ]
 
 [project.optional-dependencies]
 rag = [
     "FlagEmbedding==1.4.0",
-    "docling==2.118.1",
     "tree-sitter==0.26.0",
 ]
 vector-qdrant = [
@@ -47,6 +47,7 @@ dev = [
     "ruff==0.16.2",
     "mypy==2.3.0",
     "moto[server]==5.1.4",
+    "reportlab==5.0.0",
 ]
 
 [project.scripts]
@@ -84,6 +85,34 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "moto.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "reportlab.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pypdfium2"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "docling.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "docling_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "docling_ibm_models"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "openpyxl"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pptx"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
