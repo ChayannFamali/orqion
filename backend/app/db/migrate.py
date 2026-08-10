@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
-from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Settings
-from app.db.engine import create_engine
 
-ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
-MIGRATIONS_DIR = Path(__file__).resolve().parent / "db" / "migrations"
+ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent.parent / "alembic.ini"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def _make_alembic_config(database_url: str) -> Config:
@@ -38,12 +36,11 @@ def run_migrations_sync(database_url: str) -> None:
 
 
 async def run_migrations(settings: Settings) -> None:
-    """Применяет миграции, используя async-движок."""
-    engine: AsyncEngine = create_engine(settings)
+    """Применяет миграции в отдельном потоке.
 
-    def _do_migrations(_engine: Any) -> None:
-        run_migrations_sync(settings.database_url)
-
-    async with engine.begin() as conn:
-        await conn.run_sync(_do_migrations)
-    await engine.dispose()
+    env.py вызывает asyncio.run() для async-движка Alembic, поэтому
+    синхронный запуск из async-контекста требует отдельный поток —
+    иначе asyncio.run падает с «cannot be called from a running event loop».
+    Аналогично main.py lifespan, который использует asyncio.to_thread.
+    """
+    await asyncio.to_thread(run_migrations_sync, settings.database_url)
