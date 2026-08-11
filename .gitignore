@@ -14,4 +14,4 @@ build/
 .env.*
 !.env.example
 .DS_Store
-.docs/
+docs/
