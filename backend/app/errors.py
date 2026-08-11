@@ -102,3 +102,9 @@ class DuplicateDocument(OrqionError):
     error_code = "duplicate_document"
     reason = "Документ с таким содержимым уже загружен"
     status_code = 409
+
+
+class IndexVersionGone(OrqionError):
+    error_code = "index_version_gone"
+    reason = "Версия индекса удалена и не может быть восстановлена"
+    status_code = 409
