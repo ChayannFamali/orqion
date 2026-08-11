@@ -14,6 +14,7 @@ chunk_id — реальный идентификатор чанка в осно�
 
 from __future__ import annotations
 
+import asyncio
 import os
 import struct
 from collections.abc import Sequence
@@ -93,42 +94,48 @@ class SQLiteVectorStore:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._conn: aiosqlite.Connection | None = None
+        self._conn_lock = asyncio.Lock()
 
     async def _get_conn(self) -> aiosqlite.Connection:
         if self._conn is not None:
             return self._conn
 
-        conn = await aiosqlite.connect(self._db_path)
+        async with self._conn_lock:
+            # Double-check после захвата lock — другой task мог создать соединение
+            if self._conn is not None:
+                return self._conn
 
-        # PRAGMA auto_vacuum = INCREMENTAL — позволяет drop_version
-        # освобождать дисковое пространство через PRAGMA incremental_vacuum.
-        # Должно быть установлено до создания таблиц (SQLite хранит в заголовке БД).
-        await conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+            conn = await aiosqlite.connect(self._db_path)
 
-        await conn.enable_load_extension(True)
-        await conn.load_extension(_loadable_path())
+            # PRAGMA auto_vacuum = INCREMENTAL — позволяет drop_version
+            # освобождать дисковое пространство через PRAGMA incremental_vacuum.
+            # Должно быть установлено до создания таблиц (SQLite хранит в заголовке БД).
+            await conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
 
-        # Создание таблиц если не существуют
-        await conn.execute(
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
-            f"USING vec0(embedding float[{EMBEDDING_DIM}], "
-            f"index_version_id text)"
-        )
-        await conn.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks "
-            "USING fts5(text, index_version_id UNINDEXED)"
-        )
-        # Маппинг rowid ↔ chunk_id. rowid — auto-assigned в vec_chunks/fts_chunks,
-        # chunk_id — UUID из основной таблицы chunk (String(36)).
-        await conn.execute(
-            "CREATE TABLE IF NOT EXISTS vec_chunk_map "
-            "(rowid INTEGER PRIMARY KEY, chunk_id TEXT NOT NULL, "
-            "index_version_id TEXT NOT NULL)"
-        )
-        await conn.commit()
+            await conn.enable_load_extension(True)
+            await conn.load_extension(_loadable_path())
 
-        self._conn = conn
-        return conn
+            # Создание таблиц если не существуют
+            await conn.execute(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
+                f"USING vec0(embedding float[{EMBEDDING_DIM}], "
+                f"index_version_id text)"
+            )
+            await conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks "
+                "USING fts5(text, index_version_id UNINDEXED)"
+            )
+            # Маппинг rowid ↔ chunk_id. rowid — auto-assigned в vec_chunks/fts_chunks,
+            # chunk_id — UUID из основной таблицы chunk (String(36)).
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS vec_chunk_map "
+                "(rowid INTEGER PRIMARY KEY, chunk_id TEXT NOT NULL, "
+                "index_version_id TEXT NOT NULL)"
+            )
+            await conn.commit()
+
+            self._conn = conn
+            return conn
 
     async def upsert(self, index_version_id: str, chunks: Sequence[EmbeddedChunk]) -> None:
         """Запись чанков: векторы в vec_chunks, текст в fts_chunks, маппинг в vec_chunk_map.
