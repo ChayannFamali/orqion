@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import _utcnow
 from app.db.models import AuditLog, Chunk, Corpus, Document, IndexVersion
 from app.errors import (
+    CorpusNotReady,
     DuplicateDocument,
     FileTooLarge,
     FileTypeNotAllowed,
@@ -376,3 +377,33 @@ async def cleanup_retired_versions(
     await session.flush()
 
     return len(retired_versions)
+
+
+async def resolve_corpus(
+    session: AsyncSession,
+    workspace_id: str,
+    corpus_name: str,
+) -> Corpus:
+    """Загружает корпус по имени в рамках workspace.
+
+    Возбуждает NotFound — корпус не существует.
+    Возбуждает CorpusNotReady — нет активной версии индекса.
+    """
+    result = await session.execute(
+        select(Corpus).where(
+            Corpus.workspace_id == workspace_id,
+            Corpus.name == corpus_name,
+        )
+    )
+    corpus = result.scalar_one_or_none()
+    if corpus is None:
+        raise NotFound(
+            constraint={"object": "corpus", "name": corpus_name},
+            hint="Корпус не найден",
+        )
+    if corpus.active_index_version_id is None:
+        raise CorpusNotReady(
+            constraint={"corpus": corpus_name},
+            hint="Корпус не имеет активной версии индекса",
+        )
+    return corpus

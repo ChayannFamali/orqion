@@ -48,6 +48,7 @@ class RagState:
     answer: str | None = None
     degraded: bool = False
     errors: list[str] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
 
 
 @dataclass
@@ -169,6 +170,7 @@ async def step_generate(state: RagState, ctx: RagContext) -> RagState:
         temperature=0.7,
     )
     content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    state.usage = result.get("usage")
     state.answer = content if content else None
     if not state.answer:
         state.degraded = True

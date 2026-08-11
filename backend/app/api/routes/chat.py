@@ -28,6 +28,8 @@ from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
+from app.rag.pipeline import RagContext, RagState, run_pipeline
+from app.rag.service import resolve_corpus
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
@@ -97,6 +99,20 @@ async def chat(
         {"role": m.role, "content": m.content} for m in body.messages
     ]
 
+    # T-221: корпус resolution — если corpus_name задан, корпус = источник истины
+    # для data_class и pinned_model_id (ADR-12)
+    corpus_data_class = body.corpus_data_class
+    model_alias = body.model_alias
+    corpus = None
+    if body.corpus_name is not None:
+        async with span(trace_ctx, "resolve_corpus"):
+            corpus = await resolve_corpus(session, workspace_id, body.corpus_name)
+        # Корпус переопределяет data_class из БД
+        corpus_data_class = corpus.data_class
+        # pinned_model_id для К2/К3 переопределяет выбор пользователя
+        if corpus.pinned_model_id is not None:
+            model_alias = corpus.pinned_model_id
+
     async with span(trace_ctx, "prepare"):
         chat_ctx, model, provider, fallbacks = await prepare_chat(
             session=session,
@@ -104,11 +120,11 @@ async def chat(
             role_name=role.name,
             policy=policy,
             messages=messages_dicts,
-            model_alias=body.model_alias,
+            model_alias=model_alias,
             max_tokens=body.max_tokens,
             temperature=body.temperature,
             stream=body.stream,
-            corpus_data_class=body.corpus_data_class,
+            corpus_data_class=corpus_data_class,
             corpus_name=body.corpus_name,
             task_type=body.task_type,
             conversation_id=body.conversation_id,
@@ -121,6 +137,81 @@ async def chat(
     # Коммитим trace + prepare данные до возврата StreamingResponse,
     # иначе SQLite блокируется при записи в _stream_with_save
     await session.commit()
+
+    # T-221: RAG-конвейер, если корпус задан
+    if corpus is not None:
+        vector_store = request.app.state.vector_store
+        embedding_backend = request.app.state.embedding_backend
+
+        rag_state = RagState(
+            query=messages_dicts[-1]["content"],
+            trace_id=trace_ctx.trace_id,
+        )
+        rag_ctx = RagContext(
+            session=session,
+            settings=request.app.state.settings,
+            vector_store=vector_store,
+            embedding_backend=embedding_backend,
+            secret_key=secret_key,
+            workspace_id=workspace_id,
+            index_version_id=corpus.active_index_version_id or "",
+            model=model,
+            provider=provider,
+            trace_ctx=trace_ctx,
+            messages=messages_dicts,
+        )
+
+        async with span(trace_ctx, "rag_pipeline"):
+            rag_state = await run_pipeline(rag_state, rag_ctx)
+
+        # usage_event — всегда, даже при degraded/упавшем generate
+        # degraded=True от ранних шагов (rewrite/rerank) — НЕ ошибка биллинга:
+        # step_generate всё равно вызвал провайдера и потратил токены.
+        # status="error" только когда ответ не получен (usage is None).
+        rag_usage = rag_state.usage or {}
+        tokens_in = rag_usage.get("prompt_tokens", 0)
+        tokens_out = rag_usage.get("completion_tokens", 0)
+        cost = calculate_cost(tokens_in, tokens_out, model.cost_in, model.cost_out)
+        latency_ms = (
+            int(1000 * (time.monotonic() - chat_ctx.started_at)) if chat_ctx.started_at else 0
+        )
+        generate_failed = rag_state.usage is None
+        status = "error" if generate_failed else "ok"
+
+        conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
+
+        usage_record = UsageRecord(
+            user_id=user.id,
+            model_id=model.id,
+            conversation_id=conv_id,
+            message_id=msg_id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=cost,
+            latency_ms=latency_ms,
+            status=status,
+            error_code="rag_generate_failed" if generate_failed else None,
+        )
+        await record_usage(session, workspace_id, usage_record)
+
+        await finalize_trace(
+            session,
+            trace_ctx,
+            conversation_id=conv_id,
+            message_id=msg_id,
+            error=rag_state.degraded,
+        )
+
+        result: dict[str, object] = {
+            "type": "complete",
+            "content": rag_state.answer or "",
+            "usage": {"tokens_in": tokens_in, "tokens_out": tokens_out},
+            "model": model.alias,
+            "conversation_id": conv_id,
+            "rag_degraded": rag_state.degraded,
+            "rag_errors": rag_state.errors if rag_state.degraded else [],
+        }
+        return result
 
     if body.stream:
         session_factory: async_sessionmaker[AsyncSession] = request.app.state.db_session_factory

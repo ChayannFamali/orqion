@@ -54,6 +54,7 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     secret_key = get_or_create_secret_key(test_settings, Path(test_settings.blob_store_path))
     app.state.secret_key = secret_key
+    app.state.settings = test_settings
     app.state.rate_limiter = RateLimiter()
     app.state.login_rate_limiter = LoginRateLimiter(
         max_attempts=test_settings.login_max_attempts,
@@ -64,8 +65,18 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     app.state.blob_store = LocalBlobStore(test_settings.blob_store_path)
 
+    # T-221: vector_store + embedding_backend для RAG-конвейера
+    from app.rag.vector_store import SQLiteVectorStore
+
+    app.state.vector_store = SQLiteVectorStore(test_settings.vector_store_path)
+
+    from unittest.mock import AsyncMock
+
+    app.state.embedding_backend = AsyncMock()
+
     yield app
 
+    await app.state.vector_store.close()
     await engine.dispose()
     # Отдельный sync engine без event listener для drop_all
     # (PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK)

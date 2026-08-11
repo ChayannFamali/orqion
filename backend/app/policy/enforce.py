@@ -15,6 +15,7 @@ from app.errors import (
     ConfigurationError,
     ContextLimitExceeded,
     DataClassViolation,
+    Forbidden,
     ModelNotAllowed,
     RateLimitExceeded,
 )
@@ -74,6 +75,16 @@ def enforce(
                 "locality": action.model_locality,
             },
             hint="Для этого корпуса допустимы только локальные модели",
+        )
+
+    # 1.5. Видимость корпуса — проверка до поиска (S-12, ADR-12)
+    if action.corpus_name is not None and not _matches(policy.corpora, action.corpus_name):
+        raise Forbidden(
+            constraint={
+                "corpus": action.corpus_name,
+                "allowed": policy.corpora,
+            },
+            hint="Корпус не разрешён политикой роли",
         )
 
     # 2. Видимость модели

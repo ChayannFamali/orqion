@@ -108,3 +108,15 @@ class IndexVersionGone(OrqionError):
     error_code = "index_version_gone"
     reason = "Версия индекса удалена и не может быть восстановлена"
     status_code = 409
+
+
+class Forbidden(OrqionError):
+    error_code = "forbidden"
+    reason = "Доступ запрещён политикой роли"
+    status_code = 403
+
+
+class CorpusNotReady(OrqionError):
+    error_code = "corpus_not_ready"
+    reason = "Корпус не имеет активной версии индекса"
+    status_code = 409

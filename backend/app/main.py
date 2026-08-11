@@ -22,6 +22,7 @@ from app.policy.rate_limiter import RateLimiter
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings()
     setup_logging(settings.log_level)
+    app.state.settings = settings
 
     data_dir = Path(settings.blob_store_path).parent
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +80,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     else:
         app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
+
+    # Embedding backend для RAG-конвейера (T-221)
+    from app.rag.embeddings import LocalEmbeddingBackend
+
+    app.state.embedding_backend = LocalEmbeddingBackend(settings.embeddings_model)
 
     # Ресурсы, требующие close() при остановке, регистрируются в AsyncExitStack.
     # blob_store (LocalBlobStore/S3BlobStore) не имеет close() — нет открытых
