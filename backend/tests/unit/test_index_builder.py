@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 from app.db.models import Chunk, Corpus, Document, IndexVersion, Workspace
@@ -22,6 +23,7 @@ from app.rag.embeddings import EmbeddedChunk
 from app.rag.index_builder import build_index_version
 from app.rag.vector_store import EMBEDDING_DIM, SQLiteVectorStore
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # ---------------------------------------------------------------------------
 # Заглушки
@@ -123,8 +125,18 @@ def embedding_backend() -> StubEmbeddingBackend:
     return StubEmbeddingBackend()
 
 
+@pytest.fixture(autouse=True)
+async def _close_vector_store(vector_store: SQLiteVectorStore) -> AsyncIterator[None]:
+    """Закрывает соединение vector_store после теста.
+
+    Без close() aiosqlite daemon thread не даёт процессу завершиться на Linux CI.
+    """
+    yield
+    await vector_store.close()
+
+
 async def _make_corpus(
-    session: object,
+    session: AsyncSession,
     workspace: Workspace,
     name: str = "test-corpus",
 ) -> Corpus:
@@ -133,13 +145,13 @@ async def _make_corpus(
         workspace_id=workspace.id,
         name=name,
     )
-    session.add(corpus)  # type: ignore[attr-defined]
-    await session.flush()  # type: ignore[attr-defined]
+    session.add(corpus)
+    await session.flush()
     return corpus
 
 
 async def _add_document(
-    session: object,
+    session: AsyncSession,
     blob_store: LocalBlobStore,
     workspace: Workspace,
     corpus: Corpus,
@@ -164,13 +176,13 @@ async def _add_document(
         source_type="upload",
         status="pending",
     )
-    session.add(doc)  # type: ignore[attr-defined]
-    await session.flush()  # type: ignore[attr-defined]
+    session.add(doc)
+    await session.flush()
     return doc
 
 
 async def _make_active_version(
-    session: object,
+    session: AsyncSession,
     workspace: Workspace,
     corpus: Corpus,
     embedding_model: str = "test-embed",
@@ -185,11 +197,11 @@ async def _make_active_version(
         status="active",
         stats={"status": "completed"},
     )
-    session.add(version)  # type: ignore[attr-defined]
-    await session.flush()  # type: ignore[attr-defined]
+    session.add(version)
+    await session.flush()
 
     corpus.active_index_version_id = version.id
-    await session.flush()  # type: ignore[attr-defined]
+    await session.flush()
     return version
 
 
@@ -200,15 +212,15 @@ async def _make_active_version(
 
 @pytest.mark.asyncio
 async def test_build_creates_index_version_and_chunks(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
     embedding_backend: StubEmbeddingBackend,
 ) -> None:
     """Базовый сценарий: 2 документа → чанки в БД + vector store, stats обновлён."""
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
     await _add_document(
@@ -217,10 +229,10 @@ async def test_build_creates_index_version_and_chunks(
     await _add_document(
         db_session, blob_store, workspace, corpus, "doc2.md", b"# Another\nFoo bar baz"
     )
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     result = await build_index_version(
-        db_session,  # type: ignore[arg-type]
+        db_session,
         blob_store,
         vector_store,
         embedding_backend,
@@ -229,7 +241,7 @@ async def test_build_creates_index_version_and_chunks(
     )
 
     # index_version создан
-    version = await db_session.get(IndexVersion, result.index_version_id)  # type: ignore[arg-type]
+    version = await db_session.get(IndexVersion, result.index_version_id)
     assert version is not None
     assert version.status == "building"
     assert version.chunker == "mixed-v1"
@@ -241,12 +253,10 @@ async def test_build_creates_index_version_and_chunks(
     assert stats["status"] == "completed"
     assert stats["documents_total"] == 2
     assert stats["documents_done"] == 2
-    assert stats["chunks_total"] > 0
+    assert cast(int, stats["chunks_total"]) > 0
 
     # Чанки в БД
-    chunks = await db_session.execute(  # type: ignore[attr-defined]
-        select(Chunk).where(Chunk.index_version_id == version.id)
-    )
+    chunks = await db_session.execute(select(Chunk).where(Chunk.index_version_id == version.id))
     chunk_list = list(chunks.scalars().all())
     assert len(chunk_list) == result.chunks_created
     assert len(chunk_list) > 0
@@ -259,7 +269,7 @@ async def test_build_creates_index_version_and_chunks(
 
 @pytest.mark.asyncio
 async def test_search_works_during_build(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
 ) -> None:
@@ -274,8 +284,8 @@ async def test_search_works_during_build(
     6. Разблокируем build, завершаем
     """
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
 
@@ -294,8 +304,8 @@ async def test_search_works_during_build(
         text="Active content",
         meta={},
     )
-    db_session.add(chunk)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(chunk)
+    await db_session.flush()
 
     embedded = EmbeddedChunk(
         text="Active content",
@@ -308,7 +318,7 @@ async def test_search_works_during_build(
 
     # Добавляем новый документ для build
     await _add_document(db_session, blob_store, workspace, corpus, "new.md", b"# New\nNew content")
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     # Механизм интерливинга
     event = asyncio.Event()
@@ -317,7 +327,7 @@ async def test_search_works_during_build(
     # Запускаем build в фоновой задаче
     build_task = asyncio.create_task(
         build_index_version(
-            db_session,  # type: ignore[arg-type]
+            db_session,
             blob_store,
             vector_store,
             pausing_backend,
@@ -338,7 +348,7 @@ async def test_search_works_during_build(
     assert any(h.text == "Active content" for h in hits)
 
     # active_index_version_id не изменился
-    fresh_corpus = await db_session.get(Corpus, corpus.id)  # type: ignore[arg-type]
+    fresh_corpus = await db_session.get(Corpus, corpus.id)
     assert fresh_corpus is not None
     assert fresh_corpus.active_index_version_id == active_version.id
 
@@ -350,21 +360,21 @@ async def test_search_works_during_build(
     assert fresh_corpus.active_index_version_id == active_version.id
 
     # Новая версия создана
-    new_version = await db_session.get(IndexVersion, build_result.index_version_id)  # type: ignore[arg-type]
+    new_version = await db_session.get(IndexVersion, build_result.index_version_id)
     assert new_version is not None
     assert new_version.status == "building"
 
 
 @pytest.mark.asyncio
 async def test_interruption_leaves_building_status(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
 ) -> None:
     """Прерывание посередине: index_version.status=building, active не изменился."""
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
     active_version = await _make_active_version(db_session, workspace, corpus)
@@ -372,12 +382,12 @@ async def test_interruption_leaves_building_status(
     # 2 документа: первый обработается, на втором embed бросит исключение
     await _add_document(db_session, blob_store, workspace, corpus, "doc1.md", b"# Doc1\nHello")
     await _add_document(db_session, blob_store, workspace, corpus, "doc2.md", b"# Doc2\nWorld")
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     failing_backend = FailingEmbeddingBackend()
 
     result = await build_index_version(
-        db_session,  # type: ignore[arg-type]
+        db_session,
         blob_store,
         vector_store,
         failing_backend,
@@ -386,7 +396,7 @@ async def test_interruption_leaves_building_status(
     )
 
     # index_version остался в building
-    version = await db_session.get(IndexVersion, result.index_version_id)  # type: ignore[arg-type]
+    version = await db_session.get(IndexVersion, result.index_version_id)
     assert version is not None
     assert version.status == "building"
 
@@ -398,7 +408,7 @@ async def test_interruption_leaves_building_status(
     assert "Simulated interruption" in str(stats["error"])
 
     # active_index_version_id не изменился
-    fresh_corpus = await db_session.get(Corpus, corpus.id)  # type: ignore[arg-type]
+    fresh_corpus = await db_session.get(Corpus, corpus.id)
     assert fresh_corpus is not None
     assert fresh_corpus.active_index_version_id == active_version.id
 
@@ -408,15 +418,15 @@ async def test_interruption_leaves_building_status(
 
 @pytest.mark.asyncio
 async def test_progress_tracking(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
     embedding_backend: StubEmbeddingBackend,
 ) -> None:
     """Прогресс: documents_done увеличивается после каждого документа."""
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
     for i in range(3):
@@ -428,10 +438,10 @@ async def test_progress_tracking(
             f"doc{i}.md",
             f"# Doc {i}\nContent {i}".encode(),
         )
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     result = await build_index_version(
-        db_session,  # type: ignore[arg-type]
+        db_session,
         blob_store,
         vector_store,
         embedding_backend,
@@ -439,27 +449,27 @@ async def test_progress_tracking(
         corpus_id=corpus.id,
     )
 
-    version = await db_session.get(IndexVersion, result.index_version_id)  # type: ignore[arg-type]
+    version = await db_session.get(IndexVersion, result.index_version_id)
     assert version is not None
     stats = version.stats
     assert stats is not None
     assert stats["documents_total"] == 3
     assert stats["documents_done"] == 3
-    assert stats["chunks_total"] > 0
+    assert cast(int, stats["chunks_total"]) > 0
     assert stats["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_active_version_not_affected(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
     embedding_backend: StubEmbeddingBackend,
 ) -> None:
     """После построения новой версии, активная не изменилась: чанки не удалены, не перезаписаны."""
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
     active_version = await _make_active_version(db_session, workspace, corpus)
@@ -476,8 +486,8 @@ async def test_active_version_not_affected(
         text="Active text",
         meta={},
     )
-    db_session.add(chunk)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(chunk)
+    await db_session.flush()
 
     embedded = EmbeddedChunk(
         text="Active text",
@@ -490,10 +500,10 @@ async def test_active_version_not_affected(
 
     # Новый документ для build
     await _add_document(db_session, blob_store, workspace, corpus, "new.md", b"# New\nNew text")
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     await build_index_version(
-        db_session,  # type: ignore[arg-type]
+        db_session,
         blob_store,
         vector_store,
         embedding_backend,
@@ -502,7 +512,7 @@ async def test_active_version_not_affected(
     )
 
     # Active версия — чанки на месте
-    active_chunks = await db_session.execute(  # type: ignore[attr-defined]
+    active_chunks = await db_session.execute(
         select(Chunk).where(Chunk.index_version_id == active_version.id)
     )
     active_chunk_list = list(active_chunks.scalars().all())
@@ -515,22 +525,22 @@ async def test_active_version_not_affected(
     assert any(h.text == "Active text" for h in hits)
 
     # active_index_version_id не изменился
-    fresh_corpus = await db_session.get(Corpus, corpus.id)  # type: ignore[arg-type]
+    fresh_corpus = await db_session.get(Corpus, corpus.id)
     assert fresh_corpus is not None
     assert fresh_corpus.active_index_version_id == active_version.id
 
 
 @pytest.mark.asyncio
 async def test_per_document_chunker_selection(
-    db_session: object,
+    db_session: AsyncSession,
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
     embedding_backend: StubEmbeddingBackend,
 ) -> None:
     """Чанкер выбирается по типу документа: .py → code, .md → header, .sql → sql."""
     workspace = Workspace(name="test")
-    db_session.add(workspace)  # type: ignore[attr-defined]
-    await db_session.flush()  # type: ignore[attr-defined]
+    db_session.add(workspace)
+    await db_session.flush()
 
     corpus = await _make_corpus(db_session, workspace)
 
@@ -546,10 +556,10 @@ async def test_per_document_chunker_selection(
     sql_content = b"SELECT * FROM users;\n"
     await _add_document(db_session, blob_store, workspace, corpus, "query.sql", sql_content)
 
-    await db_session.commit()  # type: ignore[attr-defined]
+    await db_session.commit()
 
     result = await build_index_version(
-        db_session,  # type: ignore[arg-type]
+        db_session,
         blob_store,
         vector_store,
         embedding_backend,
@@ -558,7 +568,7 @@ async def test_per_document_chunker_selection(
     )
 
     # Проверяем метаданные чанков
-    chunks = await db_session.execute(  # type: ignore[attr-defined]
+    chunks = await db_session.execute(
         select(Chunk).where(Chunk.index_version_id == result.index_version_id)
     )
     chunk_list = list(chunks.scalars().all())

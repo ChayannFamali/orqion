@@ -75,8 +75,7 @@ async def test_no_close_resource_skipped() -> None:
 
     cleanup = AsyncExitStack()
     if hasattr(blob, "close"):
-        cleanup.push_async_callback(blob.close)  # type: ignore[attr-defined]
-
+        cleanup.push_async_callback(blob.close)
     # Не должно бросить — blob.close не зарегистрирован
     await cleanup.aclose()
 
@@ -156,7 +155,7 @@ async def test_lifespan_with_no_close_resource() -> None:
     async def test_lifespan() -> AsyncIterator[None]:
         cleanup = AsyncExitStack()
         if hasattr(blob_store, "close"):
-            cleanup.push_async_callback(blob_store.close)  # type: ignore[attr-defined]
+            cleanup.push_async_callback(blob_store.close)
         yield
         await cleanup.aclose()
 

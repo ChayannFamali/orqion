@@ -9,8 +9,13 @@
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from app.rag.qdrant_store import QdrantVectorStore
 
 # ---------------------------------------------------------------------------
 # ImportError при отсутствии qdrant-client
@@ -79,7 +84,7 @@ class TestQdrantIntegration:
     """
 
     @pytest.fixture
-    async def store(self) -> object:
+    async def store(self) -> AsyncIterator[QdrantVectorStore]:
         from app.rag.qdrant_store import QdrantVectorStore
 
         s = QdrantVectorStore(url="http://localhost:6333")
@@ -87,7 +92,7 @@ class TestQdrantIntegration:
         await s.close()
 
     @pytest.mark.asyncio
-    async def test_upsert_and_search_dense(self, store: object) -> None:
+    async def test_upsert_and_search_dense(self, store: QdrantVectorStore) -> None:
         """upsert + search_dense: запись и поиск по dense вектору."""
         from app.rag.embeddings import EmbeddedChunk
         from app.rag.vector_store import EMBEDDING_DIM
@@ -110,7 +115,7 @@ class TestQdrantIntegration:
         assert results[0].chunk_id == "test-0001-uuid"
 
     @pytest.mark.asyncio
-    async def test_search_sparse(self, store: object) -> None:
+    async def test_search_sparse(self, store: QdrantVectorStore) -> None:
         """search_sparse: поиск по sparse вектору."""
         from app.rag.embeddings import EmbeddedChunk
         from app.rag.vector_store import EMBEDDING_DIM
@@ -132,7 +137,7 @@ class TestQdrantIntegration:
         assert results[0].chunk_id == "test-0002-uuid"
 
     @pytest.mark.asyncio
-    async def test_drop_version(self, store: object) -> None:
+    async def test_drop_version(self, store: QdrantVectorStore) -> None:
         """drop_version удаляет все точки версии."""
         from app.rag.embeddings import EmbeddedChunk
         from app.rag.vector_store import EMBEDDING_DIM

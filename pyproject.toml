@@ -50,6 +50,7 @@ s3 = [
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "pytest-timeout==2.3.1",
     "ruff==0.16.2",
     "mypy==2.3.0",
     "moto[server]==5.1.4",
@@ -156,3 +157,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+timeout = 60
