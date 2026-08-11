@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -80,6 +80,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
 
+    # Ресурсы, требующие close() при остановке, регистрируются в AsyncExitStack.
+    # blob_store (LocalBlobStore/S3BlobStore) не имеет close() — нет открытых
+    # соединений (LocalBlobStore — файлы, S3BlobStore — контекстный менеджер
+    # per-operation через aioboto3).
+    cleanup = AsyncExitStack()
+    if hasattr(app.state.vector_store, "close"):
+        cleanup.push_async_callback(app.state.vector_store.close)
+
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler
 
@@ -104,6 +112,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await aggregate_task
     except asyncio.CancelledError:
         pass
+
+    # Закрытие ресурсов: vector_store.close() и др.
+    # AsyncExitStack гарантирует, что исключение при закрытии одного
+    # ресурса не мешает закрыть остальные.
+    await cleanup.aclose()
 
     await engine.dispose()
 
