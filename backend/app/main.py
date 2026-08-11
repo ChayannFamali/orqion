@@ -68,6 +68,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.blob_store = LocalBlobStore(settings.blob_store_path)
 
+    from app.rag.vector_store import SQLiteVectorStore
+
+    if settings.vector_store == "qdrant":
+        from app.rag.qdrant_store import QdrantVectorStore
+
+        app.state.vector_store = QdrantVectorStore(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key or None,
+        )
+    else:
+        app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
+
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler
 

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./orqion.db"
 
     vector_store: str = "sqlite-vec"
+    vector_store_path: str = "./data/vec.db"
     qdrant_url: str = ""
     qdrant_api_key: str = ""
 

@@ -149,6 +149,10 @@ ignore_missing_imports = true
 module = "tree_sitter_sql"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "qdrant_client.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
