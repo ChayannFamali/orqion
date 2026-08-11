@@ -76,6 +76,22 @@ def normalize_l2(vec: list[float]) -> list[float]:
 DEFAULT_MODEL = "BAAI/bge-m3"
 
 
+def detect_device() -> str:
+    """Авто-определение устройства: GPU если доступен, иначе CPU.
+
+    Общая функция для LocalEmbeddingBackend и LocalReranker — не дублировать
+    логику обнаружения устройства.
+    """
+    try:
+        import torch  # type: ignore[import-not-found]
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
+
 class LocalEmbeddingBackend:
     """Локальные эмбеддинги через FlagEmbedding (bge-m3).
 
@@ -103,7 +119,7 @@ class LocalEmbeddingBackend:
             ) from e
 
         if self._device is None:
-            self._device = self._detect_device()
+            self._device = detect_device()
 
         self._model = BGEM3FlagModel(
             self._model_name,
@@ -111,18 +127,6 @@ class LocalEmbeddingBackend:
             device=self._device,
         )
         return self._model
-
-    @staticmethod
-    def _detect_device() -> str:
-        """Авто-определение устройства: GPU если доступен, иначе CPU."""
-        try:
-            import torch  # type: ignore[import-not-found]
-
-            if torch.cuda.is_available():
-                return "cuda"
-        except ImportError:
-            pass
-        return "cpu"
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Синхронный вызов FlagEmbedding — в async-контексте через to_thread."""
