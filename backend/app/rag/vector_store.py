@@ -6,11 +6,10 @@ FTS5 для разреженного (BM25). Фильтрация по index_ver
 
 Без внешних сервисов — профиль minimal. Qdrant — T-213, тот же Protocol.
 
-Важно для T-214 (pipeline индексации):
-- rowid в vec_chunks и fts_chunks — auto-assigned INTEGER, не chunk.id.
-- chunk.id в проекте — String(36) (UUID), несовместим с vec0 rowid (INTEGER).
-- T-214 должен строить маппинг rowid ↔ chunk.id (отдельная таблица или словарь).
-- Hit.chunk_id возвращает rowid, не chunk.id — T-214 разрешает через маппинг.
+chunk.id в проекте — String(36) (UUID). vec0 требует INTEGER rowid.
+SQLiteVectorStore скрывает это несоответствие: внутренняя таблица vec_chunk_map
+хранит маппинг rowid ↔ chunk_id. upsert принимает chunk_id, search_* возвращает
+chunk_id — реальный идентификатор чанка в основной БД.
 """
 
 from __future__ import annotations
@@ -32,9 +31,12 @@ from app.rag.embeddings import EmbeddedChunk
 
 @dataclass(frozen=True)
 class Hit:
-    """Результат поиска — чанк с оценкой релевантности."""
+    """Результат поиска — чанк с оценкой релевантности.
 
-    chunk_id: int
+    chunk_id — UUID из таблицы chunk (String(36)), не внутренний rowid.
+    """
+
+    chunk_id: str
     score: float
     text: str
 
@@ -116,21 +118,30 @@ class SQLiteVectorStore:
             "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks "
             "USING fts5(text, index_version_id UNINDEXED)"
         )
+        # Маппинг rowid ↔ chunk_id. rowid — auto-assigned в vec_chunks/fts_chunks,
+        # chunk_id — UUID из основной таблицы chunk (String(36)).
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS vec_chunk_map "
+            "(rowid INTEGER PRIMARY KEY, chunk_id TEXT NOT NULL, "
+            "index_version_id TEXT NOT NULL)"
+        )
         await conn.commit()
 
         self._conn = conn
         return conn
 
     async def upsert(self, index_version_id: str, chunks: Sequence[EmbeddedChunk]) -> None:
-        """Запись чанков: векторы в vec_chunks, текст в fts_chunks.
+        """Запись чанков: векторы в vec_chunks, текст в fts_chunks, маппинг в vec_chunk_map.
 
-        rowid auto-assigned SQLite — глобально уникальный.
-        Маппинг rowid → chunk.id на стороне вызывающего (T-214 pipeline).
-        fts_chunks.rowid = vec_chunks.rowid для JOIN.
+        chunk_id (UUID) берётся из EmbeddedChunk.chunk_id. rowid auto-assigned SQLite.
+        Таблица vec_chunk_map хранит соответствие rowid ↔ chunk_id.
         """
         conn = await self._get_conn()
 
         for chunk in chunks:
+            if not chunk.chunk_id:
+                raise ValueError("EmbeddedChunk.chunk_id должен быть заполнен (UUID)")
+
             vec_bytes = struct.pack(f"{len(chunk.vector)}f", *chunk.vector)
             # INSERT в vec_chunks — rowid auto-assigned
             cursor = await conn.execute(
@@ -143,6 +154,11 @@ class SQLiteVectorStore:
                 "INSERT INTO fts_chunks(rowid, text, index_version_id) VALUES (?, ?, ?)",
                 (rowid, chunk.text, index_version_id),
             )
+            # Маппинг rowid → chunk_id
+            await conn.execute(
+                "INSERT INTO vec_chunk_map(rowid, chunk_id, index_version_id) VALUES (?, ?, ?)",
+                (rowid, chunk.chunk_id, index_version_id),
+            )
 
         await conn.commit()
 
@@ -152,15 +168,17 @@ class SQLiteVectorStore:
         vec_bytes = struct.pack(f"{len(vec)}f", *vec)
 
         cursor = await conn.execute(
-            "SELECT vec_chunks.rowid, vec_chunks.distance, fts_chunks.text "
-            "FROM vec_chunks "
-            "JOIN fts_chunks ON fts_chunks.rowid = vec_chunks.rowid "
-            "WHERE vec_chunks.index_version_id = ? "
-            "AND fts_chunks.index_version_id = ? "
-            "AND vec_chunks.embedding MATCH ? "
+            "SELECT m.chunk_id, v.distance, f.text "
+            "FROM vec_chunks v "
+            "JOIN fts_chunks f ON f.rowid = v.rowid "
+            "JOIN vec_chunk_map m ON m.rowid = v.rowid "
+            "WHERE v.index_version_id = ? "
+            "AND f.index_version_id = ? "
+            "AND m.index_version_id = ? "
+            "AND v.embedding MATCH ? "
             "AND k = ? "
-            "ORDER BY vec_chunks.distance",
-            (index_version_id, index_version_id, vec_bytes, k),
+            "ORDER BY v.distance",
+            (index_version_id, index_version_id, index_version_id, vec_bytes, k),
         )
         rows = await cursor.fetchall()
 
@@ -171,15 +189,18 @@ class SQLiteVectorStore:
         """Разреженный поиск: BM25 через FTS5."""
         conn = await self._get_conn()
 
-        # FTS5 MATCH с фильтрацией по index_version_id
+        # FTS5 MATCH с фильтрацией по index_version_id.
+        # FTS5 не поддерживает алиасы в bm25() и MATCH — используем полное имя.
         cursor = await conn.execute(
-            "SELECT fts_chunks.rowid, bm25(fts_chunks), fts_chunks.text "
+            "SELECT m.chunk_id, bm25(fts_chunks), fts_chunks.text "
             "FROM fts_chunks "
+            "JOIN vec_chunk_map m ON m.rowid = fts_chunks.rowid "
             "WHERE fts_chunks.index_version_id = ? "
+            "AND m.index_version_id = ? "
             "AND fts_chunks.text MATCH ? "
             "ORDER BY bm25(fts_chunks) "
             "LIMIT ?",
-            (index_version_id, query, k),
+            (index_version_id, index_version_id, query, k),
         )
         rows = await cursor.fetchall()
 
@@ -202,6 +223,10 @@ class SQLiteVectorStore:
         )
         await conn.execute(
             "DELETE FROM fts_chunks WHERE index_version_id = ?",
+            (index_version_id,),
+        )
+        await conn.execute(
+            "DELETE FROM vec_chunk_map WHERE index_version_id = ?",
             (index_version_id,),
         )
         await conn.commit()

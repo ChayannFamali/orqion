@@ -38,12 +38,18 @@ class EmbeddingBackend(Protocol):
 
 @dataclass(frozen=True)
 class EmbeddedChunk:
-    """Чанк с эмбеддингом — результат embed_batch."""
+    """Чанк с эмбеддингом — результат embed_batch.
+
+    chunk_id — UUID из таблицы chunk (String(36)). Заполняется на стороне
+    вызывающего (T-214 pipeline), не в embed_batch — эмбеддер не знает про БД.
+    VectorStore.upsert использует chunk_id как ключ маппинга.
+    """
 
     text: str
     vector: list[float]
     ordinal: int
     model: str
+    chunk_id: str = ""
 
 
 # ---------------------------------------------------------------------------

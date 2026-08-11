@@ -6,6 +6,8 @@
 - search_sparse: FTS5 поиск по тексту, BM25 ранжирование
 - drop_version: удаление освобождает место (search возвращает пусто после drop)
 - Фильтрация по index_version_id: чанки другой версии не возвращаются
+- chunk_id mapping: search_* возвращает UUID, не внутренний rowid
+- upsert с пустым chunk_id — ValueError
 - Protocol conformance
 """
 
@@ -25,9 +27,12 @@ def _make_chunk(
     text: str,
     vector: list[float],
     model: str = "test-model",
+    chunk_id: str = "",
 ) -> EmbeddedChunk:
-    """Создаёт EmbeddedChunk с заданным вектором."""
-    return EmbeddedChunk(text=text, vector=vector, ordinal=ordinal, model=model)
+    """Создаёт EmbeddedChunk с заданным вектором и chunk_id."""
+    if not chunk_id:
+        chunk_id = f"chunk-{ordinal:04d}-uuid"
+    return EmbeddedChunk(text=text, vector=vector, ordinal=ordinal, model=model, chunk_id=chunk_id)
 
 
 def _make_unit_vec(dim: int, idx: int) -> list[float]:
@@ -78,6 +83,9 @@ async def test_upsert_and_search_dense(
 
     assert len(hits) == 1
     assert hits[0].text == "hello world"
+    assert hits[0].chunk_id == "chunk-0000-uuid"
+    # chunk_id — str (UUID), не int rowid
+    assert isinstance(hits[0].chunk_id, str)
     # score = 1 - distance, distance ~0 для идентичного вектора
     assert hits[0].score > 0.99
 
@@ -121,6 +129,8 @@ async def test_search_sparse_basic(store: SQLiteVectorStore, chunks: list[Embedd
 
     assert len(hits) >= 1
     assert hits[0].text == "hello world"
+    assert hits[0].chunk_id == "chunk-0000-uuid"
+    assert isinstance(hits[0].chunk_id, str)
 
 
 @pytest.mark.asyncio
@@ -162,7 +172,8 @@ async def test_filter_by_index_version(
     """Чанки другой версии не возвращаются в search_dense."""
     await store.upsert("ver-001", chunks)
     await store.upsert(
-        "ver-002", [_make_chunk(0, "other version", _make_unit_vec(EMBEDDING_DIM, 0))]
+        "ver-002",
+        [_make_chunk(0, "other version", _make_unit_vec(EMBEDDING_DIM, 0), chunk_id="other-uuid")],
     )
 
     query_vec = _make_unit_vec(EMBEDDING_DIM, 0)
@@ -171,6 +182,8 @@ async def test_filter_by_index_version(
 
     assert all(h.text != "other version" for h in hits_v1)
     assert all(h.text == "other version" for h in hits_v2)
+    assert all(h.chunk_id != "other-uuid" for h in hits_v1)
+    assert all(h.chunk_id == "other-uuid" for h in hits_v2)
     assert len(hits_v1) == 3
     assert len(hits_v2) == 1
 
@@ -181,7 +194,10 @@ async def test_filter_sparse_by_index_version(
 ) -> None:
     """Чанки другой версии не возвращаются в search_sparse."""
     await store.upsert("ver-001", chunks)
-    await store.upsert("ver-002", [_make_chunk(0, "hello other", _make_unit_vec(EMBEDDING_DIM, 0))])
+    await store.upsert(
+        "ver-002",
+        [_make_chunk(0, "hello other", _make_unit_vec(EMBEDDING_DIM, 0), chunk_id="other-uuid")],
+    )
 
     hits_v1 = await store.search_sparse("ver-001", "hello", k=10)
     hits_v2 = await store.search_sparse("ver-002", "hello", k=10)
@@ -208,7 +224,14 @@ async def test_drop_version_frees_space(
     # Заполняем векторами — повторяем для большего размера
     all_chunks = []
     for i in range(10):
-        all_chunks.append(_make_chunk(i, f"text {i}", _make_unit_vec(EMBEDDING_DIM, i % 10)))
+        all_chunks.append(
+            _make_chunk(
+                i,
+                f"text {i}",
+                _make_unit_vec(EMBEDDING_DIM, i % 10),
+                chunk_id=f"chunk-drop-{i:04d}",
+            )
+        )
     await store.upsert(version, all_chunks)
 
     # Проверяем, что данные есть
@@ -255,6 +278,48 @@ async def test_drop_version_preserves_other(
 
     assert hits_v1 == []
     assert len(hits_v2) == 3
+
+
+# ---------------------------------------------------------------------------
+# chunk_id mapping (rowid ↔ UUID)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upsert_requires_chunk_id(store: SQLiteVectorStore) -> None:
+    """upsert с пустым chunk_id — ValueError."""
+    chunk = EmbeddedChunk(
+        text="no id",
+        vector=_make_unit_vec(EMBEDDING_DIM, 0),
+        ordinal=0,
+        model="test",
+        chunk_id="",
+    )
+    with pytest.raises(ValueError, match="chunk_id"):
+        await store.upsert("ver-001", [chunk])
+
+
+@pytest.mark.asyncio
+async def test_chunk_id_mapping_roundtrip(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_dense и search_sparse возвращают настоящий chunk_id, не rowid."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    query_vec = _make_unit_vec(EMBEDDING_DIM, 0)
+    hits_dense = await store.search_dense(version, query_vec, k=3)
+    hits_sparse = await store.search_sparse(version, "hello", k=10)
+
+    # Все chunk_id — строки UUID, не int
+    expected_ids = {"chunk-0000-uuid", "chunk-0001-uuid", "chunk-0002-uuid"}
+    dense_ids = {h.chunk_id for h in hits_dense}
+    sparse_ids = {h.chunk_id for h in hits_sparse}
+
+    assert dense_ids == expected_ids
+    assert sparse_ids <= expected_ids  # sparse может вернуть subset
+    assert all(isinstance(h.chunk_id, str) for h in hits_dense)
+    assert all(isinstance(h.chunk_id, str) for h in hits_sparse)
 
 
 # ---------------------------------------------------------------------------
