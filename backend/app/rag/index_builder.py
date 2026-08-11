@@ -26,10 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Chunk, Corpus, Document, IndexVersion
 from app.rag.blob import BlobStore
 from app.rag.chunker import chunk_document
-from app.rag.code_chunker import chunk_code
+from app.rag.code_chunker import CodeChunk, chunk_code
 from app.rag.embeddings import EmbeddedChunk, EmbeddingBackend, embed_batch
 from app.rag.parser import parse_document
-from app.rag.sql_chunker import chunk_sql
+from app.rag.sql_chunker import SqlChunk, chunk_sql
 from app.rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -248,9 +248,22 @@ async def _process_document(
     chunk_metas: list[dict[str, object]] = []
     for c in raw_chunks:
         chunk_texts.append(c.text)
+        extra_meta: dict[str, object] = {}
+        if isinstance(c, CodeChunk):
+            extra_meta = {
+                "symbol": c.symbol,
+                "parent": c.parent,
+                "signature": c.signature,
+            }
+        elif isinstance(c, SqlChunk):
+            extra_meta = {
+                "operation": c.operation,
+                "tables": c.tables,
+            }
         chunk_metas.append(
             {
                 **c.meta,
+                **extra_meta,
                 "chunker": chunker_label,
                 "document_filename": document.filename,
             }

@@ -583,3 +583,20 @@ async def test_per_document_chunker_selection(
     assert "code" in chunkers_found, f"Expected 'code' chunker, got: {chunkers_found}"
     assert "header" in chunkers_found, f"Expected 'header' chunker, got: {chunkers_found}"
     assert "sql" in chunkers_found, f"Expected 'sql' chunker, got: {chunkers_found}"
+
+    # T-214b: структурные поля в meta для кода и SQL
+    code_chunks = [ch for ch in chunk_list if ch.meta and ch.meta.get("chunker") == "code"]
+    sql_chunks = [ch for ch in chunk_list if ch.meta and ch.meta.get("chunker") == "sql"]
+
+    assert len(code_chunks) > 0
+    for ch in code_chunks:
+        meta = ch.meta or {}
+        assert "symbol" in meta, f"Code chunk missing 'symbol' in meta: {ch.meta}"
+        assert "parent" in meta, f"Code chunk missing 'parent' in meta: {ch.meta}"
+        assert "signature" in meta, f"Code chunk missing 'signature' in meta: {ch.meta}"
+
+    assert len(sql_chunks) > 0
+    for ch in sql_chunks:
+        meta = ch.meta or {}
+        assert "operation" in meta, f"SQL chunk missing 'operation' in meta: {ch.meta}"
+        assert "tables" in meta, f"SQL chunk missing 'tables' in meta: {ch.meta}"
