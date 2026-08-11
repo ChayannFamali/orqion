@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     allowed_upload_extensions: str = ".pdf,.docx,.pptx,.xlsx,.py,.cpp,.ts,.go,.java,.sql,.md,.txt"
 
+    # Переформулировка запроса (T-218)
+    rag_query_reformulation_enabled: bool = False
+    rag_reformulation_model_alias: str = ""
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.
