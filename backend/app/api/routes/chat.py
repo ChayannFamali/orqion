@@ -210,6 +210,16 @@ async def chat(
             "conversation_id": conv_id,
             "rag_degraded": rag_state.degraded,
             "rag_errors": rag_state.errors if rag_state.degraded else [],
+            "sources": [
+                {
+                    "chunk_id": s.chunk_id,
+                    "document_id": s.document_id,
+                    "structural_path": s.structural_path,
+                    "score": s.score,
+                    "original_rank": s.original_rank,
+                }
+                for s in rag_state.sources
+            ],
         }
         return result
 

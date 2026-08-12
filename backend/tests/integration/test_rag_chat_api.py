@@ -28,6 +28,7 @@ from app.crypto.service import encrypt_api_key
 from app.db.models import Corpus, IndexVersion, Model, Provider, Role, User
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
+from app.rag.reranker import RerankResult
 from fastapi import FastAPI
 
 # ---------------------------------------------------------------------------
@@ -660,3 +661,362 @@ async def test_chat_with_corpus_degraded_early_steps_real_usage(
         assert latest.tokens_in > 0
         assert latest.tokens_out > 0
         assert latest.error_code is None
+
+
+# ---------------------------------------------------------------------------
+# T-222: Источники в ответе
+# ---------------------------------------------------------------------------
+
+
+async def _seed_corpus_with_chunks(
+    app_fixture: FastAPI,
+    name: str = "test-corpus",
+    num_chunks: int = 2,
+) -> tuple[str, str, list[str]]:
+    """Создаёт корпус с документами и чанками. Возвращает (corpus_id, index_version_id, [chunk_ids])."""
+    from app.db.models import Chunk, Document
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        corpus = Corpus(
+            workspace_id=workspace_id,
+            name=name,
+        )
+        session.add(corpus)
+        await session.flush()
+
+        iv = IndexVersion(
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            embedding_model="BAAI/bge-m3",
+            chunker="header",
+            chunker_version="1",
+            status="active",
+        )
+        session.add(iv)
+        await session.flush()
+        corpus.active_index_version_id = iv.id
+
+        chunk_ids: list[str] = []
+        for i in range(num_chunks):
+            doc = Document(
+                workspace_id=workspace_id,
+                corpus_id=corpus.id,
+                blob_uri=f"sha256-{i:064d}",
+                filename=f"doc{i}.md",
+                mime="text/markdown",
+                sha256=f"sha256-{i:064d}",
+                source_type="upload",
+                status="indexed",
+            )
+            session.add(doc)
+            await session.flush()
+
+            chunk = Chunk(
+                workspace_id=workspace_id,
+                index_version_id=iv.id,
+                document_id=doc.id,
+                ordinal=i,
+                text=f"Content of chunk {i}",
+                meta={
+                    "document_filename": f"doc{i}.md",
+                    "chunker": "header",
+                    "heading_path": [f"Section {i}"],
+                },
+            )
+            session.add(chunk)
+            await session.flush()
+            chunk_ids.append(chunk.id)
+
+        await session.commit()
+        return corpus.id, iv.id, chunk_ids
+
+
+def _patch_search_and_rerank_with_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_ids: list[str],
+    texts: list[str] | None = None,
+) -> None:
+    """Подменяет hybrid_search и rerank реальными RerankResult с chunk_ids."""
+    from app.rag.hybrid_search import HybridResult, HybridSearchOutput
+    from app.rag.vector_store import Hit
+
+    if texts is None:
+        texts = [f"Content of chunk {i}" for i in range(len(chunk_ids))]
+
+    hits = [
+        Hit(chunk_id=cid, score=1.0 / (i + 1), text=texts[i]) for i, cid in enumerate(chunk_ids)
+    ]
+    hybrid_results = [
+        HybridResult(
+            chunk_id=cid, score=1.0 / (i + 1), text=texts[i], dense_rank=i + 1, sparse_rank=i + 1
+        )
+        for i, cid in enumerate(chunk_ids)
+    ]
+
+    async def _stub_hybrid_search(*args: Any, **kwargs: Any) -> Any:
+        return HybridSearchOutput(dense_hits=hits, sparse_hits=hits, merged=hybrid_results)
+
+    rerank_results = [
+        RerankResult(chunk_id=cid, score=1.0 / (i + 1), text=texts[i], original_rank=i + 1)
+        for i, cid in enumerate(chunk_ids)
+    ]
+
+    async def _stub_rerank(*args: Any, **kwargs: Any) -> Any:
+        from app.rag.reranker import RerankOutput
+
+        return RerankOutput(results=rerank_results, degraded=False, duration_ms=1.0, error=None)
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+    monkeypatch.setattr("app.rag.pipeline.rerank", _stub_rerank)
+
+
+async def test_chat_with_corpus_returns_sources(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RAG-ответ содержит sources с document_id и structural_path."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    _corpus_id, _iv_id, chunk_ids = await _seed_corpus_with_chunks(app_fixture, num_chunks=2)
+    _patch_provider_both(monkeypatch, "Answer based on sources")
+    _patch_search_and_rerank_with_chunks(monkeypatch, chunk_ids)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "test-corpus",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "sources" in data
+    sources = data["sources"]
+    assert len(sources) == 2
+    # Каждый source имеет нужные поля
+    for s in sources:
+        assert "chunk_id" in s
+        assert "document_id" in s
+        assert "structural_path" in s
+        assert "score" in s
+        assert "original_rank" in s
+        # blob_uri не отдаём
+        assert "blob_uri" not in s
+    # structural_path содержит filename и heading
+    assert "doc0.md" in sources[0]["structural_path"]
+    assert "Section 0" in sources[0]["structural_path"]
+
+
+async def test_chat_with_corpus_sources_empty_when_no_hits(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Нет hits → sources пустой список, ответ всё равно 200."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    await _seed_corpus(app_fixture)
+    _patch_provider_both(monkeypatch, "No results found")
+
+    monkeypatch.setattr(
+        "app.rag.pipeline.hybrid_search",
+        AsyncMock(return_value=AsyncMock(merged=[])),
+    )
+    monkeypatch.setattr(
+        "app.rag.pipeline.rerank",
+        AsyncMock(return_value=AsyncMock(results=[], degraded=False, error=None)),
+    )
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "test-corpus",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sources"] == []
+
+
+async def test_chat_with_corpus_sources_reflect_truncation(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Truncation: только часть чанков в контексте → sources содержат только их."""
+    await _login_as_admin(api_client, app_fixture)
+    # 3 чанка, модель с маленьким max_input_tokens чтобы 0-й не влез
+    from app.db.models import Chunk, Document
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        corpus = Corpus(workspace_id=workspace_id, name="trunc-corpus")
+        session.add(corpus)
+        await session.flush()
+
+        iv = IndexVersion(
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            embedding_model="BAAI/bge-m3",
+            chunker="header",
+            chunker_version="1",
+            status="active",
+        )
+        session.add(iv)
+        await session.flush()
+        corpus.active_index_version_id = iv.id
+
+        chunk_ids: list[str] = []
+        for i in range(3):
+            doc = Document(
+                workspace_id=workspace_id,
+                corpus_id=corpus.id,
+                blob_uri=f"sha256-trunc-{i:061d}",
+                filename=f"trunc{i}.md",
+                mime="text/markdown",
+                sha256=f"sha256-trunc-{i:061d}",
+                source_type="upload",
+                status="indexed",
+            )
+            session.add(doc)
+            await session.flush()
+
+            # Большой текст для 0-го чанка, маленькие для остальных
+            text = ("x " * 500) if i == 0 else f"Small content {i}"
+            chunk = Chunk(
+                workspace_id=workspace_id,
+                index_version_id=iv.id,
+                document_id=doc.id,
+                ordinal=i,
+                text=text,
+                meta={
+                    "document_filename": f"trunc{i}.md",
+                    "chunker": "header",
+                    "heading_path": [f"Section {i}"],
+                },
+            )
+            session.add(chunk)
+            await session.flush()
+            chunk_ids.append(chunk.id)
+
+        await session.commit()
+
+    # Модель с маленьким max_input_tokens — 0-й чанк не влезет
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        provider = Provider(
+            workspace_id=workspace_id,
+            kind="openai",
+            base_url="http://stub:1234/v1",
+            api_key_enc=encrypt_api_key("sk-test", app_fixture.state.secret_key),
+            enabled=True,
+            capabilities={},
+        )
+        session.add(provider)
+        await session.flush()
+
+        model = Model(
+            workspace_id=workspace_id,
+            provider_id=provider.id,
+            alias="local/small-context",
+            upstream_name="small-context",
+            locality="local",
+            max_input_tokens=200,
+            enabled=True,
+        )
+        session.add(model)
+        await session.commit()
+    _patch_provider_both(monkeypatch, "Truncated answer")
+    _patch_search_and_rerank_with_chunks(
+        monkeypatch,
+        chunk_ids,
+        texts=[("x " * 500), "Small content 1", "Small content 2"],
+    )
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "trunc-corpus",
+            "model_alias": "local/small-context",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    sources = data["sources"]
+    # 0-й чанк oversized — не в sources, только 1 и 2
+    assert len(sources) == 2
+    source_ids = [s["chunk_id"] for s in sources]
+    assert chunk_ids[0] not in source_ids
+    assert chunk_ids[1] in source_ids
+    assert chunk_ids[2] in source_ids
+
+
+async def test_chat_with_corpus_sources_preserve_inclusion_order(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Источники в порядке включения в контекст, не в порядке реранкинга."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    _corpus_id, _iv_id, chunk_ids = await _seed_corpus_with_chunks(app_fixture, num_chunks=3)
+    _patch_provider_both(monkeypatch, "Ordered answer")
+
+    # rerank меняет порядок: chunk[2] → rank 1, chunk[0] → rank 2, chunk[1] → rank 3
+    from app.rag.hybrid_search import HybridResult, HybridSearchOutput
+    from app.rag.reranker import RerankOutput
+    from app.rag.vector_store import Hit
+
+    reordered = [chunk_ids[2], chunk_ids[0], chunk_ids[1]]
+    texts = {
+        chunk_ids[0]: "Content of chunk 0",
+        chunk_ids[1]: "Content of chunk 1",
+        chunk_ids[2]: "Content of chunk 2",
+    }
+
+    async def _stub_hybrid_search(*args: Any, **kwargs: Any) -> Any:
+        hits = [Hit(chunk_id=cid, score=1.0, text=texts[cid]) for cid in reordered]
+        hybrid_results = [
+            HybridResult(
+                chunk_id=cid, score=1.0, text=texts[cid], dense_rank=i + 1, sparse_rank=i + 1
+            )
+            for i, cid in enumerate(reordered)
+        ]
+        return HybridSearchOutput(dense_hits=hits, sparse_hits=hits, merged=hybrid_results)
+
+    async def _stub_rerank(*args: Any, **kwargs: Any) -> Any:
+        results = [
+            RerankResult(chunk_id=cid, score=1.0 / (i + 1), text=texts[cid], original_rank=i + 1)
+            for i, cid in enumerate(reordered)
+        ]
+        return RerankOutput(results=results, degraded=False, duration_ms=1.0, error=None)
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+    monkeypatch.setattr("app.rag.pipeline.rerank", _stub_rerank)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "test-corpus",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    sources = data["sources"]
+    # Все 3 чанка влезают (текст маленький) — порядок = порядок реранкинга
+    assert len(sources) == 3
+    assert sources[0]["chunk_id"] == chunk_ids[2]
+    assert sources[1]["chunk_id"] == chunk_ids[0]
+    assert sources[2]["chunk_id"] == chunk_ids[1]

@@ -377,3 +377,52 @@ async def test_chunk_not_in_map_skipped() -> None:
     assert result.fragments_used == 1
     assert "Content one" in result.context
     assert "Missing content" not in result.context
+
+
+async def test_included_chunk_ids_basic() -> None:
+    """3 фрагмента, все влезают — included_chunk_ids содержит все 3."""
+    reranked = [
+        _make_rerank_result("c1", "Content one", rank=1),
+        _make_rerank_result("c2", "Content two", rank=2),
+        _make_rerank_result("c3", "Content three", rank=3),
+    ]
+    chunks = [
+        _make_chunk("c1", "Content one", {"document_filename": "doc1.md"}),
+        _make_chunk("c2", "Content two", {"document_filename": "doc2.md"}),
+        _make_chunk("c3", "Content three", {"document_filename": "doc3.md"}),
+    ]
+
+    result = await build_context(reranked, chunks, max_tokens=10000, query="test")
+
+    assert result.included_chunk_ids == ["c1", "c2", "c3"]
+
+
+async def test_included_chunk_ids_oversized_skipped() -> None:
+    """Oversized фрагмент пропущен — его chunk_id не в included_chunk_ids.
+
+    Сценарий: c1 (rank=1) — большой, не влезает. c2, c3 — маленькие, влезают.
+    included_chunk_ids = [c2, c3], без c1.
+    """
+    reranked = [
+        _make_rerank_result("c1", _large_text(500), rank=1),
+        _make_rerank_result("c2", "Small content two", rank=2),
+        _make_rerank_result("c3", "Small content three", rank=3),
+    ]
+    chunks = [
+        _make_chunk("c1", _large_text(500), {"document_filename": "big.md"}),
+        _make_chunk("c2", "Small content two", {"document_filename": "small2.md"}),
+        _make_chunk("c3", "Small content three", {"document_filename": "small3.md"}),
+    ]
+
+    result = await build_context(reranked, chunks, max_tokens=200, query="test")
+
+    assert result.fragments_used == 2
+    assert "c1" not in result.included_chunk_ids
+    assert result.included_chunk_ids == ["c2", "c3"]
+
+
+async def test_included_chunk_ids_empty() -> None:
+    """Пустой reranked → included_chunk_ids пустой."""
+    result = await build_context([], [], max_tokens=10000, query="test")
+
+    assert result.included_chunk_ids == []

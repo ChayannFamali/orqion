@@ -28,6 +28,7 @@ from app.rag.embeddings import EmbeddingBackend
 from app.rag.hybrid_search import HybridResult, HybridSearchOutput, hybrid_search
 from app.rag.query_rewrite import maybe_rewrite_query
 from app.rag.reranker import RerankOutput, create_reranker, rerank
+from app.rag.sources import SourceEntry, build_sources
 from app.rag.vector_store import VectorStore
 from app.trace.service import TraceContext, span
 
@@ -49,6 +50,7 @@ class RagState:
     degraded: bool = False
     errors: list[str] = field(default_factory=list)
     usage: dict[str, Any] | None = None
+    sources: list[SourceEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -143,6 +145,11 @@ async def step_build_context(state: RagState, ctx: RagContext) -> RagState:
     )
     state.context = output.context
     state.fragments_used = output.fragments_used
+    state.sources = build_sources(
+        included_chunk_ids=output.included_chunk_ids,
+        reranked=state.reranked,
+        chunks=chunks,
+    )
     if output.truncated:
         state.degraded = True
         state.errors.append(
