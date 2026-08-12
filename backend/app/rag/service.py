@@ -166,6 +166,25 @@ class _SizedIterator:
             yield chunk
 
 
+async def get_document(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    document_id: str,
+) -> Document:
+    """Возвращает документ по ID в рамках workspace.
+
+    Возбуждает NotFound — документ не найден или чужой workspace.
+    """
+    document = await session.get(Document, document_id)
+    if document is None or document.workspace_id != workspace_id:
+        raise NotFound(
+            constraint={"object": "document", "id": document_id},
+            hint="Документ не найден",
+        )
+    return document
+
+
 # ---------------------------------------------------------------------------
 # Переключение версии индекса и откат (T-215, ADR-8)
 # ---------------------------------------------------------------------------

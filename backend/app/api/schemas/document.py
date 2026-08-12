@@ -19,6 +19,19 @@ class DocumentResponse(BaseModel):
     uploaded_at: datetime
 
 
+class DocumentDetailResponse(BaseModel):
+    """Метаданные документа без внутреннего blob_uri (T-306)."""
+
+    id: str
+    corpus_id: str
+    filename: str
+    mime: str
+    sha256: str
+    source_type: str
+    status: str
+    uploaded_at: datetime
+
+
 class DocumentListResponse(BaseModel):
     documents: list[DocumentResponse]
     total: int

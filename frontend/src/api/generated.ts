@@ -198,6 +198,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Endpoint
+         * @description Метаданные документа по ID (T-306).
+         *
+         *     Не возвращает blob_uri — это внутренний идентификатор хранения.
+         */
+        get: operations["get_document_endpoint_api_documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Content Endpoint
+         * @description Потоковая отдача содержимого документа через BlobStore (T-306).
+         *
+         *     Оригинал читается через абстракцию BlobStore (ADR-7),
+         *     не отдаёт blob_uri напрямую.
+         */
+        get: operations["get_document_content_endpoint_api_documents__document_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}/eval-sets": {
         parameters: {
             query?: never;
@@ -663,6 +708,31 @@ export interface components {
             errors: number;
             /** Avg Latency Ms */
             avg_latency_ms: number | null;
+        };
+        /**
+         * DocumentDetailResponse
+         * @description Метаданные документа без внутреннего blob_uri (T-306).
+         */
+        DocumentDetailResponse: {
+            /** Id */
+            id: string;
+            /** Corpus Id */
+            corpus_id: string;
+            /** Filename */
+            filename: string;
+            /** Mime */
+            mime: string;
+            /** Sha256 */
+            sha256: string;
+            /** Source Type */
+            source_type: string;
+            /** Status */
+            status: string;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
         };
         /** DocumentListResponse */
         DocumentListResponse: {
@@ -1607,6 +1677,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_endpoint_api_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_content_endpoint_api_documents__document_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

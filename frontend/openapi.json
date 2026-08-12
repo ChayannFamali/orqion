@@ -544,6 +544,90 @@
         }
       }
     },
+    "/api/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get Document Endpoint",
+        "description": "Метаданные документа по ID (T-306).\n\nНе возвращает blob_uri — это внутренний идентификатор хранения.",
+        "operationId": "get_document_endpoint_api_documents__document_id__get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/{document_id}/content": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get Document Content Endpoint",
+        "description": "Потоковая отдача содержимого документа через BlobStore (T-306).\n\nОригинал читается через абстракцию BlobStore (ADR-7),\nне отдаёт blob_uri напрямую.",
+        "operationId": "get_document_content_endpoint_api_documents__document_id__content_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora/{corpus_id}/eval-sets": {
       "post": {
         "tags": [
@@ -1809,6 +1893,56 @@
         ],
         "title": "DailyBreakdown",
         "description": "Разбивка по дням."
+      },
+      "DocumentDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "corpus_id": {
+            "type": "string",
+            "title": "Corpus Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "mime": {
+            "type": "string",
+            "title": "Mime"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "corpus_id",
+          "filename",
+          "mime",
+          "sha256",
+          "source_type",
+          "status",
+          "uploaded_at"
+        ],
+        "title": "DocumentDetailResponse",
+        "description": "Метаданные документа без внутреннего blob_uri (T-306)."
       },
       "DocumentListResponse": {
         "properties": {
