@@ -8,7 +8,7 @@ ADR-14: trace + span для каждого запроса.
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse

@@ -18,7 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
 import tiktoken
