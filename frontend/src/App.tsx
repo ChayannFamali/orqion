@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useCurrentUser } from "./hooks/useAuth";
 import { LoginPage } from "./pages/LoginPage";
-import { ChatPage } from "./pages/ChatPage";
+import { AppLayout } from "./components/AppLayout";
 
 export default function App() {
   const { data, isLoading, isError } = useCurrentUser();
@@ -18,5 +18,5 @@ export default function App() {
     return <LoginPage />;
   }
 
-  return <ChatPage />;
+  return <AppLayout email={data.email} capabilities={data.capabilities} />;
 }

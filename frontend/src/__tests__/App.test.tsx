@@ -65,7 +65,7 @@ describe("App", () => {
     });
   });
 
-  it("shows chat page when auth succeeds", async () => {
+  it("shows app layout when auth succeeds", async () => {
     vi.mocked(apiGetMe).mockResolvedValue({
       id: "user-1",
       email: "test@orqion.local",
@@ -81,7 +81,8 @@ describe("App", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => {
-      expect(screen.getAllByText("Новый диалог").length).toBeGreaterThan(0);
+      expect(screen.getByText("test@orqion.local")).toBeInTheDocument();
     });
+    expect(screen.getByText("Чат")).toBeInTheDocument();
   });
 });
