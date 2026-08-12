@@ -26,10 +26,24 @@ export function useChat(): UseChatResult {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // RAF-throttle: один setStreamingContent на кадр, не на каждый токен
+  const rafRef = useRef<number | null>(null);
+  const pendingContentRef = useRef("");
+
+  const flushContent = useCallback(() => {
+    rafRef.current = null;
+    setStreamingContent(pendingContentRef.current);
+  }, []);
+
   const abort = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
+    }
+    // Сброс RAF
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
     setIsStreaming(false);
   }, []);
@@ -44,6 +58,7 @@ export function useChat(): UseChatResult {
       abortRef.current = controller;
 
       let accumulated = "";
+      pendingContentRef.current = "";
 
       (async () => {
         try {
@@ -62,15 +77,32 @@ export function useChat(): UseChatResult {
             const e: SSEEvent = event;
             if (e.type === "token") {
               accumulated += e.v;
-              setStreamingContent(accumulated);
+              pendingContentRef.current = accumulated;
+              // Троттлинг: планируем flush на следующий кадр, если ещё не запланирован
+              if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(flushContent);
+              }
             } else if (e.type === "error") {
               setError({ code: e.code, message: e.message });
             }
           }
 
+          // Финальный flush: гарантия, что весь контент отображён
+          if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+          }
+          setStreamingContent(accumulated);
+
           onDone?.(accumulated, null);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
+            // Flush того, что накопилось до отмены
+            if (rafRef.current !== null) {
+              cancelAnimationFrame(rafRef.current);
+              rafRef.current = null;
+            }
+            setStreamingContent(accumulated);
             onDone?.(accumulated, null);
           } else {
             const msg =
@@ -84,7 +116,7 @@ export function useChat(): UseChatResult {
         }
       })();
     },
-    [],
+    [flushContent],
   );
 
   return { streamingContent, isStreaming, error, sendMessage, abort };
