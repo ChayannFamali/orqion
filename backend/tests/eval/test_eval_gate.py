@@ -207,6 +207,24 @@ async def test_eval_gate_recall_threshold() -> None:
     embedding_backend = LocalEmbeddingBackend(settings.embeddings_model)
     vector_store = SQLiteVectorStore(":memory:")
 
+    # Заполняем vector_store реальными эмбеддингами чанков
+    # (hybrid_search ищет в vector_store, не в БД — без upsert поиск пуст)
+    from app.rag.embeddings import EmbeddedChunk, normalize_l2
+
+    chunk_texts = [entry["func_code"] for entry in golden_entries]
+    vectors = await embedding_backend.embed(chunk_texts)
+    embedded_chunks = [
+        EmbeddedChunk(
+            text=entry["func_code"],
+            vector=normalize_l2(vectors[i]),
+            ordinal=i,
+            model=settings.embeddings_model,
+            chunk_id=chunk_ids[i],
+        )
+        for i, entry in enumerate(golden_entries)
+    ]
+    await vector_store.upsert(iv.id, embedded_chunks)
+
     # Мокаем generate (не тратит токены в CI)
     from unittest.mock import AsyncMock, patch
 
