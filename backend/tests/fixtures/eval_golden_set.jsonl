@@ -1,0 +1,5 @@
+{"question": "How to parse JSON in Python?", "expected_doc_ids": [], "filepath": "python/utils.py", "func_code": "def parse_json(text):\n    return json.loads(text)"}
+{"question": "How to read a file line by line?", "expected_doc_ids": [], "filepath": "python/helpers.py", "func_code": "def read_lines(path):\n    with open(path) as f:\n        return f.readlines()"}
+{"question": "How to sort a list by key?", "expected_doc_ids": [], "filepath": "python/sorting.py", "func_code": "def sort_by_key(items, key):\n    return sorted(items, key=lambda x: x[key])"}
+{"question": "How to reverse a string?", "expected_doc_ids": [], "filepath": "python/strings.py", "func_code": "def reverse_string(s):\n    return s[::-1]"}
+{"question": "How to merge two dictionaries?", "expected_doc_ids": [], "filepath": "python/dicts.py", "func_code": "def merge_dicts(a, b):\n    return {**a, **b}"}

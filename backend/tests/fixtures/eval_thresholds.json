@@ -1,0 +1,5 @@
+{
+  "recall@5": 0.6,
+  "mrr": 0.4,
+  "cited_sources_ratio": 0.3
+}

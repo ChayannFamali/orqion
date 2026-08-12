@@ -169,3 +169,35 @@ jobs:
         run: npx vitest run
       - working-directory: frontend
         run: npm run build
+
+  eval-gate:
+    name: Eval Quality Gate (full ML)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Кеш pip-зависимостей (torch ~2 ГБ) — скачивается один раз
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-full-${{ hashFiles('pyproject.toml') }}
+
+      # Кеш весов моделей (bge-m3, bge-reranker-v2-m3)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-bge-m3-reranker-v2
+
+      - name: Install orqion[full] — real ML models for quality gate
+        run: pip install -e ".[full,dev]"
+        # Явный fail при недоступности [full] — не тихая деградация.
+        # Этот job УМЫШЛЕННО тяжёлый: единственная задача — реальное измерение
+        # качества поиска (recall@k, MRR). Не оптимизировать на лёгкий вариант.
+
+      - name: Run eval gate (real embeddings + reranker)
+        env:
+          ORQION_EVAL_GATE: "1"
+        run: pytest backend/tests/eval -v --timeout=300

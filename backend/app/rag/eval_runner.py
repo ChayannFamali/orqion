@@ -171,7 +171,11 @@ def build_pipeline_config(
 
     Фиксирует не только шаги, но и модели — для воспроизводимости.
     """
-    step_names = steps if steps is not None else [s.__name__ if hasattr(s, "__name__") else str(s) for s in PIPELINE]
+    step_names = (
+        steps
+        if steps is not None
+        else [s.__name__ if hasattr(s, "__name__") else str(s) for s in PIPELINE]
+    )
     config: dict[str, object] = {
         "steps": step_names,
         "generate_model_alias": generate_model_alias,
@@ -223,9 +227,7 @@ async def run_eval(
     eval_items = list(item_result.scalars().all())
 
     # Загружаем eval_set для corpus_id
-    es_result = await session.execute(
-        select(EvalSet).where(EvalSet.id == eval_set_id)
-    )
+    es_result = await session.execute(select(EvalSet).where(EvalSet.id == eval_set_id))
     eval_set = es_result.scalar_one_or_none()
     if eval_set is None:
         raise ValueError(f"Eval set {eval_set_id} not found")
