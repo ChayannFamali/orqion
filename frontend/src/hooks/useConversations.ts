@@ -6,10 +6,11 @@ import {
   apiUpdateConversation,
   apiDeleteConversation,
 } from "../api/conversations";
+import { queryKeys } from "../api/query-keys";
 
 export function useConversations() {
   return useQuery({
-    queryKey: ["conversations"],
+    queryKey: queryKeys.conversations.all,
     queryFn: () => apiListConversations(),
     staleTime: 10_000,
   });
@@ -17,7 +18,7 @@ export function useConversations() {
 
 export function useConversation(id: string | null) {
   return useQuery({
-    queryKey: ["conversations", id],
+    queryKey: queryKeys.conversations.detail(id ?? ""),
     queryFn: () => apiGetConversation(id!),
     enabled: id !== null,
   });
@@ -28,7 +29,7 @@ export function useCreateConversation() {
   return useMutation({
     mutationFn: (title: string | null) => apiCreateConversation(title),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
   });
 }
@@ -39,7 +40,7 @@ export function useUpdateConversation() {
     mutationFn: ({ id, title, archived }: { id: string; title?: string; archived?: boolean }) =>
       apiUpdateConversation(id, { title, archived }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
   });
 }
@@ -49,7 +50,7 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (id: string) => apiDeleteConversation(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
   });
 }

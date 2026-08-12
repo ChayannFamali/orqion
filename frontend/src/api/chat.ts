@@ -1,23 +1,5 @@
-import type { ApiError, ChatRequest, SSEEvent } from "./types";
-
-async function parseError(response: Response): Promise<ApiError> {
-  try {
-    const body = (await response.json()) as Partial<ApiError>;
-    return {
-      error: body.error ?? "unknown",
-      reason: body.reason ?? "Неизвестная ошибка",
-      constraint: body.constraint ?? null,
-      hint: body.hint ?? null,
-    };
-  } catch {
-    return {
-      error: "http_error",
-      reason: `HTTP ${response.status}`,
-      constraint: null,
-      hint: null,
-    };
-  }
-}
+import { parseError } from "./client";
+import type { ChatRequest, SSEEvent } from "./types";
 
 /**
  * Парсит одно SSE-событие из строки data-блока.
@@ -40,6 +22,8 @@ function parseSSEData(data: string): SSEEvent | null {
  *
  * Асинхронный генератор: for await (const event of streamChat(...)) { ... }
  * Бэкенд завершает поток `data: [DONE]\n\n`.
+ *
+ * Использует raw fetch (не apiFetch), т.к. ответ — SSE-поток, не JSON.
  */
 export async function* streamChat(
   body: ChatRequest,
@@ -97,6 +81,10 @@ export async function* streamChat(
 
 /**
  * Не-стриминговый чат-запрос. Возвращает полный ответ.
+ *
+ * Использует raw fetch (не apiFetch), т.к. тело ответа имеет
+ * объединённую структуру { content, conversation_id, type?, code?, message? },
+ * которая может быть как успешным ответом, так и SSE-error.
  */
 export async function completeChat(
   body: ChatRequest,
@@ -112,6 +100,7 @@ export async function completeChat(
   if (!res.ok) {
     throw await parseError(res);
   }
+
   const data = (await res.json()) as {
     content: string;
     conversation_id?: string;

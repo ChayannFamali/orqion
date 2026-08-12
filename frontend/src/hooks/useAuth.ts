@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGetMe, apiLogin, apiLogout } from "../api/auth";
+import { queryKeys } from "../api/query-keys";
 import type { LoginRequest } from "../api/types";
 
 export function useCurrentUser() {
   return useQuery({
-    queryKey: ["auth", "me"],
+    queryKey: queryKeys.auth.me,
     queryFn: apiGetMe,
     retry: false,
     staleTime: 300_000,
@@ -16,7 +17,7 @@ export function useLogin() {
   return useMutation({
     mutationFn: (body: LoginRequest) => apiLogin(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.me });
     },
   });
 }
