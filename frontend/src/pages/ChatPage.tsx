@@ -64,6 +64,61 @@ export function ChatPage() {
     chat.abort();
   }, [chat]);
 
+  const handleRegenerate = useCallback(() => {
+    // Убираем последний ответ ассистента, отправляем заново
+    const msgs = [...localMessages];
+    // Найти последний assistant и обрезать
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "assistant") {
+        msgs.splice(i);
+        break;
+      }
+    }
+    setLocalMessages(msgs);
+
+    const messagesToSend = msgs.filter((m) => m.role === "user" || m.content);
+    chat.sendMessage({
+      messages: messagesToSend,
+      modelAlias: selectedModel,
+      conversationId: activeId,
+      onDone: (fullContent) => {
+        const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
+        setLocalMessages(updated);
+        if (activeId === null) {
+          conversations.refetch();
+        } else {
+          conversation.refetch();
+        }
+      },
+    });
+  }, [localMessages, selectedModel, activeId, chat, conversations, conversation]);
+
+  const handleEdit = useCallback(
+    (messageIndex: number, newContent: string) => {
+      // Обрезаем всё после отредактированного сообщения, заменяем контент
+      const msgs = localMessages.slice(0, messageIndex);
+      msgs.push({ role: "user", content: newContent });
+      setLocalMessages(msgs);
+
+      const messagesToSend = msgs.filter((m) => m.role === "user" || m.content);
+      chat.sendMessage({
+        messages: messagesToSend,
+        modelAlias: selectedModel,
+        conversationId: activeId,
+        onDone: (fullContent) => {
+          const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
+          setLocalMessages(updated);
+          if (activeId === null) {
+            conversations.refetch();
+          } else {
+            conversation.refetch();
+          }
+        },
+      });
+    },
+    [localMessages, selectedModel, activeId, chat, conversations, conversation],
+  );
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -116,6 +171,8 @@ export function ChatPage() {
             : ""}
           isStreaming={chat.isStreaming}
           error={chat.error}
+          onRegenerate={localMessages.length > 0 ? handleRegenerate : undefined}
+          onEdit={handleEdit}
         />
 
         {/* Input */}
