@@ -52,6 +52,7 @@ export function useChat(): UseChatResult {
               messages,
               model_alias: modelAlias ?? null,
               conversation_id: conversationId ?? null,
+              temperature: 0.7,
               stream: true,
             },
             controller.signal,

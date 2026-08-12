@@ -154,15 +154,32 @@ jobs:
           "
 
   frontend:
-    name: Frontend (tsc + vitest)
+    name: Frontend (tsc + vitest + types sync)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend (for OpenAPI export)
+        run: pip install -e .
       - working-directory: frontend
         run: npm ci
+      - name: Export OpenAPI schema
+        run: python backend/scripts/export_openapi.py
+      - name: Regenerate TypeScript types
+        working-directory: frontend
+        run: npm run gen:types
+      - name: Check types are in sync
+        run: |
+          git diff --exit-code frontend/openapi.json frontend/src/api/generated.ts || {
+            echo "ERROR: OpenAPI types are out of sync."
+            echo "Run: python backend/scripts/export_openapi.py && (cd frontend && npm run gen:types)"
+            exit 1
+          }
       - working-directory: frontend
         run: npx tsc --noEmit
       - working-directory: frontend
