@@ -1,20 +1,29 @@
 import { useCallback, useRef, useState } from "react";
-import { streamChat } from "../api/chat";
-import type { ChatMessage, SSEEvent } from "../api/types";
+import { completeChat, streamChat } from "../api/chat";
+import type { ChatMessage, ChatCompletionResult, SSEEvent, SourceEntry } from "../api/types";
 
 interface UseChatResult {
   /** Накопленный стрим-контент ассистента */
   streamingContent: string;
-  /** Признак активного стриминга */
+  /** Признак активого стриминга / запроса */
   isStreaming: boolean;
   /** Ошибка последнего запроса */
   error: { code: string; message: string } | null;
-  /** Отправить сообщение в стрим */
+  /** Источники последнего RAG-ответа */
+  sources: SourceEntry[] | null;
+  /** Признак деградации RAG последнего ответа */
+  ragDegraded: boolean;
+  /** Отправить сообщение (стриминг или RAG non-streaming) */
   sendMessage: (params: {
     messages: ChatMessage[];
     modelAlias?: string | null;
     conversationId?: string | null;
-    onDone?: (fullContent: string, error: { code: string; message: string } | null) => void;
+    corpusName?: string | null;
+    onDone?: (
+      fullContent: string,
+      error: { code: string; message: string } | null,
+      sources?: SourceEntry[] | null,
+    ) => void;
   }) => void;
   /** Прервать стрим */
   abort: () => void;
@@ -24,6 +33,8 @@ export function useChat(): UseChatResult {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const [sources, setSources] = useState<SourceEntry[] | null>(null);
+  const [ragDegraded, setRagDegraded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // RAF-throttle: один setStreamingContent на кадр, не на каждый токен
@@ -49,9 +60,11 @@ export function useChat(): UseChatResult {
   }, []);
 
   const sendMessage = useCallback<UseChatResult["sendMessage"]>(
-    ({ messages, modelAlias, conversationId, onDone }) => {
+    ({ messages, modelAlias, conversationId, corpusName, onDone }) => {
       setError(null);
       setStreamingContent("");
+      setSources(null);
+      setRagDegraded(false);
       setIsStreaming(true);
 
       const controller = new AbortController();
@@ -60,6 +73,45 @@ export function useChat(): UseChatResult {
       let accumulated = "";
       pendingContentRef.current = "";
 
+      if (corpusName) {
+        // RAG-ветка: non-streaming, JSON-ответ с sources
+        (async () => {
+          try {
+            const result: ChatCompletionResult = await completeChat(
+              {
+                messages,
+                model_alias: modelAlias ?? null,
+                conversation_id: conversationId ?? null,
+                temperature: 0.7,
+                stream: false,
+                corpus_name: corpusName,
+              },
+              controller.signal,
+            );
+
+            accumulated = result.content;
+            setStreamingContent(accumulated);
+            setSources(result.sources ?? null);
+            setRagDegraded(result.rag_degraded ?? false);
+
+            onDone?.(accumulated, null, result.sources ?? null);
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") {
+              onDone?.(accumulated, null);
+            } else {
+              const msg = err instanceof Error ? err.message : "Неизвестная ошибка";
+              setError({ code: "fetch_error", message: msg });
+              onDone?.(accumulated, { code: "fetch_error", message: msg });
+            }
+          } finally {
+            setIsStreaming(false);
+            abortRef.current = null;
+          }
+        })();
+        return;
+      }
+
+      // Стриминг-ветка: SSE-токены
       (async () => {
         try {
           const stream = streamChat(
@@ -119,5 +171,5 @@ export function useChat(): UseChatResult {
     [flushContent],
   );
 
-  return { streamingContent, isStreaming, error, sendMessage, abort };
+  return { streamingContent, isStreaming, error, sources, ragDegraded, sendMessage, abort };
 }

@@ -8,7 +8,7 @@
  * типы обновляются автоматически через `npm run gen:types`.
  */
 
-export type { ApiError, SSEEvent } from "./runtime";
+export type { ApiError, SSEEvent, SourceEntry, ChatCompletionResult } from "./runtime";
 
 import type { components } from "./generated";
 

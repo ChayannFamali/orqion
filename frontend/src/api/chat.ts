@@ -1,5 +1,5 @@
 import { parseError } from "./client";
-import type { ChatRequest, SSEEvent } from "./types";
+import type { ChatCompletionResult, ChatRequest, SSEEvent } from "./types";
 
 /**
  * Парсит одно SSE-событие из строки data-блока.
@@ -82,14 +82,13 @@ export async function* streamChat(
 /**
  * Не-стриминговый чат-запрос. Возвращает полный ответ.
  *
- * Использует raw fetch (не apiFetch), т.к. тело ответа имеет
- * объединённую структуру { content, conversation_id, type?, code?, message? },
- * которая может быть как успешным ответом, так и SSE-error.
+ * Для RAG-запросов (corus != null) бэкенд возвращает sources, rag_degraded,
+ * rag_errors в теле ответа. Для обычных запросов эти поля отсутствуют.
  */
 export async function completeChat(
   body: ChatRequest,
   signal?: AbortSignal,
-): Promise<{ content: string; conversation_id?: string }> {
+): Promise<ChatCompletionResult> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,12 +100,5 @@ export async function completeChat(
     throw await parseError(res);
   }
 
-  const data = (await res.json()) as {
-    content: string;
-    conversation_id?: string;
-    type?: string;
-    code?: string;
-    message?: string;
-  };
-  return { content: data.content, conversation_id: data.conversation_id };
+  return (await res.json()) as ChatCompletionResult;
 }

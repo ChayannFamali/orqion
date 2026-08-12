@@ -169,6 +169,8 @@ export function ChatPage() {
             : ""}
           isStreaming={chat.isStreaming}
           error={chat.error}
+          sources={chat.sources}
+          ragDegraded={chat.ragDegraded}
           onRegenerate={localMessages.length > 0 ? handleRegenerate : undefined}
           onEdit={handleEdit}
         />

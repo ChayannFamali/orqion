@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Pencil, Check, X } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { SourceList } from "./SourceList";
 import { Button } from "./ui/button";
-import type { MessageResponse } from "../api/types";
+import type { MessageResponse, SourceEntry } from "../api/types";
 import { cn } from "../lib/utils";
 
 interface ChatMessagesProps {
@@ -11,6 +12,12 @@ interface ChatMessagesProps {
   streamingContent: string;
   isStreaming: boolean;
   error: { code: string; message: string } | null;
+  /** Источники последнего RAG-ответа (T-306) */
+  sources?: SourceEntry[] | null;
+  /** Признак деградации RAG последнего ответа */
+  ragDegraded?: boolean;
+  /** Ошибки RAG при деградации */
+  ragErrors?: string[];
   /** Повторить последний запрос (без последнего ответа ассистента) */
   onRegenerate?: () => void;
   /** Редактировать сообщение пользователя и переотправить */
@@ -22,6 +29,9 @@ export function ChatMessages({
   streamingContent,
   isStreaming,
   error,
+  sources,
+  ragDegraded,
+  ragErrors,
   onRegenerate,
   onEdit,
 }: ChatMessagesProps) {
@@ -132,6 +142,9 @@ export function ChatMessages({
             <MarkdownRenderer content={streamingContent} />
             {isStreaming && (
               <span className="mt-1 inline-block h-4 w-2 animate-pulse bg-foreground/50" />
+            )}
+            {!isStreaming && sources && sources.length > 0 && (
+              <SourceList sources={sources} ragDegraded={ragDegraded} ragErrors={ragErrors} />
             )}
           </div>
         )}
