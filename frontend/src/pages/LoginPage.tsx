@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Loader2 } from "lucide-react";
 import { useLogin } from "../hooks/useAuth";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -15,7 +16,7 @@ export function LoginPage() {
     login.mutate({ email, password });
   };
 
-  const error: ApiError | null = login.error as ApiError | null;
+  const error: ApiError | null = login.error as unknown as ApiError | null;
 
   return (
     <div className="flex h-screen items-center justify-center">
@@ -55,10 +56,12 @@ export function LoginPage() {
         </div>
 
         {error && (
-          <p className="text-sm text-destructive" role="alert">
-            {error.reason}
-            {error.hint && <span className="block text-xs opacity-70">{error.hint}</span>}
-          </p>
+          <div className="space-y-1" role="alert">
+            <p className="text-sm text-destructive">{error.reason}</p>
+            {error.hint && (
+              <p className="text-xs text-muted-foreground">{error.hint}</p>
+            )}
+          </div>
         )}
 
         <Button
@@ -66,7 +69,14 @@ export function LoginPage() {
           className="w-full"
           disabled={login.isPending || !email || !password}
         >
-          {login.isPending ? "Вход…" : "Войти"}
+          {login.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Вход…
+            </>
+          ) : (
+            "Войти"
+          )}
         </Button>
       </form>
     </div>

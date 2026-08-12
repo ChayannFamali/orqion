@@ -47,7 +47,7 @@ describe("App", () => {
         <App />
       </QueryClientProvider>,
     );
-    expect(screen.getByText(/Loading/i)).toBeInTheDocument();
+    expect(document.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
   it("shows login page when auth fails", async () => {
