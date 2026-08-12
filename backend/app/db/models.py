@@ -498,3 +498,92 @@ class Chunk(Base, IdMixin, WorkspaceMixin):
     meta: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
 
     index_version: Mapped[IndexVersion] = relationship(back_populates="chunks")
+
+
+class EvalSet(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Набор вопросов для оценки (ADR-10, arch.md §5.1).
+
+    Привязан к корпусу: оценка всегда для конкретного корпуса.
+    Удаление корпуса каскадно удаляет наборы (ON DELETE CASCADE).
+    """
+
+    __tablename__ = "eval_set"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_eval_set_workspace_name"),
+        Index("ix_eval_set_corpus_id", "corpus_id"),
+    )
+
+    corpus_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("corpus.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    items: Mapped[list[EvalItem]] = relationship(
+        back_populates="eval_set",
+        cascade="all, delete-orphan",
+    )
+    runs: Mapped[list[EvalRun]] = relationship(
+        back_populates="eval_set",
+        cascade="all, delete-orphan",
+    )
+
+
+class EvalItem(Base, IdMixin, WorkspaceMixin):
+    """Вопрос в наборе оценки (arch.md §5.1).
+
+    expected_doc_ids — список UUID документов, содержащих ответ.
+    expected_answer — эталонный ответ (опционально).
+    """
+
+    __tablename__ = "eval_item"
+    __table_args__ = (Index("ix_eval_item_eval_set_id", "eval_set_id"),)
+
+    eval_set_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("eval_set.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    question: Mapped[str] = mapped_column(String, nullable=False)
+    expected_doc_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    expected_answer: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    eval_set: Mapped[EvalSet] = relationship(back_populates="items")
+
+
+class EvalRun(Base, IdMixin, WorkspaceMixin):
+    """Прогон оценки (arch.md §5.1, ADR-10).
+
+    index_version_id — nullable + ON DELETE SET NULL (как T-117/T-118 для
+    trace/usage_event). cleanup_retired_versions (T-215) удаляет chunks +
+    vectors + index_version для retired-версий; каскадное удаление eval_run
+    уничтожило бы историю прогонов — ценность ADR-10 в сравнении метрик
+    между версиями после их вывода из эксплуатации (T-226).
+    """
+
+    __tablename__ = "eval_run"
+    __table_args__ = (
+        Index("ix_eval_run_eval_set_id", "eval_set_id"),
+        Index("ix_eval_run_index_version_id", "index_version_id"),
+    )
+
+    eval_set_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("eval_set.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    index_version_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("index_version.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    pipeline: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    metrics: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
+
+    eval_set: Mapped[EvalSet] = relationship(back_populates="runs")
