@@ -25,7 +25,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         rpm=60,
         tpm=60000,
         corpora=["public", "team"],
-        capabilities=["chat", "upload", "custom_prompts"],
+        capabilities=["chat", "upload", "custom_prompts", "view_traces"],
     ),
     "architect": Policy(
         models=["local/*", "external/*"],
@@ -36,7 +36,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         rpm=120,
         tpm=200000,
         corpora=["public", "team", "private"],
-        capabilities=["chat", "upload", "custom_prompts", "manage_corpora", "share"],
+        capabilities=["chat", "upload", "custom_prompts", "manage_corpora", "share", "view_traces"],
     ),
     "manager": Policy(
         models=["local/*", "external/*"],
@@ -47,7 +47,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         rpm=60,
         tpm=60000,
         corpora=["public", "team"],
-        capabilities=["chat", "upload", "custom_prompts", "view_analytics"],
+        capabilities=["chat", "upload", "custom_prompts", "view_analytics", "view_traces"],
     ),
     "admin": Policy(
         models=["*"],

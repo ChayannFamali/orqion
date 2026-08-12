@@ -548,6 +548,46 @@ export interface paths {
         patch: operations["update_routing_rule_api_routing_rules__rule_id__patch"];
         trace?: never;
     };
+    "/api/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Traces Endpoint
+         * @description Список трассировок. Для admin — все в workspace, иначе — только свои.
+         */
+        get: operations["list_traces_endpoint_api_traces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/traces/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Trace Endpoint
+         * @description Полная трассировка со всеми span'ами.
+         */
+        get: operations["get_trace_endpoint_api_traces__trace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1248,6 +1288,83 @@ export interface components {
             reranker_enabled: boolean;
             /** Steps */
             steps: string[];
+        };
+        /**
+         * SpanResponse
+         * @description Один шаг конвейера в трассировке.
+         */
+        SpanResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * TraceDetailResponse
+         * @description Полная трассировка со всеми span'ами.
+         */
+        TraceDetailResponse: {
+            /** Id */
+            id: string;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /** Message Id */
+            message_id: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Total Ms */
+            total_ms: number | null;
+            /** Status */
+            status: string;
+            /** Spans */
+            spans: components["schemas"]["SpanResponse"][];
+        };
+        /**
+         * TraceListResponse
+         * @description Список трассировок.
+         */
+        TraceListResponse: {
+            /** Traces */
+            traces: components["schemas"]["TraceSummaryResponse"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * TraceSummaryResponse
+         * @description Краткая сводка трассировки (для списка).
+         */
+        TraceSummaryResponse: {
+            /** Id */
+            id: string;
+            /** Conversation Id */
+            conversation_id: string | null;
+            /** Message Id */
+            message_id: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Total Ms */
+            total_ms: number | null;
+            /** Status */
+            status: string;
+            /** Span Count */
+            span_count: number;
         };
         /**
          * UserBreakdown
@@ -2360,6 +2477,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoutingRuleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_traces_endpoint_api_traces_get: {
+        parameters: {
+            query?: {
+                conversation_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_endpoint_api_traces__trace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceDetailResponse"];
                 };
             };
             /** @description Validation Error */

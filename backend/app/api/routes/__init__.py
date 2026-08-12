@@ -10,6 +10,7 @@ from app.api.routes.eval import router as eval_router
 from app.api.routes.models import router as models_router
 from app.api.routes.providers import router as providers_router
 from app.api.routes.routing import router as routing_router
+from app.api.routes.traces import router as traces_router
 
 __all__ = [
     "analytics_router",
@@ -22,4 +23,5 @@ __all__ = [
     "models_router",
     "providers_router",
     "routing_router",
+    "traces_router",
 ]

@@ -327,3 +327,213 @@ async def test_trace_user_id_set(
     traces = await _get_traces(app_fixture)
     assert len(traces) == 1
     assert traces[0].user_id == user_id
+
+
+# ---------------------------------------------------------------------------
+# T-307: Read API — GET /api/traces, GET /api/traces/{id}
+# ---------------------------------------------------------------------------
+
+
+async def _login_with_role(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    role_name: str = "developer",
+    email_suffix: str = "",
+) -> str:
+    """Логинит пользователя с заданной ролью, возвращает user_id."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        role = Role(
+            workspace_id=workspace_id,
+            name=role_name,
+            is_builtin=True,
+            policy=BUILTIN_ROLES[role_name].model_dump(),
+        )
+        session.add(role)
+        await session.flush()
+
+        user = User(
+            workspace_id=workspace_id,
+            email=f"trace-r-{role_name}{email_suffix}@orqion.local",
+            password_hash=hash_password("pass-123"),
+            role_id=role.id,
+        )
+        session.add(user)
+        await session.flush()
+
+        session_id = await create_session(session, user.id, workspace_id, Settings())
+        await session.commit()
+
+    api_client.cookies.set(COOKIE_NAME, session_id)
+    return user.id
+
+
+async def _create_trace_directly(
+    app_fixture: FastAPI,
+    user_id: str,
+    *,
+    conversation_id: str | None = None,
+    status: str = "ok",
+) -> str:
+    """Создаёт trace + span в БД напрямую, возвращает trace_id."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from datetime import UTC, datetime
+
+        trace = Trace(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            ts=datetime.now(UTC),
+            total_ms=150,
+            status=status,
+        )
+        session.add(trace)
+        await session.flush()
+
+        span = Span(
+            workspace_id=workspace_id,
+            trace_id=trace.id,
+            name="step_search",
+            payload={"step": "step_search", "candidates_count": 5},
+        )
+        session.add(span)
+        await session.commit()
+        return trace.id
+
+
+@pytest.mark.asyncio
+async def test_list_traces_success(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces → 200, список трассировок пользователя."""
+    user_id = await _login_with_role(api_client, app_fixture, "developer")
+    await _create_trace_directly(app_fixture, user_id)
+
+    resp = await api_client.get("/api/traces")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    assert len(data["traces"]) >= 1
+    assert data["traces"][0]["span_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_traces_user_isolation(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces → пользователь видит только свои трассировки."""
+    user1_id = await _login_with_role(api_client, app_fixture, "developer")
+    await _create_trace_directly(app_fixture, user1_id)
+
+    await _login_with_role(api_client, app_fixture, "developer", email_suffix="2")
+    resp = await api_client.get("/api/traces")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_traces_admin_sees_all(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces → admin видит все трассировки в workspace."""
+    user_id = await _login_with_role(api_client, app_fixture, "developer")
+    await _create_trace_directly(app_fixture, user_id)
+
+    await _login_with_role(api_client, app_fixture, "admin")
+    resp = await api_client.get("/api/traces")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_traces_filtered_by_conversation(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces?conversation_id={id} → фильтр по диалогу."""
+    from app.db.models import Conversation
+
+    user_id = await _login_with_role(api_client, app_fixture, "developer")
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        conv1 = Conversation(workspace_id=workspace_id, user_id=user_id, title="conv1")
+        conv2 = Conversation(workspace_id=workspace_id, user_id=user_id, title="conv2")
+        session.add_all([conv1, conv2])
+        await session.commit()
+        conv1_id = conv1.id
+        conv2_id = conv2.id
+
+    await _create_trace_directly(app_fixture, user_id, conversation_id=conv1_id)
+    await _create_trace_directly(app_fixture, user_id, conversation_id=conv2_id)
+
+    resp = await api_client.get(f"/api/traces?conversation_id={conv1_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert all(t["conversation_id"] == conv1_id for t in data["traces"])
+
+
+@pytest.mark.asyncio
+async def test_get_trace_detail(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces/{id} → 200, полная трассировка со span'ами."""
+    user_id = await _login_with_role(api_client, app_fixture, "developer")
+    trace_id = await _create_trace_directly(app_fixture, user_id)
+
+    resp = await api_client.get(f"/api/traces/{trace_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == trace_id
+    assert len(data["spans"]) >= 1
+    assert data["spans"][0]["name"] == "step_search"
+    assert "candidates_count" in data["spans"][0]["payload"]
+
+
+@pytest.mark.asyncio
+async def test_get_trace_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces/{id} → 404 для несуществующей."""
+    await _login_with_role(api_client, app_fixture, "developer")
+
+    resp = await api_client.get("/api/traces/nonexistent-id")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_trace_wrong_user(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces/{id} → 404 для чужой трассировки (user isolation)."""
+    user1_id = await _login_with_role(api_client, app_fixture, "developer")
+    trace_id = await _create_trace_directly(app_fixture, user1_id)
+
+    await _login_with_role(api_client, app_fixture, "developer", email_suffix="2")
+    resp = await api_client.get(f"/api/traces/{trace_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_view_traces_capability_required(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/traces → 404 без capability view_traces (роль support)."""
+    await _login_with_role(api_client, app_fixture, "support")
+
+    resp = await api_client.get("/api/traces")
+    assert resp.status_code == 404
+    data = resp.json()
+    assert data["error"] == "not_found"
