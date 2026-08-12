@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.db.models import Model, Provider, Role, User
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
 from fastapi import FastAPI
+from sqlalchemy import select
 
 
 async def _login_as_admin(
@@ -478,3 +480,148 @@ async def test_policy_models_filters_routing_candidates(
     messages = conv.json()["messages"]
     assistant_msg = next(m for m in messages if m["role"] == "assistant")
     assert assistant_msg["model_id"] == local_model_id
+
+
+@pytest.mark.asyncio
+async def test_stream_abort_closes_upstream(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """При обрыве клиентского соединения upstream-генератор закрывается.
+
+    T-305: is_disconnected() + gen.aclose() гарантируют, что генерация
+    у провайдера останавливается, а не продолжается вхолостую.
+
+    Тест на unit-уровне: вызывает _stream_with_save напрямую с mock Request,
+    у которого is_disconnected() возвращает True после второго чанка.
+    httpx ASGI transport не эмулирует реальный disconnect, поэтому
+    интеграционный тест через api_client не подходит.
+    """
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+
+    upstream_state: dict[str, bool] = {"closed": False, "completed": False}
+
+    async def _stub_stream(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> Any:
+        try:
+            for i in range(100):
+                yield f"token{i} "
+                await asyncio.sleep(0.01)
+            upstream_state["completed"] = True
+        except GeneratorExit:
+            upstream_state["closed"] = True
+            raise
+
+    monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
+
+    # Mock Request: is_disconnected возвращает True после 2-й проверки
+    disconnect_counter: dict[str, int] = {"n": 0}
+
+    class MockRequest:
+        async def is_disconnected(self) -> bool:
+            disconnect_counter["n"] += 1
+            return disconnect_counter["n"] > 2
+
+    # Мокаем span и save_messages, чтобы не тянуть полную БД-инфраструктуру
+    class _NoopSpan:
+        async def __aenter__(self) -> None:
+            pass
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    def _noop_span(ctx: Any, name: str) -> _NoopSpan:
+        return _NoopSpan()
+
+    from app.api.routes import chat as chat_module
+    from app.chat import service as chat_service
+
+    async def _noop_save(session: Any, ctx: Any, model: Any, ws_id: str) -> tuple[str, str]:
+        return ("conv-1", "msg-1")
+
+    async def _noop_usage(session: Any, ws_id: str, record: Any) -> None:
+        pass
+
+    async def _noop_finalize(session: Any, ctx: Any, **kwargs: Any) -> None:
+        pass
+
+    monkeypatch.setattr(chat_module, "span", _noop_span)
+    monkeypatch.setattr(chat_module, "save_messages", _noop_save)
+    monkeypatch.setattr(chat_service, "save_messages", _noop_save)
+    monkeypatch.setattr(chat_module, "record_usage", _noop_usage)
+    monkeypatch.setattr(chat_module, "finalize_trace", _noop_finalize)
+    monkeypatch.setattr(
+        chat_module,
+        "_build_usage_record",
+        lambda *args: None,
+    )
+
+    # Минимальный chat_ctx mock
+    from app.chat.service import ChatContext
+    from app.policy.models import Policy
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        from app.db.models import Model as DBModel
+        from app.db.models import Provider as DBProvider
+
+        model_row = (
+            await session.execute(select(DBModel).where(DBModel.workspace_id == workspace_id))
+        ).scalar_one()
+        provider_row = (
+            await session.execute(select(DBProvider).where(DBProvider.workspace_id == workspace_id))
+        ).scalar_one()
+
+    chat_ctx = ChatContext(
+        user=None,  # type: ignore[arg-type]
+        policy=Policy(capabilities=["chat"]),
+        messages=[{"role": "user", "content": "hi"}],
+        model_alias=None,
+        max_tokens=100,
+        temperature=0.7,
+        stream=True,
+        corpus_data_class=None,
+        corpus_name=None,
+        task_type=None,
+        conversation_id=None,
+    )
+
+    from app.trace.service import TraceContext
+
+    trace_ctx = TraceContext(trace_id="test-trace", workspace_id=workspace_id)
+
+    # Вызываем _stream_with_save напрямую
+    chunks: list[str] = []
+    stream_gen = chat_module._stream_with_save(
+        MockRequest(),  # type: ignore[arg-type]
+        chat_ctx,
+        model_row,
+        provider_row,
+        [],
+        app_fixture.state.secret_key,
+        workspace_id,
+        factory,
+        trace_ctx,
+    )
+    async for chunk in stream_gen:
+        chunks.append(chunk)
+        if len(chunks) > 1:
+            break
+
+    # Явно закрываем генератор _stream_with_save — триггерит finally
+    await stream_gen.aclose()
+
+    # Даём event loop время на обработку gen.aclose() → upstream_gen.aclose()
+    await asyncio.sleep(0.3)
+
+    assert upstream_state["closed"] is True, "upstream generator was not closed on disconnect"
+    assert upstream_state["completed"] is False, "upstream completed despite client disconnect"

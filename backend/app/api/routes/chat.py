@@ -8,7 +8,7 @@ ADR-14: trace + span для каждого запроса.
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -228,6 +228,7 @@ async def chat(
 
         return StreamingResponse(
             _stream_with_save(
+                request,
                 chat_ctx,
                 model,
                 provider,
@@ -270,6 +271,7 @@ async def chat(
 
 
 async def _stream_with_save(
+    request: Request,
     chat_ctx: ChatContext,
     model: Model,
     provider: Provider,
@@ -278,7 +280,7 @@ async def _stream_with_save(
     workspace_id: str,
     session_factory: async_sessionmaker[AsyncSession],
     trace_ctx: TraceContext,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Обёртка: стримит токены, затем сохраняет сообщения + usage_event + trace в finally.
 
     S-13: сохранение, учёт и трассировка выполняются даже при обрыве соединения.
@@ -286,12 +288,21 @@ async def _stream_with_save(
 
     T-116b: передаёт fallbacks в execute_stream. После выполнения определяет
     фактическую модель (основная или fallback) по chat_ctx.model_id.
+
+    T-305: проверяет request.is_disconnected() на каждый чанк — при обрыве
+    клиентского соединения upstream-генерация останавливается, а не
+    продолжается вхолостую. Явный gen.aclose() в finally гарантирует
+    закрытие upstream HTTP-соединения к провайдеру, не полагается на GC.
     """
+    gen = execute_stream(chat_ctx, model, provider, secret_key, fallbacks)
     try:
         async with span(trace_ctx, "stream"):
-            async for chunk in execute_stream(chat_ctx, model, provider, secret_key, fallbacks):
+            async for chunk in gen:
+                if await request.is_disconnected():
+                    break
                 yield chunk
     finally:
+        await gen.aclose()
         # Фактическая модель — могла смениться на fallback
         actual_model = model
         if chat_ctx.model_id is not None and chat_ctx.model_id != model.id:

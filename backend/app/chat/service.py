@@ -18,7 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 
 import tiktoken
@@ -236,7 +236,7 @@ async def execute_stream(
     provider: Provider,
     secret_key: str,
     fallbacks: list[tuple[Model, Provider]] | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Выполняет стриминговый запрос к провайдеру. SSE-события.
 
     S-13: ошибка — событие error, не обрыв. [DONE] — завершение.
@@ -257,17 +257,23 @@ async def execute_stream(
             got_token = False
 
             try:
-                async for token in client.stream(
+                upstream_gen = client.stream(
                     messages=chat_ctx.messages,
                     model=upstream_name,
                     max_tokens=chat_ctx.max_tokens,
                     temperature=chat_ctx.temperature,
-                ):
-                    got_token = True
-                    chat_ctx.accumulated_content.append(token)
-                    yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
+                )
+                try:
+                    async for token in upstream_gen:
+                        got_token = True
+                        chat_ctx.accumulated_content.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
+                finally:
+                    await upstream_gen.aclose()
                 # Успешное завершение — обновляем model_id на фактическую модель
                 chat_ctx.model_id = current_model.id
+                chat_ctx.tokens_out = _count_tokens("".join(chat_ctx.accumulated_content))
+                yield "data: [DONE]\n\n"
                 return
             except Exception as exc:  # noqa: BLE001  граница системы
                 err = normalize_error(exc)
@@ -278,9 +284,18 @@ async def execute_stream(
                     break
                 # Ошибка до первого токена, есть ещё fallback — пробуем следующую модель
                 continue
-    finally:
+    except GeneratorExit:
+        # aclose() из _stream_with_save при disconnect клиента.
+        # Считаем токены, но НЕ yield'им [DONE] — генератор закрывается.
         chat_ctx.tokens_out = _count_tokens("".join(chat_ctx.accumulated_content))
-        yield "data: [DONE]\n\n"
+        raise
+    finally:
+        # Гарантируем подсчёт токенов даже при исключении
+        if chat_ctx.tokens_out is None:
+            chat_ctx.tokens_out = _count_tokens("".join(chat_ctx.accumulated_content))
+    # [DONE] при ошибке (break из for-цикла). При успехе — уже отправлен выше.
+    # При GeneratorExit — не отправляется (raise в except).
+    yield "data: [DONE]\n\n"
 
 
 async def execute_complete(

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 import httpx
@@ -99,7 +99,7 @@ class ProviderClient:
         model: str,
         max_tokens: int | None = None,
         temperature: float = 0.7,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         """POST /v1/chat/completions с stream=true — потоковый режим.
 
         Возвращает AsyncIterator[str] — токены по мере поступления.
