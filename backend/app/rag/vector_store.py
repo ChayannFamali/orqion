@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -24,6 +25,28 @@ from typing import Protocol, runtime_checkable
 import aiosqlite
 
 from app.rag.embeddings import EmbeddedChunk
+
+# ---------------------------------------------------------------------------
+# FTS5 query escaping (BUG-003)
+# ---------------------------------------------------------------------------
+
+# FTS5 спецсимволы: " * - : ( ) ? ^ ! & |
+_FTS5_SPECIAL = re.compile(r'["*\-:()?!&|]')
+
+
+def _escape_fts5_query(query: str) -> str:
+    """Экранирует пользовательский запрос для FTS5 MATCH.
+
+    FTS5 трактует ?, ", *, -, :, (, ), ^ как операторы.
+    Разбиваем запрос на слова, обёртываем каждое в двойные кавычки —
+    получается phrase-query per-token, сохраняя неявный AND между термами.
+    Пустой результат → '' (вызывающий код пропускает MATCH-условие).
+    """
+    tokens = _FTS5_SPECIAL.sub(" ", query).split()
+    if not tokens:
+        return ""
+    return " ".join(f'"{tok}"' for tok in tokens)
+
 
 # ---------------------------------------------------------------------------
 # Контракты
@@ -196,19 +219,31 @@ class SQLiteVectorStore:
         """Разреженный поиск: BM25 через FTS5."""
         conn = await self._get_conn()
 
-        # FTS5 MATCH с фильтрацией по index_version_id.
-        # FTS5 не поддерживает алиасы в bm25() и MATCH — используем полное имя.
-        cursor = await conn.execute(
-            "SELECT m.chunk_id, bm25(fts_chunks), fts_chunks.text "
-            "FROM fts_chunks "
-            "JOIN vec_chunk_map m ON m.rowid = fts_chunks.rowid "
-            "WHERE fts_chunks.index_version_id = ? "
-            "AND m.index_version_id = ? "
-            "AND fts_chunks.text MATCH ? "
-            "ORDER BY bm25(fts_chunks) "
-            "LIMIT ?",
-            (index_version_id, index_version_id, query, k),
-        )
+        # BUG-003: экранируем спецсимволы FTS5 в пользовательском запросе.
+        fts_query = _escape_fts5_query(query)
+        if fts_query:
+            cursor = await conn.execute(
+                "SELECT m.chunk_id, bm25(fts_chunks), fts_chunks.text "
+                "FROM fts_chunks "
+                "JOIN vec_chunk_map m ON m.rowid = fts_chunks.rowid "
+                "WHERE fts_chunks.index_version_id = ? "
+                "AND m.index_version_id = ? "
+                "AND fts_chunks.text MATCH ? "
+                "ORDER BY bm25(fts_chunks) "
+                "LIMIT ?",
+                (index_version_id, index_version_id, fts_query, k),
+            )
+        else:
+            # Пустой FTS-запрос (только спецсимволы) — без MATCH, просто top-k
+            cursor = await conn.execute(
+                "SELECT m.chunk_id, 0.0, fts_chunks.text "
+                "FROM fts_chunks "
+                "JOIN vec_chunk_map m ON m.rowid = fts_chunks.rowid "
+                "WHERE fts_chunks.index_version_id = ? "
+                "AND m.index_version_id = ? "
+                "LIMIT ?",
+                (index_version_id, index_version_id, k),
+            )
         rows = await cursor.fetchall()
 
         # bm25() возвращает отрицательный score (меньше = лучше)

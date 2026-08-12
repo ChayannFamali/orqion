@@ -161,6 +161,95 @@ async def test_search_sparse_ranking(store: SQLiteVectorStore, chunks: list[Embe
 
 
 # ---------------------------------------------------------------------------
+# BUG-003: FTS5 экранирование спецсимволов в пользовательских запросах
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_with_question_mark(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на '?' в запросе (BUG-003)."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    hits = await store.search_sparse(version, "hello?", k=10)
+    assert len(hits) >= 1
+    assert hits[0].text == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_with_double_quotes(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на двойные кавычки в запросе (BUG-003)."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    hits = await store.search_sparse(version, '"hello" world', k=10)
+    assert len(hits) >= 1
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_with_asterisk(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на '*' в запросе (BUG-003)."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    hits = await store.search_sparse(version, "hello*", k=10)
+    assert len(hits) >= 1
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_with_hyphen(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на '-' в запросе (BUG-003)."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    hits = await store.search_sparse(version, "hello -world", k=10)
+    assert len(hits) >= 1
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_full_sentence_with_punctuation(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на полный запрос с пунктуацией (BUG-003).
+
+    Реальный пользовательский запрос: 'How to parse JSON in Python?'
+    """
+    version = "ver-001"
+    sentence_chunks = [
+        _make_chunk(0, "how to parse json in python", _make_unit_vec(EMBEDDING_DIM, 0)),
+        _make_chunk(1, "hello world from python", _make_unit_vec(EMBEDDING_DIM, 1)),
+    ]
+    await store.upsert(version, sentence_chunks)
+
+    hits = await store.search_sparse(version, "How to parse JSON in Python?", k=10)
+    assert len(hits) >= 1
+    # Первый результат — про парсинг JSON
+    assert "parse" in hits[0].text
+
+
+@pytest.mark.asyncio
+async def test_search_sparse_query_only_special_chars(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """search_sparse не падает на запрос только из спецсимволов (BUG-003)."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+
+    # Запрос только из спецсимволов → все токены пустые → '"*"' (match-all)
+    hits = await store.search_sparse(version, '?*"-', k=10)
+    # Не падает, возвращает результаты (match-all)
+    assert len(hits) >= 1
+
+
+# ---------------------------------------------------------------------------
 # Фильтрация по index_version_id
 # ---------------------------------------------------------------------------
 
