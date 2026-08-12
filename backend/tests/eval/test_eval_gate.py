@@ -210,6 +210,8 @@ async def test_eval_gate_recall_threshold() -> None:
     # Мокаем generate (не тратит токены в CI)
     from unittest.mock import AsyncMock, patch
 
+    from app.providers.client import ProviderClient
+
     mock_complete = AsyncMock(
         return_value={
             "choices": [{"message": {"content": "Answer based on context"}}],
@@ -219,7 +221,7 @@ async def test_eval_gate_recall_threshold() -> None:
 
     async with session_factory() as session:
         with patch.object(
-            "app.providers.client.ProviderClient",
+            ProviderClient,
             "complete",
             mock_complete,
         ):
