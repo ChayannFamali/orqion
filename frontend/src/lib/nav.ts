@@ -11,11 +11,11 @@ import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText
  * - capabilities.includes(capability) → доступен по праву
  *
  * Точные значения capabilities — из backend/app/policy/presets.py:
- *   chat, upload, custom_prompts, manage_corpora, share, view_analytics
- *   "*" (admin wildcard)
+ *   chat, upload, custom_prompts, manage_corpora, share, view_analytics,
+ *   view_traces, "*" (admin wildcard)
  *
  * Capabilities для будущих разделов (manage_providers, manage_users,
- * view_audit, view_traces) ещё не определены в seed-пресетах ролей.
+ * view_audit) ещё не определены в seed-пресетах ролей.
  * Они появятся в T-308+. Пока эти разделы видны только admin (через "*").
  */
 

@@ -21,4 +21,8 @@ export const queryKeys = {
   models: {
     available: ["models", "available"] as const,
   },
+  traces: {
+    all: ["traces"] as const,
+    detail: (id: string) => ["traces", id] as const,
+  },
 } as const;

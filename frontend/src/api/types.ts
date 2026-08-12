@@ -24,3 +24,7 @@ export type ChatRequest = components["schemas"]["ChatRequest"];
 export type ModelInfo = components["schemas"]["ModelResponse"];
 export type ProviderInfo = components["schemas"]["ProviderResponse"];
 export type ProviderListResponse = components["schemas"]["ProviderListResponse"];
+export type SpanResponse = components["schemas"]["SpanResponse"];
+export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
+export type TraceListResponse = components["schemas"]["TraceListResponse"];
+export type TraceDetailResponse = components["schemas"]["TraceDetailResponse"];
