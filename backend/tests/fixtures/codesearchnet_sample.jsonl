@@ -1,0 +1,3 @@
+{"question": "How to parse JSON in Python?", "func_code": "def parse_json(text):\n    return json.loads(text)", "filepath": "python/utils.py"}
+{"question": "How to read a file line by line?", "func_code": "def read_lines(path):\n    with open(path) as f:\n        return f.readlines()", "filepath": "python/helpers.py"}
+{"question": "How to sort a list by key?", "func_code": "def sort_by_key(items, key):\n    return sorted(items, key=lambda x: x[key])", "filepath": "other/utils.py"}
