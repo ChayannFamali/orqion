@@ -120,3 +120,9 @@ class CorpusNotReady(OrqionError):
     error_code = "corpus_not_ready"
     reason = "Корпус не имеет активной версии индекса"
     status_code = 409
+
+
+class BadRequest(OrqionError):
+    error_code = "bad_request"
+    reason = "Некорректный запрос"
+    status_code = 400

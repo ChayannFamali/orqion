@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.schemas.eval import (
+    EvalCompareRequest,
+    EvalComparisonRead,
     EvalImportResponse,
     EvalItemRead,
     EvalRunCreate,
@@ -31,11 +33,13 @@ from app.api.schemas.eval import (
     EvalSetListResponse,
     EvalSetRead,
     EvalSetReadWithItems,
+    MetricDeltaRead,
+    RunMetadataRead,
 )
 from app.auth.dependencies import current_user
 from app.db.models import Corpus, EvalItem, EvalRun, EvalSet, IndexVersion, Model, Provider, User
 from app.db.session import get_session
-from app.errors import NotFound
+from app.errors import BadRequest, NotFound
 from app.rag.eval_import import ImportItem, import_eval_set
 
 router = APIRouter(
@@ -392,3 +396,68 @@ async def get_eval_run(
         raise NotFound(f"Eval run {run_id} not found")
 
     return _eval_run_to_read(run)
+
+
+# ---------------------------------------------------------------------------
+# T-226: Сравнение прогонов
+# ---------------------------------------------------------------------------
+
+
+@router.post("/eval-runs/compare", response_model=EvalComparisonRead)
+async def compare_eval_runs(
+    body: EvalCompareRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EvalComparisonRead:
+    """Сравнить 2+ прогона по метрикам.
+
+    Прогоны сортируются по ts (по возрастанию) — «↑» всегда значит «стало лучше со временем».
+    Сравнение запрещено для прогонов из разных eval_sets.
+    """
+    from app.rag.eval_compare import compare_runs
+
+    if len(body.run_ids) < 2:
+        raise BadRequest("Need at least 2 run IDs to compare")
+
+    result = await session.execute(
+        select(EvalRun).where(
+            EvalRun.id.in_(body.run_ids),
+            EvalRun.workspace_id == user.workspace_id,
+        )
+    )
+    runs = list(result.scalars().all())
+
+    if len(runs) != len(body.run_ids):
+        not_found = set(body.run_ids) - {r.id for r in runs}
+        raise NotFound(f"Eval runs not found: {not_found}")
+
+    try:
+        comparison = compare_runs(runs)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
+
+    return EvalComparisonRead(
+        eval_set_id=comparison.eval_set_id,
+        runs=[
+            RunMetadataRead(
+                run_id=r.run_id,
+                ts=r.ts,
+                index_version_id=r.index_version_id,
+                generate_model_alias=r.generate_model_alias,
+                rewrite_model_alias=r.rewrite_model_alias,
+                reranker_enabled=r.reranker_enabled,
+                steps=r.steps,
+            )
+            for r in comparison.runs
+        ],
+        deltas=[
+            MetricDeltaRead(
+                metric_name=d.metric_name,
+                earlier_value=d.earlier_value,
+                later_value=d.later_value,
+                delta=d.delta,
+                direction=d.direction,
+            )
+            for d in comparison.deltas
+        ],
+    )

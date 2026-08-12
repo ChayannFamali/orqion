@@ -99,3 +99,42 @@ class EvalRunListResponse(BaseModel):
     """Список прогонов набора."""
 
     items: list[EvalRunRead]
+
+
+# T-226: сравнение прогонов
+
+
+class EvalCompareRequest(BaseModel):
+    """Запрос сравнения прогонов (POST /api/eval-runs/compare)."""
+
+    run_ids: list[str]
+
+
+class RunMetadataRead(BaseModel):
+    """Метаданные одного прогона в сравнении."""
+
+    run_id: str
+    ts: str
+    index_version_id: str | None
+    generate_model_alias: str
+    rewrite_model_alias: str | None
+    reranker_enabled: bool
+    steps: list[str]
+
+
+class MetricDeltaRead(BaseModel):
+    """Дельта одной метрики между двумя прогонами."""
+
+    metric_name: str
+    earlier_value: float
+    later_value: float
+    delta: float
+    direction: str
+
+
+class EvalComparisonRead(BaseModel):
+    """Результат сравнения прогонов."""
+
+    eval_set_id: str
+    runs: list[RunMetadataRead]
+    deltas: list[MetricDeltaRead]

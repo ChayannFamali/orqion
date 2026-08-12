@@ -604,3 +604,107 @@ async def test_create_eval_run_index_not_found(
         json={"index_version_id": "nonexistent"},
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# T-226: Сравнение прогонов
+# ---------------------------------------------------------------------------
+
+
+async def test_compare_eval_runs(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сравнение 2 прогонов через API — дельты метрик + per-run метаданные."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    create_resp = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "compare-test", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    eval_set_id = create_resp.json()["id"]
+
+    _patch_pipeline_for_eval(monkeypatch)
+
+    # Запускаем 2 прогона
+    run1_resp = await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": iv_id},
+    )
+    run1_id = run1_resp.json()["id"]
+
+    run2_resp = await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": iv_id},
+    )
+    run2_id = run2_resp.json()["id"]
+
+    # Сравниваем
+    response = await api_client.post(
+        "/api/eval-runs/compare",
+        json={"run_ids": [run2_id, run1_id]},  # намеренно обратный порядок
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["eval_set_id"] == eval_set_id
+    assert len(data["runs"]) == 2
+    # Отсортировано по ts: run1 раньше run2
+    assert data["runs"][0]["run_id"] == run1_id
+    assert data["runs"][1]["run_id"] == run2_id
+    # Per-run метаданные
+    assert "generate_model_alias" in data["runs"][0]
+    assert "index_version_id" in data["runs"][0]
+    # Дельты
+    assert len(data["deltas"]) > 0
+    assert "metric_name" in data["deltas"][0]
+    assert "direction" in data["deltas"][0]
+
+
+async def test_compare_runs_different_eval_sets_rejected(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сравнение прогонов из разных eval_sets → 400."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    create1 = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "set-a", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    create2 = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "set-b", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    es1_id = create1.json()["id"]
+    es2_id = create2.json()["id"]
+
+    _patch_pipeline_for_eval(monkeypatch)
+
+    run1 = await api_client.post(f"/api/eval-sets/{es1_id}/runs", json={"index_version_id": iv_id})
+    run2 = await api_client.post(f"/api/eval-sets/{es2_id}/runs", json={"index_version_id": iv_id})
+
+    response = await api_client.post(
+        "/api/eval-runs/compare",
+        json={"run_ids": [run1.json()["id"], run2.json()["id"]]},
+    )
+    assert response.status_code == 400
+
+
+async def test_compare_runs_single_run_rejected(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """1 прогон → 400."""
+    await _login_as_admin(api_client, app_fixture)
+
+    response = await api_client.post(
+        "/api/eval-runs/compare",
+        json={"run_ids": ["single-run-id"]},
+    )
+    assert response.status_code == 400
