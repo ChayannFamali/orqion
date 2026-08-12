@@ -1,7 +1,8 @@
-"""Схемы запроса и ответа для eval-сущностей (T-223, T-224).
+"""Схемы запроса и ответа для eval-сущностей (T-223, T-224, T-225).
 
 T-223: базовые Create/Read для EvalSet, EvalItem, EvalRun.
 T-224: расширение для API импорта — CreateWithItems, ReadWithItems, ListResponse.
+T-225: расширение для прогона — EvalRunCreate, EvalRunListResponse.
 """
 
 from __future__ import annotations
@@ -82,3 +83,19 @@ class EvalImportResponse(BaseModel):
     eval_set_id: str
     total_items: int
     matched_items: int
+
+
+# T-225: прогон оценки
+
+
+class EvalRunCreate(BaseModel):
+    """Запуск прогона (POST /api/eval-sets/{id}/runs)."""
+
+    index_version_id: str
+    steps: list[str] | None = None
+
+
+class EvalRunListResponse(BaseModel):
+    """Список прогонов набора."""
+
+    items: list[EvalRunRead]

@@ -5,6 +5,9 @@ GET    /api/corpora/{corpus_id}/eval-sets       — список наборов 
 GET    /api/eval-sets/{id}                       — набор с элементами
 DELETE /api/eval-sets/{id}                       — удалить набор
 POST   /api/eval-sets/{id}/import                — импорт CodeSearchNet JSONL
+POST   /api/eval-sets/{id}/runs                  — запуск прогона (T-225)
+GET    /api/eval-sets/{id}/runs                  — список прогонов (T-225)
+GET    /api/eval-runs/{id}                       — получить прогон (T-225)
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,13 +24,16 @@ from sqlalchemy.orm import selectinload
 from app.api.schemas.eval import (
     EvalImportResponse,
     EvalItemRead,
+    EvalRunCreate,
+    EvalRunListResponse,
+    EvalRunRead,
     EvalSetCreateWithItems,
     EvalSetListResponse,
     EvalSetRead,
     EvalSetReadWithItems,
 )
 from app.auth.dependencies import current_user
-from app.db.models import Corpus, EvalItem, EvalSet, User
+from app.db.models import Corpus, EvalItem, EvalRun, EvalSet, IndexVersion, Model, Provider, User
 from app.db.session import get_session
 from app.errors import NotFound
 from app.rag.eval_import import ImportItem, import_eval_set
@@ -260,3 +266,129 @@ async def import_to_eval_set(
         total_items=total,
         matched_items=matched,
     )
+
+
+# ---------------------------------------------------------------------------
+# T-225: Прогон оценки
+# ---------------------------------------------------------------------------
+
+
+def _eval_run_to_read(run: EvalRun) -> EvalRunRead:
+    return EvalRunRead(
+        id=run.id,
+        workspace_id=run.workspace_id,
+        eval_set_id=run.eval_set_id,
+        index_version_id=run.index_version_id,
+        pipeline=run.pipeline,
+        metrics=run.metrics,
+        ts=run.ts,
+    )
+
+
+@router.post("/eval-sets/{eval_set_id}/runs", response_model=EvalRunRead)
+async def create_eval_run(
+    eval_set_id: str,
+    body: EvalRunCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EvalRunRead:
+    """Запустить прогон оценки."""
+    from app.rag.eval_runner import run_eval
+
+    # Проверяем что eval_set существует
+    result = await session.execute(
+        select(EvalSet).where(
+            EvalSet.id == eval_set_id,
+            EvalSet.workspace_id == user.workspace_id,
+        )
+    )
+    eval_set = result.scalar_one_or_none()
+    if eval_set is None:
+        raise NotFound(f"Eval set {eval_set_id} not found")
+
+    # Проверяем что index_version существует и принадлежит корпусу
+    iv_result = await session.execute(
+        select(IndexVersion).where(
+            IndexVersion.id == body.index_version_id,
+            IndexVersion.workspace_id == user.workspace_id,
+        )
+    )
+    index_version = iv_result.scalar_one_or_none()
+    if index_version is None:
+        raise NotFound(f"Index version {body.index_version_id} not found")
+
+    # Загружаем модель и провайдер для generate
+    # Используем первую доступную модель в workspace
+    model_result = await session.execute(
+        select(Model)
+        .where(Model.workspace_id == user.workspace_id, Model.enabled.is_(True))
+        .limit(1)
+    )
+    model = model_result.scalar_one_or_none()
+    if model is None:
+        raise NotFound("No enabled model found in workspace")
+
+    provider_result = await session.execute(
+        select(Provider).where(Provider.id == model.provider_id)
+    )
+    provider = provider_result.scalar_one_or_none()
+    if provider is None:
+        raise NotFound(f"Provider for model {model.alias} not found")
+
+    # Запускаем прогон
+    eval_run = await run_eval(
+        session=session,
+        workspace_id=user.workspace_id,
+        eval_set_id=eval_set_id,
+        index_version_id=body.index_version_id,
+        settings=request.app.state.settings,
+        vector_store=request.app.state.vector_store,
+        embedding_backend=request.app.state.embedding_backend,
+        secret_key=request.app.state.secret_key,
+        model=model,
+        provider=provider,
+        steps=body.steps,
+    )
+    await session.commit()
+
+    return _eval_run_to_read(eval_run)
+
+
+@router.get("/eval-sets/{eval_set_id}/runs", response_model=EvalRunListResponse)
+async def list_eval_runs(
+    eval_set_id: str,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EvalRunListResponse:
+    """Список прогонов набора."""
+    result = await session.execute(
+        select(EvalRun)
+        .where(
+            EvalRun.eval_set_id == eval_set_id,
+            EvalRun.workspace_id == user.workspace_id,
+        )
+        .order_by(EvalRun.ts.desc())
+    )
+    runs = result.scalars().all()
+    return EvalRunListResponse(items=[_eval_run_to_read(r) for r in runs])
+
+
+@router.get("/eval-runs/{run_id}", response_model=EvalRunRead)
+async def get_eval_run(
+    run_id: str,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EvalRunRead:
+    """Получить прогон с метриками."""
+    result = await session.execute(
+        select(EvalRun).where(
+            EvalRun.id == run_id,
+            EvalRun.workspace_id == user.workspace_id,
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise NotFound(f"Eval run {run_id} not found")
+
+    return _eval_run_to_read(run)

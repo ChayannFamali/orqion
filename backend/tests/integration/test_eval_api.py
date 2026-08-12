@@ -10,6 +10,7 @@ POST   /api/eval-sets/{id}/import                — импорт CodeSearchNet 
 from __future__ import annotations
 
 import httpx
+import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
@@ -336,3 +337,270 @@ async def test_import_codesearchnet_with_documents(
     assert len(get_data["items"]) == 3
     items_with_docs = [i for i in get_data["items"] if i["expected_doc_ids"]]
     assert len(items_with_docs) == 1
+
+
+# ---------------------------------------------------------------------------
+# T-225: Прогон оценки
+# ---------------------------------------------------------------------------
+
+
+async def _seed_provider_and_model(app_fixture: FastAPI) -> str:
+    """Создаёт provider+model, возвращает model alias."""
+    from app.auth.passwords import hash_password as _hash  # noqa: F401
+    from app.crypto.service import encrypt_api_key
+    from app.db.models import Model, Provider
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        provider = Provider(
+            workspace_id=workspace_id,
+            kind="openai",
+            base_url="http://stub:1234/v1",
+            api_key_enc=encrypt_api_key("sk-test", app_fixture.state.secret_key),
+            enabled=True,
+            capabilities={},
+        )
+        session.add(provider)
+        await session.flush()
+
+        model = Model(
+            workspace_id=workspace_id,
+            provider_id=provider.id,
+            alias="local/test-model",
+            upstream_name="test-model",
+            locality="local",
+            max_input_tokens=32000,
+            enabled=True,
+        )
+        session.add(model)
+        await session.commit()
+        return model.alias
+
+
+async def _seed_corpus_with_index(
+    app_fixture: FastAPI, name: str = "eval-corpus"
+) -> tuple[str, str]:
+    """Создаёт корпус с index_version, возвращает (corpus_id, index_version_id)."""
+    from app.db.models import Chunk, Corpus, Document, IndexVersion
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        corpus = Corpus(workspace_id=workspace_id, name=name)
+        session.add(corpus)
+        await session.flush()
+
+        iv = IndexVersion(
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            embedding_model="BAAI/bge-m3",
+            chunker="header",
+            chunker_version="1",
+            status="active",
+        )
+        session.add(iv)
+        await session.flush()
+        corpus.active_index_version_id = iv.id
+
+        # Создаём документ и чанк
+        doc = Document(
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            blob_uri="sha256-eval-1",
+            filename="doc1.md",
+            mime="text/markdown",
+            sha256="sha256-eval-1",
+            source_type="upload",
+            status="indexed",
+        )
+        session.add(doc)
+        await session.flush()
+
+        chunk = Chunk(
+            workspace_id=workspace_id,
+            index_version_id=iv.id,
+            document_id=doc.id,
+            ordinal=0,
+            text="Content about RAG pipelines",
+            meta={"document_filename": "doc1.md", "chunker": "header"},
+        )
+        session.add(chunk)
+        await session.commit()
+        return corpus.id, iv.id
+
+
+def _patch_pipeline_for_eval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Подменяет hybrid_search и rerank для eval тестов."""
+    from app.rag.hybrid_search import HybridResult, HybridSearchOutput
+    from app.rag.reranker import RerankOutput, RerankResult
+    from app.rag.vector_store import Hit
+
+    # Заглушка поиска — возвращаем один hit
+    async def _stub_hybrid_search(*args: object, **kwargs: object) -> object:
+        hits = [Hit(chunk_id="chunk-1", score=1.0, text="Content about RAG")]
+        hybrid = [
+            HybridResult(chunk_id="chunk-1", score=1.0, text="Content", dense_rank=1, sparse_rank=1)
+        ]
+        return HybridSearchOutput(dense_hits=hits, sparse_hits=hits, merged=hybrid)
+
+    # Заглушка реранкинга
+    async def _stub_rerank(*args: object, **kwargs: object) -> object:
+        results = [RerankResult(chunk_id="chunk-1", score=1.0, text="Content", original_rank=1)]
+        return RerankOutput(results=results, degraded=False, duration_ms=1.0, error=None)
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+    monkeypatch.setattr("app.rag.pipeline.rerank", _stub_rerank)
+
+
+async def test_create_eval_run(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Запуск прогона через API — возвращает EvalRun с метриками."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    # Создаём набор с 2 вопросами
+    create_resp = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={
+            "name": "run-test",
+            "items": [
+                {
+                    "question": "What is RAG?",
+                    "expected_doc_ids": ["doc-1"],
+                    "expected_answer": "RAG is...",
+                },
+                {
+                    "question": "What is MRR?",
+                    "expected_doc_ids": [],
+                    "expected_answer": "MRR is...",
+                },
+            ],
+        },
+    )
+    eval_set_id = create_resp.json()["id"]
+
+    _patch_pipeline_for_eval(monkeypatch)
+
+    # Запускаем прогон
+    response = await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": iv_id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["eval_set_id"] == eval_set_id
+    assert data["index_version_id"] == iv_id
+    assert "metrics" in data
+    assert "pipeline" in data
+    # pipeline содержит алиас модели
+    assert data["pipeline"]["generate_model_alias"] == "local/test-model"
+    # Метрики содержат recall@k
+    assert "recall@1" in data["metrics"]
+    assert "recall@5" in data["metrics"]
+    assert "mrr" in data["metrics"]
+    assert data["metrics"]["total_items"] == 2
+
+
+async def test_list_eval_runs(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Список прогонов набора."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    create_resp = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "list-runs-test", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    eval_set_id = create_resp.json()["id"]
+
+    _patch_pipeline_for_eval(monkeypatch)
+
+    # Запускаем прогон
+    await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": iv_id},
+    )
+
+    response = await api_client.get(f"/api/eval-sets/{eval_set_id}/runs")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["eval_set_id"] == eval_set_id
+
+
+async def test_get_eval_run(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Получение прогона по ID."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    create_resp = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "get-run-test", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    eval_set_id = create_resp.json()["id"]
+
+    _patch_pipeline_for_eval(monkeypatch)
+
+    run_resp = await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": iv_id},
+    )
+    run_id = run_resp.json()["id"]
+
+    response = await api_client.get(f"/api/eval-runs/{run_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == run_id
+    assert "metrics" in data
+
+
+async def test_create_eval_run_set_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """404 если набор не существует."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    _, iv_id = await _seed_corpus_with_index(app_fixture)
+
+    response = await api_client.post(
+        "/api/eval-sets/nonexistent/runs",
+        json={"index_version_id": iv_id},
+    )
+    assert response.status_code == 404
+
+
+async def test_create_eval_run_index_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """404 если index_version не существует."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    corpus_id, _ = await _seed_corpus_with_index(app_fixture)
+
+    create_resp = await api_client.post(
+        f"/api/corpora/{corpus_id}/eval-sets",
+        json={"name": "bad-iv-test", "items": [{"question": "Q", "expected_doc_ids": []}]},
+    )
+    eval_set_id = create_resp.json()["id"]
+
+    response = await api_client.post(
+        f"/api/eval-sets/{eval_set_id}/runs",
+        json={"index_version_id": "nonexistent"},
+    )
+    assert response.status_code == 404
