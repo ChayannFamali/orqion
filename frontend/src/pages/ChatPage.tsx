@@ -2,12 +2,10 @@ import { useCallback, useState } from "react";
 import { useConversations, useConversation, useUpdateConversation } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
 import { useChat } from "../hooks/useChat";
-import { useLogout } from "../hooks/useAuth";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
 import { ModelSelector } from "../components/ModelSelector";
-import { Button } from "../components/ui/button";
 import type { ChatMessage, MessageResponse } from "../api/types";
 
 export function ChatPage() {
@@ -18,7 +16,6 @@ export function ChatPage() {
   const conversations = useConversations();
   const conversation = useConversation(activeId);
   const models = useEnabledModels();
-  const logout = useLogout();
   const updateConv = useUpdateConversation();
   const chat = useChat();
 
@@ -120,20 +117,21 @@ export function ChatPage() {
   );
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-64 shrink-0 border-r border-border bg-background">
-        <div className="flex h-12 items-center justify-between border-b border-border px-3">
-          <span className="text-sm font-bold text-foreground">orqion</span>
-          <Button variant="ghost" size="sm" onClick={() => logout.mutate()}>
-            Выйти
-          </Button>
+    <div className="flex h-full">
+      {/* Conversations panel (within content area, not AppLayout sidebar) */}
+      <aside className="w-60 shrink-0 border-r border-border bg-background">
+        <div className="border-b border-border p-3">
+          <button
+            onClick={handleNew}
+            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Новый диалог
+          </button>
         </div>
         <ConversationList
           conversations={conversations.data?.conversations ?? []}
           activeId={activeId}
           onSelect={handleSelect}
-          onNew={handleNew}
         />
       </aside>
 

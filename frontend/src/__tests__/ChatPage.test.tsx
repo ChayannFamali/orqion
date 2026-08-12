@@ -133,10 +133,10 @@ describe("ChatPage", () => {
     });
   });
 
-  it("renders logout button", async () => {
+  it("renders new conversation button", async () => {
     renderChatPage();
     await waitFor(() => {
-      expect(screen.getByText("Выйти")).toBeInTheDocument();
+      expect(screen.getAllByText("Новый диалог").length).toBeGreaterThan(0);
     });
   });
 
