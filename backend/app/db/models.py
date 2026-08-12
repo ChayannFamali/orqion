@@ -253,7 +253,7 @@ class UsageEvent(Base, IdMixin, WorkspaceMixin):
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
-class Trace(Base, IdMixin, WorkspaceMixin):
+class Trace(Base, IdMixin, WorkspaceMixin, TimestampMixin):
     """Трассировка запроса. arch.md §5.1, ADR-14.
 
     Один trace на чат-запрос. span — шаги конвейера.
@@ -288,7 +288,7 @@ class Trace(Base, IdMixin, WorkspaceMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")
 
 
-class Span(Base, IdMixin, WorkspaceMixin):
+class Span(Base, IdMixin, WorkspaceMixin, TimestampMixin):
     """Шаг конвейера. arch.md §5.1, ADR-14.
 
     payload JSON — тела шагов (промпты, чанки), отдельный срок хранения (§5.3).
