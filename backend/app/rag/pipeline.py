@@ -51,6 +51,9 @@ class RagState:
     errors: list[str] = field(default_factory=list)
     usage: dict[str, Any] | None = None
     sources: list[SourceEntry] = field(default_factory=list)
+    # T-307: данные для панели трассировки
+    search_candidates: list[dict[str, object]] = field(default_factory=list)
+    rerank_results: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -104,6 +107,16 @@ async def step_search(state: RagState, ctx: RagContext) -> RagState:
         k=50,
     )
     state.hits = output.merged
+    # T-307: кандидаты поиска для панели трассировки
+    state.search_candidates = [
+        {
+            "chunk_id": h.chunk_id,
+            "score": h.score,
+            "dense_rank": h.dense_rank,
+            "sparse_rank": h.sparse_rank,
+        }
+        for h in output.merged
+    ]
     return state
 
 
@@ -119,6 +132,15 @@ async def step_rerank(state: RagState, ctx: RagContext) -> RagState:
         top_k=8,
     )
     state.reranked = output.results
+    # T-307: результаты реранкинга для панели трассировки
+    state.rerank_results = [
+        {
+            "chunk_id": r.chunk_id,
+            "score": r.score,
+            "original_rank": r.original_rank,
+        }
+        for r in output.results
+    ]
     if output.degraded:
         state.degraded = True
         if output.error:
@@ -222,6 +244,14 @@ async def run_pipeline(
 
         span_payload["degraded"] = state.degraded
         span_payload["errors"] = list(state.errors)
+
+        # T-307: обогащение payload данными шага для панели трассировки
+        if step_name == "step_search":
+            span_payload["candidates_count"] = len(state.search_candidates)
+            span_payload["candidates"] = state.search_candidates
+        elif step_name == "step_rerank":
+            span_payload["reranked_count"] = len(state.rerank_results)
+            span_payload["reranked"] = state.rerank_results
 
     return state
 

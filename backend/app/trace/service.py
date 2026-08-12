@@ -129,7 +129,7 @@ async def span(
     record = SpanRecord(
         name=name,
         parent_id=parent_id,
-        payload=payload or {},
+        payload=payload if payload is not None else {},
     )
     ctx.add_span(record)
     try:

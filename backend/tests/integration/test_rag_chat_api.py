@@ -506,6 +506,22 @@ async def test_chat_with_corpus_traces_rag_steps(
         assert "resolve_corpus" in span_names
         assert "prepare" in span_names
         assert "rag_pipeline" in span_names
+        # T-307: routing span записан с payload
+        routing_spans = [s for s in spans if s.name == "routing"]
+        assert len(routing_spans) == 1
+        assert "rule_index" in routing_spans[0].payload
+        assert "reason" in routing_spans[0].payload
+        assert "model" in routing_spans[0].payload
+        assert "fallbacks" in routing_spans[0].payload
+        # T-307: step_search и step_rerank span'ы имеют enriched payload
+        search_spans = [s for s in spans if s.name == "step_search"]
+        assert len(search_spans) == 1
+        assert "candidates_count" in search_spans[0].payload
+        assert "candidates" in search_spans[0].payload
+        rerank_spans = [s for s in spans if s.name == "step_rerank"]
+        assert len(rerank_spans) == 1
+        assert "reranked_count" in rerank_spans[0].payload
+        assert "reranked" in rerank_spans[0].payload
 
 
 async def _seed_corpus_with_pinned_model(

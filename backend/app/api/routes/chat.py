@@ -131,6 +131,7 @@ async def chat(
             rate_limiter=rate_limiter,
             secret_key=secret_key,
             workspace_id=workspace_id,
+            trace_ctx=trace_ctx,
         )
         chat_ctx.trace_id = trace_ctx.trace_id
 

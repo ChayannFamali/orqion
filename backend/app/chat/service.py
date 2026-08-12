@@ -34,6 +34,18 @@ from app.providers.client import ProviderClient
 from app.providers.errors import normalize_error
 from app.router.models import RouteContext
 from app.router.service import load_candidate_models, load_rules, select_model
+from app.trace.service import TraceContext, span
+
+
+class _NullSpan:
+    """No-op async context manager когда trace_ctx не передан."""
+
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
 
 _ENCODER: tiktoken.Encoding | None = None
 
@@ -121,6 +133,7 @@ async def prepare_chat(
     rate_limiter: RateLimiter | None,
     secret_key: str,
     workspace_id: str,
+    trace_ctx: TraceContext | None = None,
 ) -> tuple[ChatContext, Model, Provider, list[tuple[Model, Provider]]]:
     """Подготовка чат-запроса: enforce, маршрутизация, загрузка модели.
 
@@ -167,7 +180,13 @@ async def prepare_chat(
 
     # Маршрутизация
     rules = await load_rules(session, workspace_id)
-    decision = select_model(rules, ctx)
+    routing_payload: dict[str, object] = {}
+    async with span(trace_ctx, "routing", payload=routing_payload) if trace_ctx else _NullSpan():
+        decision = select_model(rules, ctx)
+        routing_payload["rule_index"] = decision.rule_index
+        routing_payload["reason"] = decision.reason
+        routing_payload["model"] = decision.model.alias
+        routing_payload["fallbacks"] = [m.alias for m in decision.fallbacks]
 
     selected_model = decision.model
     fallbacks = decision.fallbacks
