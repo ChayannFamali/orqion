@@ -15,6 +15,7 @@ from app.config import Settings
 from app.db.models import User
 from app.db.session import get_session
 from app.errors import OrqionError
+from app.policy.resolve import resolve_policy
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -85,7 +86,15 @@ async def login(
         path="/",
         secure=settings.session_cookie_secure,
     )
-    return LoginResponse(user=UserResponse(id=user.id, email=user.email, is_active=user.is_active))
+    policy = await resolve_policy(session, user)
+    return LoginResponse(
+        user=UserResponse(
+            id=user.id,
+            email=user.email,
+            is_active=user.is_active,
+            capabilities=policy.capabilities,
+        )
+    )
 
 
 @router.post("/logout", status_code=204)
@@ -104,5 +113,12 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def me(
     user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, is_active=user.is_active)
+    policy = await resolve_policy(session, user)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        is_active=user.is_active,
+        capabilities=policy.capabilities,
+    )

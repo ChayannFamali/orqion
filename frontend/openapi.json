@@ -3416,13 +3416,21 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
           }
         },
         "type": "object",
         "required": [
           "id",
           "email",
-          "is_active"
+          "is_active",
+          "capabilities"
         ],
         "title": "UserResponse"
       },

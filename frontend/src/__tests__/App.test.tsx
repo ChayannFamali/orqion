@@ -70,6 +70,7 @@ describe("App", () => {
       id: "user-1",
       email: "test@orqion.local",
       is_active: true,
+      capabilities: ["chat"],
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

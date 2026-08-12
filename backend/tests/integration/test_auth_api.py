@@ -20,7 +20,12 @@ async def _seed_test_user(session: AsyncSession) -> tuple[User, str]:
     session.add(ws)
     await session.flush()
 
-    role = Role(workspace_id=ws.id, name="member", is_builtin=False, policy={})
+    role = Role(
+        workspace_id=ws.id,
+        name="member",
+        is_builtin=False,
+        policy={"capabilities": ["chat", "upload"]},
+    )
     session.add(role)
     await session.flush()
 
@@ -54,11 +59,13 @@ async def test_login_success(
     )
     assert response.status_code == 200
     assert response.json()["user"]["email"] == "user@orqion.local"
+    assert response.json()["user"]["capabilities"] == ["chat", "upload"]
     assert COOKIE_NAME in response.cookies
 
     me_response = await api_client.get("/api/auth/me")
     assert me_response.status_code == 200
     assert me_response.json()["email"] == "user@orqion.local"
+    assert me_response.json()["capabilities"] == ["chat", "upload"]
 
 
 @pytest.mark.asyncio

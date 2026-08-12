@@ -14,6 +14,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     is_active: bool
+    capabilities: list[str]
 
 
 class LoginResponse(BaseModel):

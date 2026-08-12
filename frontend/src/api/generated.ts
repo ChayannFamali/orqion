@@ -1209,6 +1209,8 @@ export interface components {
             email: string;
             /** Is Active */
             is_active: boolean;
+            /** Capabilities */
+            capabilities: string[];
         };
         /** ValidationError */
         ValidationError: {
