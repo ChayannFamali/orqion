@@ -81,13 +81,22 @@ def select_model(
             break
 
     if not candidates:
+        constraint: dict[str, object] = {
+            "reason": matched_reason,
+            "rule_index": matched_rule_index,
+            "candidate_count": len(ctx.candidate_models),
+        }
+        hint = "Нет моделей, удовлетворяющих правилам маршрутизации и ограничениям"
+        if ctx.corpus_data_class in ("К2", "К3"):
+            constraint["data_class"] = ctx.corpus_data_class
+            constraint["filtered_locality"] = "local"
+            hint = (
+                f"Корпус класса {ctx.corpus_data_class} допускает только локальные модели. "
+                "Все локальные модели отфильтрованы правилами маршрутизации или недоступны"
+            )
         raise NoRouteAvailable(
-            constraint={
-                "reason": matched_reason,
-                "rule_index": matched_rule_index,
-                "candidate_count": len(ctx.candidate_models),
-            },
-            hint="Нет моделей, удовлетворяющих правилам маршрутизации и ограничениям",
+            constraint=constraint,
+            hint=hint,
         )
 
     primary = candidates[0]

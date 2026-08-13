@@ -299,7 +299,7 @@ async def execute_stream(
                 # Fallback возможен только если ни один токен не был отправлен
                 if got_token or attempt_idx == len(attempts) - 1:
                     chat_ctx.error_code = err.error_code
-                    yield f"data: {json.dumps({'type': 'error', 'code': err.error_code, 'message': err.reason})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'code': err.error_code, 'message': err.reason, 'reason': err.reason, 'constraint': err.constraint, 'hint': err.hint})}\n\n"
                     break
                 # Ошибка до первого токена, есть ещё fallback — пробуем следующую модель
                 continue
@@ -371,6 +371,9 @@ async def execute_complete(
             "type": "error",
             "code": last_error.error_code,
             "message": last_error.reason,
+            "reason": last_error.reason,
+            "constraint": last_error.constraint,
+            "hint": last_error.hint,
         }
 
     return {

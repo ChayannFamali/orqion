@@ -538,6 +538,9 @@ async def test_admin_k3_external_fallback_blocked(
     assert body["type"] == "error"
     assert body["code"] == "provider_unavailable"
     assert external_called["yes"] is False
+    # T-008/§7.3: ошибка содержит reason/constraint/hint, не generic отказ
+    assert body["reason"] is not None
+    assert body["hint"] is not None
 
 
 @pytest.mark.asyncio
@@ -700,8 +703,12 @@ async def test_admin_k3_no_pinned_model_explicit_external_alias_rejected(
     # Но если нет local моделей → NoRouteAvailable (503)
     # Если есть local модели → выбрана local, external не вызвана
     # В любом случае external модель НЕ вызвана
-    assert response.status_code in (200, 503)
+    assert response.status_code == 503
     assert external_called["yes"] is False
-    if response.status_code == 200:
-        body = response.json()
-        assert body.get("model") != "external/gpt-4"
+    body = response.json()
+    assert body["error"] == "no_route_available"
+    assert body["reason"] is not None
+    assert body["constraint"] is not None
+    assert body["constraint"]["data_class"] == "\u041a3"
+    assert body["hint"] is not None
+    assert "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0435" in body["hint"]
