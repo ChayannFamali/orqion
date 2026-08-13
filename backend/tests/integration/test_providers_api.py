@@ -183,3 +183,114 @@ async def test_providers_require_auth(api_client: httpx.AsyncClient) -> None:
     """GET /api/providers без cookie → 401."""
     response = await api_client.get("/api/providers")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# T-308: Access control — manage_providers capability
+# ---------------------------------------------------------------------------
+
+
+async def _login_as_role(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    role_name: str,
+) -> None:
+    """Логинит пользователя с заданной ролью (non-admin)."""
+    from app.policy.presets import BUILTIN_ROLES
+
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        role = Role(
+            workspace_id=ws_id,
+            name=role_name,
+            is_builtin=True,
+            policy=BUILTIN_ROLES[role_name].model_dump(),
+        )
+        session.add(role)
+        await session.flush()
+
+        user = User(
+            workspace_id=ws_id,
+            email=f"prov-{role_name}@orqion.local",
+            password_hash=hash_password("pass-123"),
+            role_id=role.id,
+        )
+        session.add(user)
+        await session.flush()
+
+        session_id = await create_session(session, user.id, ws_id, Settings())
+        await session.commit()
+
+    api_client.cookies.set(COOKIE_NAME, session_id)
+
+
+@pytest.mark.asyncio
+async def test_list_providers_non_admin_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """GET /api/providers → 404 для non-admin (manage_providers required)."""
+    await _login_as_role(api_client, app_fixture, "developer")
+
+    resp = await api_client.get("/api/providers")
+    assert resp.status_code == 404
+    data = resp.json()
+    assert data["error"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_create_provider_non_admin_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/providers → 404 для non-admin."""
+    await _login_as_role(api_client, app_fixture, "developer")
+
+    resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://evil.test/v1", "api_key": "stolen"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_provider_non_admin_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH /api/providers/{id} → 404 для non-admin (нельзя подменить base_url)."""
+    # Создаём провайдер от admin
+    await _login_as_admin(api_client, app_fixture)
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://legit.test/v1"},
+    )
+    assert create_resp.status_code == 201
+    provider_id = create_resp.json()["id"]
+
+    # Пытаемся изменить от developer
+    await _login_as_role(api_client, app_fixture, "developer")
+    resp = await api_client.patch(
+        f"/api/providers/{provider_id}",
+        json={"base_url": "http://evil.test/v1"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_probe_provider_non_admin_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/providers/{id}/probe → 404 для non-admin."""
+    await _login_as_admin(api_client, app_fixture)
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://legit.test/v1"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    await _login_as_role(api_client, app_fixture, "developer")
+    resp = await api_client.post(f"/api/providers/{provider_id}/probe")
+    assert resp.status_code == 404

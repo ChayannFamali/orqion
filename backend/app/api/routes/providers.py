@@ -1,6 +1,7 @@
 """POST /api/providers, GET /api/providers, PATCH /api/providers/{id}.
 
 Ключ шифруется при записи, не возвращается в ответах (AGENTS.md §14).
+Access control: capability "manage_providers" (только admin через "*" в seed presets).
 """
 
 from __future__ import annotations
@@ -22,13 +23,21 @@ from app.api.schemas.provider import (
 )
 from app.auth.dependencies import current_user
 from app.crypto.service import encrypt_api_key
-from app.db.models import Model, Provider
+from app.db.models import Model, Provider, User
 from app.db.session import get_session
 from app.errors import NotFound, OrqionError
+from app.policy.models import WILDCARD
+from app.policy.resolve import resolve_policy
 
 router = APIRouter(
     prefix="/api/providers", tags=["providers"], dependencies=[Depends(current_user)]
 )
+
+
+async def _check_manage_providers(session: AsyncSession, user: User) -> bool:
+    """True если admin (через *). Иначе — NotFound (не раскрываем существование)."""
+    policy = await resolve_policy(session, user)
+    return WILDCARD in policy.capabilities or "manage_providers" in policy.capabilities
 
 
 def _provider_to_response(provider: Provider) -> ProviderResponse:
@@ -63,7 +72,14 @@ async def create_provider(
     body: ProviderCreate,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> ProviderResponse:
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     secret_key = request.app.state.secret_key
 
     api_key_enc = None
@@ -89,7 +105,14 @@ async def create_provider(
 async def list_providers(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> ProviderListResponse:
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     workspace_id = request.app.state.workspace_id
     result = await session.execute(
         select(Provider)
@@ -108,7 +131,14 @@ async def update_provider(
     body: ProviderUpdate,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> ProviderResponse:
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     workspace_id = request.app.state.workspace_id
     result = await session.execute(
         select(Provider)
@@ -141,6 +171,7 @@ async def probe_provider_endpoint(
     provider_id: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
     deep: bool = False,
 ) -> dict[str, object]:
     """Запускает probe провайдера: измеряет возможности, сверяет модели.
@@ -149,6 +180,12 @@ async def probe_provider_endpoint(
     для каждой available модели. Бинарный поиск, максимум 4 попытки на модель.
     Дорого: отправляет реальные промпты. Не входит в плановый ре-probe (T-112a).
     """
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     from app.providers.probe import probe_provider
 
     workspace_id = request.app.state.workspace_id
@@ -210,7 +247,14 @@ async def create_model(
     body: ModelCreate,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> ModelResponse:
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     workspace_id = request.app.state.workspace_id
     result = await session.execute(
         select(Provider).where(Provider.id == provider_id, Provider.workspace_id == workspace_id)
@@ -254,7 +298,14 @@ async def update_model(
     body: ModelUpdate,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> ModelResponse:
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
     workspace_id = request.app.state.workspace_id
     result = await session.execute(
         select(Model).where(Model.id == model_id, Model.workspace_id == workspace_id)
