@@ -59,3 +59,27 @@ export interface ProbeResult {
   error: string | null;
   observed_context?: Record<string, number | null>;
 }
+
+/** Роль с полной политикой (T-310). Не из OpenAPI — policy это dict[str, Any]. */
+export interface RoleResponse {
+  id: string;
+  name: string;
+  is_builtin: boolean;
+  policy: Record<string, unknown>;
+}
+
+/** Список ролей (T-310). */
+export interface RoleListResponse {
+  roles: RoleResponse[];
+}
+
+/** Создание роли (T-310). */
+export interface RoleCreate {
+  name: string;
+  policy: Record<string, unknown>;
+}
+
+/** Обновление политики роли (T-310). */
+export interface RoleUpdate {
+  policy: Record<string, unknown>;
+}

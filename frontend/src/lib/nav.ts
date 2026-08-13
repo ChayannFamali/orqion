@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText } from "lucide-react";
+import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText, Shield } from "lucide-react";
 
 /**
  * Реестр навигационных разделов.
@@ -36,6 +36,7 @@ export const navItems: NavItem[] = [
   { key: "traces", label: "Трассировки", icon: Activity, capability: "view_traces" },
   { key: "analytics", label: "Аналитика", icon: BarChart3, capability: "view_analytics" },
   { key: "providers", label: "Провайдеры", icon: Server, capability: "manage_providers" },
+  { key: "roles", label: "Роли", icon: Shield, capability: "manage_roles" },
   { key: "users", label: "Пользователи", icon: Users, capability: "manage_users" },
   { key: "audit", label: "Аудит", icon: ScrollText, capability: "view_audit" },
 ];

@@ -34,6 +34,7 @@ describe("isNavVisible", () => {
       "traces",
       "analytics",
       "providers",
+      "roles",
       "users",
       "audit",
     ]);

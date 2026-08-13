@@ -28,4 +28,7 @@ export const queryKeys = {
   providers: {
     all: ["providers"] as const,
   },
+  roles: {
+    all: ["roles"] as const,
+  },
 } as const;
