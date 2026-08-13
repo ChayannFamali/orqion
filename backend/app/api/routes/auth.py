@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.auth import LoginRequest, LoginResponse, UserResponse
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
-from app.auth.passwords import verify_password
+from app.auth.local_provider import LocalIdentityProvider
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.sessions import (
     COOKIE_NAME,
@@ -28,12 +28,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 def get_settings() -> Settings:
     return Settings()
-
-
-class InvalidCredentials(OrqionError):
-    error_code = "invalid_credentials"
-    reason = "Неверный email или пароль"
-    status_code = 401
 
 
 class LoginRateLimited(OrqionError):
@@ -72,12 +66,11 @@ async def login(
             hint=f"Попробуйте через {reset_in:.0f} секунд",
         )
 
-    result = await session.execute(
-        select(User).where(User.email == body.email, User.is_active.is_(True))
+    provider = LocalIdentityProvider(session)
+    auth_result = await provider.authenticate(
+        credentials={"email": body.email, "password": body.password}
     )
-    user = result.scalar_one_or_none()
-    if user is None or not verify_password(user.password_hash, body.password):
-        raise InvalidCredentials()
+    user = auth_result.user
 
     limiter.reset(body.email, ip)
 

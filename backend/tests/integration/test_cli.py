@@ -66,6 +66,7 @@ async def test_createuser_creates_new_user(monkeypatch: pytest.MonkeyPatch) -> N
         user = result.scalar_one_or_none()
         assert user is not None
         assert user.is_active is True
+        assert user.password_hash is not None
         assert verify_password(user.password_hash, "test-password-123") is True
 
         role = await session.get(Role, user.role_id)
@@ -175,6 +176,7 @@ async def test_reset_password_success(monkeypatch: pytest.MonkeyPatch) -> None:
     async with session_factory() as session:
         result = await session.execute(select(User).where(User.email == "reset@orqion.local"))
         user = result.scalar_one()
+        assert user.password_hash is not None
         assert verify_password(user.password_hash, "old-password") is False
         assert verify_password(user.password_hash, "new-password-456") is True
 

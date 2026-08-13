@@ -39,19 +39,26 @@ class Role(Base, IdMixin, TimestampMixin, WorkspaceMixin):
 
 
 class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
-    """Пользователь: email, password_hash, role_id, is_active."""
+    """Пользователь: email, password_hash (nullable для OIDC), role_id, is_active.
+
+    auth_method: "local" (password), "oidc" (external IdP), "mixed" (оба способа).
+    external_subject/external_issuer — для OIDC-сопоставления (T-404).
+    """
 
     __tablename__ = "user"
     __table_args__ = (UniqueConstraint("workspace_id", "email", name="uq_user_workspace_email"),)
 
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("role.id"),
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    auth_method: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
+    external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    external_issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):

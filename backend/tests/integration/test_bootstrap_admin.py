@@ -89,6 +89,7 @@ async def test_admin_password_not_in_db_as_plaintext(db_session: AsyncSession) -
         select(User.password_hash).where(User.email == "admin@orqion.local")
     )
     stored_hash = result.scalar_one()
+    assert stored_hash is not None
     assert plaintext not in stored_hash
     assert "$argon2id$" in stored_hash
     assert verify_password(stored_hash, plaintext) is True

@@ -774,8 +774,8 @@ async def test_data_class_violation_enforce_path_logged_in_audit(
     await _seed_provider_and_model(app_fixture, "local/test", "test-upstream", "local")
 
     # Mock enforce_all to raise DataClassViolation (simulates second-layer defence)
-    from app.errors import DataClassViolation
     from app.chat import service as chat_service
+    from app.errors import DataClassViolation
 
     async def _mock_enforce_all(*args: object, **kwargs: object) -> None:
         raise DataClassViolation(
