@@ -148,6 +148,7 @@ def create_app() -> FastAPI:
         eval_router,
         models_router,
         providers_router,
+        roles_router,
         routing_router,
         traces_router,
     )
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(eval_router)
     app.include_router(models_router)
     app.include_router(providers_router)
+    app.include_router(roles_router)
     app.include_router(routing_router)
     app.include_router(traces_router)
 
