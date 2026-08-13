@@ -47,6 +47,9 @@ postgres = [
 s3 = [
     "aioboto3==13.1.0",
 ]
+oidc = [
+    "authlib==1.7.2",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",

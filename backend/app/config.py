@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""
 
+    # OIDC (T-404b). По умолчанию отключён — локальный вход работает без env.
+    oidc_enabled: bool = False
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_issuer: str = ""
+    oidc_redirect_uri: str = "http://localhost:8000/api/auth/oidc/callback"
+    oidc_group_role_map: str = "{}"
+    oidc_default_role: str = "support"
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

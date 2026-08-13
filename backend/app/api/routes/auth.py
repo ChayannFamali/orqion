@@ -218,3 +218,147 @@ async def exit_impersonation(
         secure=Settings().session_cookie_secure,
     )
     return {"status": "restored"}
+
+
+# ---------------------------------------------------------------------------
+# OIDC endpoints (T-404b)
+# ---------------------------------------------------------------------------
+
+OIDC_STATE_COOKIE = "orqion_oidc_state"
+OIDC_VERIFIER_COOKIE = "orqion_oidc_verifier"
+_OIDC_COOKIE_MAX_AGE = 300  # 5 минут
+
+
+@router.get("/oidc/login")
+async def oidc_login(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str]:
+    """GET /api/auth/oidc/login → redirect URL к IdP.
+
+    Устанавливает state + code_verifier в подписанных HttpOnly cookies (5min TTL).
+    """
+    if not settings.oidc_enabled:
+        raise BadRequest(
+            "OIDC отключён",
+            hint="Установите ORQION_OIDC_ENABLED=true и orqion[oidc]",
+        )
+
+    from app.auth.oidc_provider import (
+        OidcIdentityProvider,
+        _generate_pkce,
+        _generate_state,
+        _sign_state_cookie,
+    )
+
+    workspace_id = request.app.state.workspace_id
+    provider = OidcIdentityProvider(
+        session=session,
+        settings=settings,
+        workspace_id=workspace_id,
+    )
+    discovery = await provider._fetch_discovery()
+
+    state = _generate_state()
+    verifier, challenge = _generate_pkce()
+    secret_key = settings.secret_key or "fallback"
+
+    signed_state = _sign_state_cookie(state, secret_key)
+    signed_verifier = _sign_state_cookie(verifier, secret_key)
+
+    authorize_url = provider.build_authorize_url(discovery, state, challenge)
+
+    response.set_cookie(
+        key=OIDC_STATE_COOKIE,
+        value=signed_state,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=settings.session_cookie_secure,
+        max_age=_OIDC_COOKIE_MAX_AGE,
+    )
+    response.set_cookie(
+        key=OIDC_VERIFIER_COOKIE,
+        value=signed_verifier,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=settings.session_cookie_secure,
+        max_age=_OIDC_COOKIE_MAX_AGE,
+    )
+    return {"authorize_url": authorize_url}
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(
+    request: Request,
+    response: Response,
+    code: str = "",
+    state: str = "",
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str]:
+    """GET /api/auth/oidc/callback → обмен code на tokens, создание сессии.
+
+    Валидирует state из cookie, обменивает code через OidcIdentityProvider.
+    """
+    if not settings.oidc_enabled:
+        raise BadRequest(
+            "OIDC отключён",
+            hint="Установите ORQION_OIDC_ENABLED=true и orqion[oidc]",
+        )
+
+    from app.auth.oidc_provider import (
+        OidcError,
+        OidcIdentityProvider,
+        _verify_state_cookie,
+    )
+
+    # Валидация state (CSRF protection)
+    signed_state = request.cookies.get(OIDC_STATE_COOKIE, "")
+    signed_verifier = request.cookies.get(OIDC_VERIFIER_COOKIE, "")
+    secret_key = settings.secret_key or "fallback"
+
+    cookie_state = _verify_state_cookie(signed_state, secret_key)
+    if cookie_state is None or cookie_state != state:
+        raise OidcError("State mismatch — возможная CSRF-атака")
+
+    code_verifier = _verify_state_cookie(signed_verifier, secret_key)
+    if code_verifier is None:
+        raise OidcError("code_verifier не найден или подпись неверна")
+
+    workspace_id = request.app.state.workspace_id
+    provider = OidcIdentityProvider(
+        session=session,
+        settings=settings,
+        workspace_id=workspace_id,
+    )
+
+    auth_result = await provider.authenticate(
+        credentials={
+            "code": code,
+            "code_verifier": code_verifier,
+            "state": state,
+        }
+    )
+    user = auth_result.user
+
+    # Очистка OIDC cookies
+    response.delete_cookie(key=OIDC_STATE_COOKIE, path="/")
+    response.delete_cookie(key=OIDC_VERIFIER_COOKIE, path="/")
+
+    # Создание сессии
+    session_id = await create_session(session, user.id, user.workspace_id, settings)
+    await session.commit()
+
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=settings.session_cookie_secure,
+    )
+    return {"status": "ok", "email": user.email}

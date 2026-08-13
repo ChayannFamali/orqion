@@ -123,6 +123,90 @@
         }
       }
     },
+    "/api/auth/oidc/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oidc Login",
+        "description": "GET /api/auth/oidc/login → redirect URL к IdP.\n\nУстанавливает state + code_verifier в подписанных HttpOnly cookies (5min TTL).",
+        "operationId": "oidc_login_api_auth_oidc_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Oidc Login Api Auth Oidc Login Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oidc/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oidc Callback",
+        "description": "GET /api/auth/oidc/callback → обмен code на tokens, создание сессии.\n\nВалидирует state из cookie, обменивает code через OidcIdentityProvider.",
+        "operationId": "oidc_callback_api_auth_oidc_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Oidc Callback Api Auth Oidc Callback Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics": {
       "get": {
         "tags": [
