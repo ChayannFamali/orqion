@@ -57,4 +57,46 @@ describe("MarkdownRenderer", () => {
     expect(link?.getAttribute("rel")).toContain("noopener");
     expect(link?.getAttribute("rel")).toContain("noreferrer");
   });
+
+  // Gate 3 — sanitization tests for malicious content from RAG documents
+
+  it("sanitizes javascript: protocol in markdown links", () => {
+    const content = "[click me](javascript:alert(1))";
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const link = container.querySelector("a");
+    if (link) {
+      const href = link.getAttribute("href") ?? "";
+      expect(href).not.toContain("javascript:");
+    }
+  });
+
+  it("sanitizes javascript: protocol in markdown images", () => {
+    const content = "![x](javascript:alert(1))";
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const img = container.querySelector("img");
+    if (img) {
+      const src = img.getAttribute("src") ?? "";
+      expect(src).not.toContain("javascript:");
+    }
+  });
+
+  it("sanitizes HTML injection in img tag via markdown context", () => {
+    // Model might quote document content verbatim, including HTML
+    const content = '<img src=x onerror="alert(document.cookie)">';
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const img = container.querySelector("img");
+    if (img) {
+      expect(img.getAttribute("onerror")).toBeNull();
+    }
+  });
+
+  it("sanitizes data: protocol in img src (potential XSS vector)", () => {
+    const content = '![x](data:text/html,<script>alert(1)</script>)';
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const img = container.querySelector("img");
+    if (img) {
+      const src = img.getAttribute("src") ?? "";
+      expect(src).not.toContain("<script>");
+    }
+  });
 });
