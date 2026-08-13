@@ -18,5 +18,12 @@ export default function App() {
     return <LoginPage />;
   }
 
-  return <AppLayout email={data.email} capabilities={data.capabilities} />;
+  return (
+    <AppLayout
+      email={data.email}
+      capabilities={data.capabilities}
+      isImpersonating={data.is_impersonating ?? false}
+      impersonatedByEmail={data.impersonated_by_email ?? null}
+    />
+  );
 }

@@ -31,4 +31,7 @@ export const queryKeys = {
   roles: {
     all: ["roles"] as const,
   },
+  users: {
+    all: ["users"] as const,
+  },
 } as const;

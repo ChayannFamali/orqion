@@ -15,3 +15,9 @@ export async function apiLogout(): Promise<void> {
 export async function apiGetMe(): Promise<UserResponse> {
   return apiFetch<UserResponse>("/api/auth/me");
 }
+
+export async function apiExitImpersonation(): Promise<{ status: string; reason?: string }> {
+  return apiFetch<{ status: string; reason?: string }>("/api/auth/exit-impersonation", {
+    method: "POST",
+  });
+}

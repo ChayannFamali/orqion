@@ -8,7 +8,7 @@
  * типы обновляются автоматически через `npm run gen:types`.
  */
 
-export type { ApiError, SSEEvent, SourceEntry, ChatCompletionResult, ModelStatus, ProbeResult, RoleResponse, RoleListResponse, RoleCreate, RoleUpdate } from "./runtime";
+export type { ApiError, SSEEvent, SourceEntry, ChatCompletionResult, ModelStatus, ProbeResult, RoleResponse, RoleListResponse, RoleCreate, RoleUpdate, UserListItem, UserListResponse, UserDetailResponse, UserUpdate } from "./runtime";
 
 import type { components } from "./generated";
 

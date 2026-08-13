@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AlertTriangle, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { navItems, isNavVisible } from "../lib/nav";
@@ -8,13 +9,22 @@ import { TraceListPage } from "../pages/TraceListPage";
 import { TraceDetailPage } from "../pages/TraceDetailPage";
 import { ProvidersPage } from "../pages/ProvidersPage";
 import { RolesPage } from "../pages/RolesPage";
+import { UsersPage } from "../pages/UsersPage";
+import { useExitImpersonation } from "../hooks/useUsers";
 
 interface AppLayoutProps {
   email: string;
   capabilities: string[];
+  isImpersonating: boolean;
+  impersonatedByEmail: string | null;
 }
 
-export function AppLayout({ email, capabilities }: AppLayoutProps) {
+export function AppLayout({
+  email,
+  capabilities,
+  isImpersonating,
+  impersonatedByEmail,
+}: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeSection, setActiveSection] = useState("chat");
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -31,6 +41,9 @@ export function AppLayout({ email, capabilities }: AppLayoutProps) {
     }
     if (activeSection === "roles") {
       return <RolesPage />;
+    }
+    if (activeSection === "users") {
+      return <UsersPage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {
@@ -49,6 +62,7 @@ export function AppLayout({ email, capabilities }: AppLayoutProps) {
   return (
     <div className="flex h-screen flex-col">
       <Topbar email={email} onToggleSidebar={() => setCollapsed((c) => !c)} />
+      {isImpersonating && <ImpersonationBanner actorEmail={impersonatedByEmail ?? ""} />}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           activeSection={activeSection}
@@ -61,6 +75,33 @@ export function AppLayout({ email, capabilities }: AppLayoutProps) {
         />
         <main className="flex-1 overflow-hidden">{renderContent()}</main>
       </div>
+    </div>
+  );
+}
+
+function ImpersonationBanner({ actorEmail }: { actorEmail: string }) {
+  const exitImpersonation = useExitImpersonation();
+
+  return (
+    <div className="flex items-center justify-between border-b border-destructive/30 bg-destructive/5 px-4 py-2">
+      <div className="flex items-center gap-2 text-sm">
+        <AlertTriangle className="h-4 w-4 text-destructive" />
+        <span>
+          Вы действуете от имени другого пользователя. Вернуться в свою учётную запись:{" "}
+          <strong>{actorEmail}</strong>
+        </span>
+      </div>
+      <button
+        onClick={() => {
+          exitImpersonation.mutate();
+          setTimeout(() => window.location.reload(), 500);
+        }}
+        disabled={exitImpersonation.isPending}
+        className="flex items-center gap-1 rounded-md bg-destructive px-3 py-1 text-xs text-destructive-foreground transition-colors hover:bg-destructive/90"
+      >
+        <X className="h-3 w-3" />
+        Выйти из имперсонации
+      </button>
     </div>
   );
 }

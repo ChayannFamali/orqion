@@ -97,6 +97,32 @@
         }
       }
     },
+    "/api/auth/exit-impersonation": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Exit Impersonation",
+        "description": "Выход из имперсонации: восстанавливает родительскую сессию.\n\nЕсли родительская сессия истекла или удалена — полный logout.",
+        "operationId": "exit_impersonation_api_auth_exit_impersonation_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Exit Impersonation Api Auth Exit Impersonation Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics": {
       "get": {
         "tags": [
@@ -1728,6 +1754,166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TraceDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List Users",
+        "operationId": "list_users_api_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get User",
+        "operationId": "get_user_api_users__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update User",
+        "operationId": "update_user_api_users__user_id__patch",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}/impersonate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Impersonate User",
+        "description": "Вход от имени пользователя. Создаёт новую сессию с impersonated_by.",
+        "operationId": "impersonate_user_api_users__user_id__impersonate_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Impersonate User Api Users  User Id  Impersonate Post"
                 }
               }
             }
@@ -4089,6 +4275,101 @@
         "title": "UserBreakdown",
         "description": "Разбивка по пользователям с текущей ролью."
       },
+      "UserDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "role_name": {
+            "type": "string",
+            "title": "Role Name"
+          },
+          "is_builtin_role": {
+            "type": "boolean",
+            "title": "Is Builtin Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "is_active",
+          "role_id",
+          "role_name",
+          "is_builtin_role"
+        ],
+        "title": "UserDetailResponse",
+        "description": "Детали пользователя."
+      },
+      "UserListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "role_name": {
+            "type": "string",
+            "title": "Role Name"
+          },
+          "is_builtin_role": {
+            "type": "boolean",
+            "title": "Is Builtin Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "is_active",
+          "role_id",
+          "role_name",
+          "is_builtin_role"
+        ],
+        "title": "UserListItem",
+        "description": "Пользователь в списке."
+      },
+      "UserListResponse": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserListItem"
+            },
+            "type": "array",
+            "title": "Users"
+          }
+        },
+        "type": "object",
+        "required": [
+          "users"
+        ],
+        "title": "UserListResponse",
+        "description": "Список пользователей."
+      },
       "UserResponse": {
         "properties": {
           "id": {
@@ -4109,6 +4390,22 @@
             },
             "type": "array",
             "title": "Capabilities"
+          },
+          "is_impersonating": {
+            "type": "boolean",
+            "title": "Is Impersonating",
+            "default": false
+          },
+          "impersonated_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impersonated By Email"
           }
         },
         "type": "object",
@@ -4119,6 +4416,35 @@
           "capabilities"
         ],
         "title": "UserResponse"
+      },
+      "UserUpdate": {
+        "properties": {
+          "role_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Id"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "UserUpdate",
+        "description": "Обновление пользователя. role_id и/или is_active."
       },
       "ValidationError": {
         "properties": {

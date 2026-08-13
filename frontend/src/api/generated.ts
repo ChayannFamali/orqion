@@ -72,6 +72,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/exit-impersonation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exit Impersonation
+         * @description Выход из имперсонации: восстанавливает родительскую сессию.
+         *
+         *     Если родительская сессия истекла или удалена — полный logout.
+         */
+        post: operations["exit_impersonation_api_auth_exit_impersonation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics": {
         parameters: {
             query?: never;
@@ -618,6 +640,61 @@ export interface paths {
         get: operations["get_trace_endpoint_api_traces__trace_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User */
+        get: operations["get_user_api_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update User */
+        patch: operations["update_user_api_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/users/{user_id}/impersonate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Impersonate User
+         * @description Вход от имени пользователя. Создаёт новую сессию с impersonated_by.
+         */
+        post: operations["impersonate_user_api_users__user_id__impersonate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1470,6 +1547,50 @@ export interface components {
             /** Errors */
             errors: number;
         };
+        /**
+         * UserDetailResponse
+         * @description Детали пользователя.
+         */
+        UserDetailResponse: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Role Id */
+            role_id: string;
+            /** Role Name */
+            role_name: string;
+            /** Is Builtin Role */
+            is_builtin_role: boolean;
+        };
+        /**
+         * UserListItem
+         * @description Пользователь в списке.
+         */
+        UserListItem: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Role Id */
+            role_id: string;
+            /** Role Name */
+            role_name: string;
+            /** Is Builtin Role */
+            is_builtin_role: boolean;
+        };
+        /**
+         * UserListResponse
+         * @description Список пользователей.
+         */
+        UserListResponse: {
+            /** Users */
+            users: components["schemas"]["UserListItem"][];
+        };
         /** UserResponse */
         UserResponse: {
             /** Id */
@@ -1480,6 +1601,23 @@ export interface components {
             is_active: boolean;
             /** Capabilities */
             capabilities: string[];
+            /**
+             * Is Impersonating
+             * @default false
+             */
+            is_impersonating: boolean;
+            /** Impersonated By Email */
+            impersonated_by_email?: string | null;
+        };
+        /**
+         * UserUpdate
+         * @description Обновление пользователя. role_id и/или is_active.
+         */
+        UserUpdate: {
+            /** Role Id */
+            role_id?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1590,6 +1728,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    exit_impersonation_api_auth_exit_impersonation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
         };
@@ -2742,6 +2902,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TraceDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserListResponse"];
+                };
+            };
+        };
+    };
+    get_user_api_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    impersonate_user_api_users__user_id__impersonate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

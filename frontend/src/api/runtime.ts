@@ -83,3 +83,34 @@ export interface RoleCreate {
 export interface RoleUpdate {
   policy: Record<string, unknown>;
 }
+
+/** Пользователь в списке (T-311). Не из OpenAPI. */
+export interface UserListItem {
+  id: string;
+  email: string;
+  is_active: boolean;
+  role_id: string;
+  role_name: string;
+  is_builtin_role: boolean;
+}
+
+/** Список пользователей (T-311). */
+export interface UserListResponse {
+  users: UserListItem[];
+}
+
+/** Детали пользователя (T-311). */
+export interface UserDetailResponse {
+  id: string;
+  email: string;
+  is_active: boolean;
+  role_id: string;
+  role_name: string;
+  is_builtin_role: boolean;
+}
+
+/** Обновление пользователя (T-311). */
+export interface UserUpdate {
+  role_id?: string;
+  is_active?: boolean;
+}
