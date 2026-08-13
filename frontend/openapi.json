@@ -671,6 +671,40 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Delete Document Endpoint",
+        "description": "Удаление документа.\n\nБлокируется если документ имеет чанки в любой версии индекса\n(active/building/retired) — удаление чанков ломает rollback (ADR-8).\nРазрешено только для документов без чанков (status=pending/failed).\n\nBlob не удаляется — физическая очистка отдельная задача (T-406).",
+        "operationId": "delete_document_endpoint_api_documents__document_id__delete",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/documents/{document_id}/content": {
@@ -2554,6 +2588,17 @@
             "type": "string",
             "title": "Status"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
           "uploaded_at": {
             "type": "string",
             "format": "date-time",
@@ -2628,6 +2673,17 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "uploaded_at": {
             "type": "string",

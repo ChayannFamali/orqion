@@ -19,11 +19,11 @@ describe("isNavVisible", () => {
     expect(visible.map((i) => i.key)).toEqual(["chat", "corpora"]);
   });
 
-  it("shows chat and analytics for manager-level capabilities", () => {
+  it("shows chat, corpora and analytics for manager-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "view_analytics"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "analytics"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "analytics"]);
   });
 
   it("shows all items for admin wildcard capabilities", () => {
@@ -41,7 +41,7 @@ describe("isNavVisible", () => {
   });
 
   it("does not show item when capability is missing from list", () => {
-    const item = navItems.find((i) => i.key === "corpora")!;
+    const item = navItems.find((i) => i.key === "roles")!;
     expect(isNavVisible(item, ["chat", "upload"])).toBe(false);
   });
 

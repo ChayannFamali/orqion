@@ -37,4 +37,7 @@ export const queryKeys = {
   corpora: {
     all: ["corpora"] as const,
   },
+  documents: {
+    byCorpus: (corpusId: string) => ["documents", "corpus", corpusId] as const,
+  },
 } as const;

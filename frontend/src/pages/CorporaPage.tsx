@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { useCorpora } from "../hooks/useCorpora";
 import { useCreateCorpus } from "../hooks/useCorpora";
+import { DocumentsPage } from "./DocumentsPage";
 import type { CorpusResponse } from "../api/types";
 
 const DATA_CLASSES = [
@@ -36,9 +37,20 @@ function dataClassBadge(dataClass: string | null): string {
   return "bg-muted text-muted-foreground";
 }
 
-export function CorporaPage() {
+export function CorporaPage({ capabilities }: { capabilities: string[] }) {
   const { data, isLoading, error } = useCorpora();
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [selectedCorpus, setSelectedCorpus] = useState<CorpusResponse | null>(null);
+
+  if (selectedCorpus) {
+    return (
+      <DocumentsPage
+        corpus={selectedCorpus}
+        capabilities={capabilities}
+        onBack={() => setSelectedCorpus(null)}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -57,18 +69,21 @@ export function CorporaPage() {
   }
 
   const corpora = data?.corpora ?? [];
+  const canManage = capabilities.includes("*") || capabilities.includes("manage_corpora");
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-lg font-semibold">Корпуса</h2>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Добавить
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Добавить
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
@@ -79,7 +94,11 @@ export function CorporaPage() {
         ) : (
           <div className="space-y-3">
             {corpora.map((corpus) => (
-              <CorpusCard key={corpus.id} corpus={corpus} />
+              <CorpusCard
+                key={corpus.id}
+                corpus={corpus}
+                onClick={() => setSelectedCorpus(corpus)}
+              />
             ))}
           </div>
         )}
@@ -90,17 +109,24 @@ export function CorporaPage() {
   );
 }
 
-function CorpusCard({ corpus }: { corpus: CorpusResponse }) {
+function CorpusCard({
+  corpus,
+  onClick,
+}: {
+  corpus: CorpusResponse;
+  onClick: () => void;
+}) {
   return (
-    <div className="rounded-lg border border-border p-4">
+    <button
+      onClick={onClick}
+      className="w-full rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/50"
+    >
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="font-medium">{corpus.name}</span>
             <span
-              className={
-                "rounded px-1.5 py-0.5 text-xs " + dataClassBadge(corpus.data_class)
-              }
+              className={"rounded px-1.5 py-0.5 text-xs " + dataClassBadge(corpus.data_class)}
             >
               {corpus.data_class ?? "без класса"}
             </span>
@@ -113,7 +139,7 @@ function CorpusCard({ corpus }: { corpus: CorpusResponse }) {
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

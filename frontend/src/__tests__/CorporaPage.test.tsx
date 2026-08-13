@@ -44,7 +44,7 @@ describe("CorporaPage", () => {
       ],
     });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     expect(screen.getByText("public")).toBeInTheDocument();
     expect(screen.getByText("internal")).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("CorporaPage", () => {
   it("shows empty state when no corpora", () => {
     mockHooks({ corpora: [] });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     expect(screen.getByText("Нет корпусов")).toBeInTheDocument();
   });
@@ -63,7 +63,7 @@ describe("CorporaPage", () => {
   it("shows error state on failure", () => {
     mockHooks(undefined, new Error("fetch failed"));
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     expect(screen.getByText("Ошибка загрузки корпусов")).toBeInTheDocument();
   });
@@ -76,14 +76,14 @@ describe("CorporaPage", () => {
     } as ReturnType<typeof useCorpora>);
     vi.mocked(useCreateCorpus).mockReturnValue({} as ReturnType<typeof useCreateCorpus>);
 
-    const { container } = render(<CorporaPage />);
+    const { container } = render(<CorporaPage capabilities={["*"]} />);
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
   it("opens create modal on button click", () => {
     mockHooks({ corpora: [makeCorpus()] });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     fireEvent.click(screen.getByText("Добавить"));
 
@@ -94,7 +94,7 @@ describe("CorporaPage", () => {
   it("shows data_class descriptions in create form", () => {
     mockHooks({ corpora: [makeCorpus()] });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     fireEvent.click(screen.getByText("Добавить"));
 
@@ -108,7 +108,7 @@ describe("CorporaPage", () => {
       corpora: [makeCorpus({ data_class: null })],
     });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     expect(screen.getByText("без класса")).toBeInTheDocument();
   });
@@ -121,7 +121,7 @@ describe("CorporaPage", () => {
       ],
     });
 
-    render(<CorporaPage />);
+    render(<CorporaPage capabilities={["*"]} />);
 
     expect(screen.getByText(/Индекс активен/)).toBeInTheDocument();
     expect(screen.getByText(/Индекс не построен/)).toBeInTheDocument();

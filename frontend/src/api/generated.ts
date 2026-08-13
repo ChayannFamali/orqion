@@ -254,7 +254,17 @@ export interface paths {
         get: operations["get_document_endpoint_api_documents__document_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Document Endpoint
+         * @description Удаление документа.
+         *
+         *     Блокируется если документ имеет чанки в любой версии индекса
+         *     (active/building/retired) — удаление чанков ломает rollback (ADR-8).
+         *     Разрешено только для документов без чанков (status=pending/failed).
+         *
+         *     Blob не удаляется — физическая очистка отдельная задача (T-406).
+         */
+        delete: operations["delete_document_endpoint_api_documents__document_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -935,6 +945,8 @@ export interface components {
             source_type: string;
             /** Status */
             status: string;
+            /** Error */
+            error?: string | null;
             /**
              * Uploaded At
              * Format: date-time
@@ -966,6 +978,8 @@ export interface components {
             source_type: string;
             /** Status */
             status: string;
+            /** Error */
+            error?: string | null;
             /**
              * Uploaded At
              * Format: date-time
@@ -2175,6 +2189,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DocumentDetailResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_endpoint_api_documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

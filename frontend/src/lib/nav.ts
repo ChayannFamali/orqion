@@ -32,7 +32,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { key: "chat", label: "Чат", icon: MessageSquare, capability: undefined },
-  { key: "corpora", label: "Корпуса", icon: Database, capability: "manage_corpora" },
+  { key: "corpora", label: "Корпуса", icon: Database, capability: "upload" },
   { key: "traces", label: "Трассировки", icon: Activity, capability: "view_traces" },
   { key: "analytics", label: "Аналитика", icon: BarChart3, capability: "view_analytics" },
   { key: "providers", label: "Провайдеры", icon: Server, capability: "manage_providers" },

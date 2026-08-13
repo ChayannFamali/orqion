@@ -47,7 +47,7 @@ export function AppLayout({
       return <UsersPage />;
     }
     if (activeSection === "corpora") {
-      return <CorporaPage />;
+      return <CorporaPage capabilities={capabilities} />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {
