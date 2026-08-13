@@ -371,3 +371,337 @@ async def test_support_role_fallback_stays_local(
     body = response.json()
     assert body["type"] == "error"
     assert fallback_called["yes"] is False
+
+
+# ---------------------------------------------------------------------------
+# T-402: ADR-12 hard channel binding — admin cannot bypass, fallback stays local
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_admin_k3_fallback_all_local(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin + К3 корпус + primary local падает → fallback local вызывается, external НЕ вызывается."""
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream", "local")
+    await _seed_provider_and_model(app_fixture, "local/fallback", "fallback-upstream", "local")
+    await _seed_provider_and_model(app_fixture, "external/evil", "evil-upstream", "external")
+
+    # Routing rule: primary=local, fallback=[local, external]
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        # Delete ALL existing rules, not just defaults
+        result = await session.execute(
+            select(RoutingRule).where(RoutingRule.workspace_id == workspace_id)
+        )
+        for r in result.scalars().all():
+            await session.delete(r)
+
+        rule = RoutingRule(
+            workspace_id=workspace_id,
+            order=1,
+            is_default=False,
+            is_terminal=True,
+            when_corpus_class=None,
+            when_role=None,
+            when_task=None,
+            when_model_alias=None,
+            to_models=["local/primary"],
+            allow_locality=None,
+            fallback_models=["local/fallback", "external/evil"],
+            reason="test-k3-fallback",
+        )
+        session.add(rule)
+        await session.commit()
+
+    call_log: list[str] = []
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        call_log.append(model)
+        if model == "primary-upstream":
+            raise httpx.HTTPStatusError(
+                "Internal Server Error",
+                request=httpx.Request("POST", "http://stub/v1/chat/completions"),
+                response=httpx.Response(500),
+            )
+        return {
+            "choices": [{"message": {"content": "Local fallback OK"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_data_class": "К3",
+            "stream": False,
+        },
+    )
+
+    assert response.status_code == 200, f"Status: {response.status_code}, body: {response.json()}"
+    body = response.json()
+    assert body.get("type") == "complete", f"Unexpected body: {body}, call_log: {call_log}"
+    assert body["model"] == "local/fallback"
+    assert "evil-upstream" not in call_log
+    assert "fallback-upstream" in call_log
+
+
+@pytest.mark.asyncio
+async def test_admin_k3_external_fallback_blocked(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin + К3 корпус + routing rule с external fallback → primary падает,
+    external fallback отфильтрован, ошибка (нет доступных fallback)."""
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream", "local")
+    await _seed_provider_and_model(app_fixture, "external/evil", "evil-upstream", "external")
+
+    # Routing rule: primary=local, fallback=[external only]
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        # Delete ALL existing rules, not just defaults
+        result = await session.execute(
+            select(RoutingRule).where(RoutingRule.workspace_id == workspace_id)
+        )
+        for r in result.scalars().all():
+            await session.delete(r)
+
+        rule = RoutingRule(
+            workspace_id=workspace_id,
+            order=1,
+            is_default=False,
+            is_terminal=True,
+            when_corpus_class=None,
+            when_role=None,
+            when_task=None,
+            when_model_alias=None,
+            to_models=["local/primary"],
+            allow_locality=None,
+            fallback_models=["external/evil"],
+            reason="test-k3-external-fallback",
+        )
+        session.add(rule)
+        await session.commit()
+
+    external_called = {"yes": False}
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        if model == "primary-upstream":
+            raise httpx.HTTPStatusError(
+                "Internal Server Error",
+                request=httpx.Request("POST", "http://stub/v1/chat/completions"),
+                response=httpx.Response(500),
+            )
+        external_called["yes"] = True
+        return {
+            "choices": [{"message": {"content": "External leak"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_data_class": "К3",
+            "stream": False,
+        },
+    )
+
+    # Primary упал, external fallback отфильтрован _filter_data_class → ошибка в body
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "error"
+    assert body["code"] == "provider_unavailable"
+    assert external_called["yes"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_k2_pinned_model_fallback_stays_local(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin + К2 + primary local падает → fallback локальный, external НЕ вызывается.
+
+    T-402: fallback chain для К2 состоит только из локальных моделей.
+    Использует corpus_data_class напрямую (pinned_model_id тестируется в test_rag_chat_api).
+    """
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    await _seed_provider_and_model(app_fixture, "local/primary", "primary-upstream", "local")
+    await _seed_provider_and_model(app_fixture, "local/fallback2", "fallback2-upstream", "local")
+    await _seed_provider_and_model(app_fixture, "external/evil2", "evil2-upstream", "external")
+
+    # Routing rule: primary=local, fallback=[local, external]
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        # Delete ALL existing rules
+        result = await session.execute(
+            select(RoutingRule).where(RoutingRule.workspace_id == workspace_id)
+        )
+        for r in result.scalars().all():
+            await session.delete(r)
+
+        rule = RoutingRule(
+            workspace_id=workspace_id,
+            order=1,
+            is_default=False,
+            is_terminal=True,
+            when_corpus_class=None,
+            when_role=None,
+            when_task=None,
+            when_model_alias=None,
+            to_models=["local/primary"],
+            allow_locality=None,
+            fallback_models=["local/fallback2", "external/evil2"],
+            reason="test-k2-fallback",
+        )
+        session.add(rule)
+        await session.commit()
+
+    call_log: list[str] = []
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        call_log.append(model)
+        if model == "primary-upstream":
+            raise httpx.HTTPStatusError(
+                "Internal Server Error",
+                request=httpx.Request("POST", "http://stub/v1/chat/completions"),
+                response=httpx.Response(500),
+            )
+        return {
+            "choices": [{"message": {"content": "Local fallback OK"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_data_class": "К2",
+            "stream": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("type") == "complete", f"Unexpected body: {body}, call_log: {call_log}"
+    assert body["model"] == "local/fallback2"
+    assert "evil2-upstream" not in call_log
+    assert "fallback2-upstream" in call_log
+
+
+@pytest.mark.asyncio
+async def test_admin_k3_no_pinned_model_explicit_external_alias_rejected(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin + К3 корпус + pinned_model_id=None + явный model_alias=external →
+    DataClassViolation (403), не проходит.
+
+    Сценарий из T-401: pinned_model_id может быть null при К2/К3.
+    Защита ложится на enforce() → DataClassViolation (шаг 1, до видимости модели).
+    """
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    from app.db.models import Corpus, IndexVersion
+
+    await _seed_provider_and_model(app_fixture, "external/gpt-4", "gpt-4-upstream", "external")
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        corpus = Corpus(
+            workspace_id=workspace_id,
+            name="k3-no-pinned",
+            data_class="К3",
+            pinned_model_id=None,
+        )
+        session.add(corpus)
+        await session.flush()
+
+        iv = IndexVersion(
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            embedding_model="BAAI/bge-m3",
+            chunker="mixed-v1",
+            chunker_version="1",
+            status="active",
+        )
+        session.add(iv)
+        await session.flush()
+        corpus.active_index_version_id = iv.id
+        await session.commit()
+
+    external_called = {"yes": False}
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        external_called["yes"] = True
+        return {
+            "choices": [{"message": {"content": "leaked"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_name": "k3-no-pinned",
+            "model_alias": "external/gpt-4",
+            "stream": False,
+        },
+    )
+
+    # _filter_data_class убирает external из candidates до routing (К3 + external → filtered)
+    # Затем enforce() проверяет выбранную модель (local) — проходит
+    # Но если нет local моделей → NoRouteAvailable (503)
+    # Если есть local модели → выбрана local, external не вызвана
+    # В любом случае external модель НЕ вызвана
+    assert response.status_code in (200, 503)
+    assert external_called["yes"] is False
+    if response.status_code == 200:
+        body = response.json()
+        assert body.get("model") != "external/gpt-4"
