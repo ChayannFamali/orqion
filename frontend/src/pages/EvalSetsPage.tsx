@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ClipboardList, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ClipboardList, FlaskConical, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
   useCreateEvalItem,
   useCreateEvalSet,
@@ -8,6 +8,7 @@ import {
   useEvalSet,
   useEvalSets,
 } from "../hooks/useEval";
+import { EvalRunsPage } from "./EvalRunsPage";
 import type { CorpusResponse } from "../api/types";
 
 interface EvalSetsPageProps {
@@ -224,7 +225,7 @@ function CreateEvalSetModal({
 }
 
 function EvalSetDetailPage({
-  corpus: _corpus,
+  corpus,
   evalSetId,
   onBack,
 }: {
@@ -237,6 +238,17 @@ function EvalSetDetailPage({
   const deleteItemMutation = useDeleteEvalItem(evalSetId);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [newQuestion, setNewQuestion] = useState("");
+  const [showRuns, setShowRuns] = useState(false);
+
+  if (showRuns) {
+    return (
+      <EvalRunsPage
+        corpus={corpus}
+        evalSetId={evalSetId}
+        onBack={() => setShowRuns(false)}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -252,13 +264,22 @@ function EvalSetDetailPage({
           <span className="text-muted-foreground">/</span>
           <h2 className="text-lg font-semibold">{data?.name ?? "Набор"}</h2>
         </div>
-        <button
-          onClick={() => setShowAddQuestion(true)}
-          className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Вопрос
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRuns(true)}
+            className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+          >
+            <FlaskConical className="h-4 w-4" />
+            Прогоны
+          </button>
+          <button
+            onClick={() => setShowAddQuestion(true)}
+            className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Вопрос
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
