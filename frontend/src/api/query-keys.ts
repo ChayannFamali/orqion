@@ -43,4 +43,11 @@ export const queryKeys = {
   indexVersions: {
     byCorpus: (corpusId: string) => ["index-versions", "corpus", corpusId] as const,
   },
+  evalSets: {
+    byCorpus: (corpusId: string) => ["eval-sets", "corpus", corpusId] as const,
+    detail: (evalSetId: string) => ["eval-sets", "detail", evalSetId] as const,
+  },
+  evalRuns: {
+    bySet: (evalSetId: string) => ["eval-runs", "set", evalSetId] as const,
+  },
 } as const;

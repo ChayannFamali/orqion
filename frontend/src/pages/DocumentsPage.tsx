@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
-import { ArrowLeft, FileText, GitBranch, Loader2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, FileText, GitBranch, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useDeleteDocument } from "../hooks/useDocuments";
 import { useDocuments } from "../hooks/useDocuments";
 import { useUploadDocument } from "../hooks/useDocuments";
+import { EvalSetsPage } from "./EvalSetsPage";
 import { IndexVersionsPage } from "./IndexVersionsPage";
 import type { CorpusResponse } from "../api/types";
 import type { UploadProgress } from "../api/documents";
@@ -34,9 +35,14 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
   const [showUpload, setShowUpload] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
+  const [showEval, setShowEval] = useState(false);
 
   if (showVersions) {
     return <IndexVersionsPage corpus={corpus} onBack={() => setShowVersions(false)} />;
+  }
+
+  if (showEval) {
+    return <EvalSetsPage corpus={corpus} onBack={() => setShowEval(false)} />;
   }
 
   const documents = data?.documents ?? [];
@@ -58,13 +64,22 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
-            <button
-              onClick={() => setShowVersions(true)}
-              className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
-            >
-              <GitBranch className="h-4 w-4" />
-              Версии индекса
-            </button>
+            <>
+              <button
+                onClick={() => setShowVersions(true)}
+                className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <GitBranch className="h-4 w-4" />
+                Версии индекса
+              </button>
+              <button
+                onClick={() => setShowEval(true)}
+                className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <ClipboardCheck className="h-4 w-4" />
+                Оценка качества
+              </button>
+            </>
           )}
           <button
             onClick={() => setShowUpload(true)}

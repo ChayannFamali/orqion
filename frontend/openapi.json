@@ -972,6 +972,104 @@
         }
       }
     },
+    "/api/eval-sets/{eval_set_id}/items": {
+      "post": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Create Eval Item",
+        "description": "Добавить вопрос в существующий набор оценки.",
+        "operationId": "create_eval_item_api_eval_sets__eval_set_id__items_post",
+        "parameters": [
+          {
+            "name": "eval_set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eval Set Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalItemCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalItemRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/eval-sets/{eval_set_id}/items/{item_id}": {
+      "delete": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Delete Eval Item",
+        "description": "Удалить вопрос из набора оценки.",
+        "operationId": "delete_eval_item_api_eval_sets__eval_set_id__items__item_id__delete",
+        "parameters": [
+          {
+            "name": "eval_set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Eval Set Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/eval-sets/{eval_set_id}/runs": {
       "post": {
         "tags": [
