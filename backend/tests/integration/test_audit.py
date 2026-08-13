@@ -60,7 +60,7 @@ async def test_audit_write_and_list(db_session: AsyncSession) -> None:
     )
     await db_session.flush()
 
-    records = await list_audit(db_session, ws_id)
+    records, total = await list_audit(db_session, ws_id)
     assert len(records) == 1
     assert records[0].action == "role.policy_changed"
     assert records[0].object_type == "role"
@@ -89,7 +89,7 @@ async def test_impersonate_creates_session_and_audit_entry(
 
     assert session_id is not None
 
-    records = await list_audit(db_session, ws_id)
+    records, total = await list_audit(db_session, ws_id)
     assert len(records) == 1
     assert records[0].action == "impersonate"
     assert records[0].actor_user_id == admin.id
@@ -161,7 +161,7 @@ async def test_audit_log_is_append_only_by_convention(
     )
     await db_session.flush()
 
-    records = await list_audit(db_session, ws_id)
+    records, total = await list_audit(db_session, ws_id)
     assert len(records) == 1
 
     result = await db_session.execute(select(AuditLog).where(AuditLog.action == "test_action"))

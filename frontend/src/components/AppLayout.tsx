@@ -12,6 +12,7 @@ import { RolesPage } from "../pages/RolesPage";
 import { UsersPage } from "../pages/UsersPage";
 import { CorporaPage } from "../pages/CorporaPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
+import { AuditLogPage } from "../pages/AuditLogPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
 interface AppLayoutProps {
@@ -52,6 +53,9 @@ export function AppLayout({
     }
     if (activeSection === "analytics") {
       return <AnalyticsPage />;
+    }
+    if (activeSection === "audit") {
+      return <AuditLogPage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {

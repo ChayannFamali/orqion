@@ -54,4 +54,8 @@ export const queryKeys = {
     all: ["analytics"] as const,
     range: (start: string, end: string) => ["analytics", start, end] as const,
   },
+  audit: {
+    all: ["audit"] as const,
+    actions: ["audit", "actions"] as const,
+  },
 } as const;

@@ -114,6 +114,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Entries */
+        get: operations["list_audit_entries_api_audit_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/audit-log/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Audit Actions */
+        get: operations["get_audit_actions_api_audit_log_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -925,6 +959,43 @@ export interface components {
             total_errors: number;
             /** Avg Latency Ms */
             avg_latency_ms: number | null;
+        };
+        /** AuditActionsResponse */
+        AuditActionsResponse: {
+            /** Actions */
+            actions: string[];
+        };
+        /** AuditLogListResponse */
+        AuditLogListResponse: {
+            /** Entries */
+            entries: components["schemas"]["AuditLogResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** AuditLogResponse */
+        AuditLogResponse: {
+            /** Id */
+            id: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Actor User Id */
+            actor_user_id: string;
+            /** Action */
+            action: string;
+            /** Object Type */
+            object_type: string;
+            /** Object Id */
+            object_id?: string | null;
+            /**
+             * Meta
+             * @default {}
+             */
+            meta: {
+                [key: string]: unknown;
+            };
         };
         /** Body_import_to_eval_set_api_eval_sets__eval_set_id__import_post */
         Body_import_to_eval_set_api_eval_sets__eval_set_id__import_post: {
@@ -2082,6 +2153,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_entries_api_audit_log_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                action?: string | null;
+                actor_user_id?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audit_actions_api_audit_log_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditActionsResponse"];
                 };
             };
         };

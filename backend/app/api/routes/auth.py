@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.auth import LoginRequest, LoginResponse, UserResponse
+from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.auth.passwords import verify_password
 from app.auth.rate_limit import LoginRateLimiter
@@ -179,6 +180,20 @@ async def exit_impersonation(
 
     # Инвалидируем текущую (имперсонационную) сессию
     await invalidate_session(session, session_id)
+
+    # Audit: impersonate.exit (T-317 — пробел, обнаруженный при исследовании)
+    actor_result = await session.execute(select(User).where(User.id == current_session.user_id))
+    actor_user = actor_result.scalar_one_or_none()
+    if actor_user is not None:
+        await write_audit(
+            session,
+            workspace_id=actor_user.workspace_id,
+            actor_user_id=actor_user.id,
+            action="impersonate.exit",
+            object_type="user",
+            object_id=actor_user.id,
+            meta={},
+        )
 
     # Проверяем родительскую сессию
     from datetime import UTC, datetime

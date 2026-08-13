@@ -59,3 +59,6 @@ export type AnalyticsSummary = components["schemas"]["AnalyticsSummary"];
 export type DailyBreakdown = components["schemas"]["DailyBreakdown"];
 export type ModelBreakdown = components["schemas"]["ModelBreakdown"];
 export type UserBreakdown = components["schemas"]["UserBreakdown"];
+export type AuditLogResponse = components["schemas"]["AuditLogResponse"];
+export type AuditLogListResponse = components["schemas"]["AuditLogListResponse"];
+export type AuditActionsResponse = components["schemas"]["AuditActionsResponse"];

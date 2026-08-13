@@ -140,6 +140,7 @@ def create_app() -> FastAPI:
     from app.api.health import router as health_router
     from app.api.routes import (
         analytics_router,
+        audit_router,
         auth_router,
         chat_router,
         conversations_router,
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(analytics_router)
+    app.include_router(audit_router)
     app.include_router(chat_router)
     app.include_router(conversations_router)
     app.include_router(corpora_router)
