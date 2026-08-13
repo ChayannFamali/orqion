@@ -376,6 +376,7 @@ class Corpus(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """
 
     __tablename__ = "corpus"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_corpus_workspace_name"),)
     # workspace_id индекс создаётся WorkspaceMixin (index=True)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
