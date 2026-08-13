@@ -1151,6 +1151,280 @@
         }
       }
     },
+    "/api/corpora/{corpus_id}/index-versions": {
+      "post": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "Build Index Endpoint",
+        "description": "Запуск сборки версии индекса (background task).\n\nВозвращает 202 с index_version_id. Прогресс поллится через GET /{id}.\nEmbedding model и chunker не передаются в body — backend использует\nединственный настроенный backend (app.state.embedding_backend).",
+        "operationId": "build_index_endpoint_api_corpora__corpus_id__index_versions_post",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "List Index Versions Endpoint",
+        "description": "Список версий индекса корпуса.",
+        "operationId": "list_index_versions_endpoint_api_corpora__corpus_id__index_versions_get",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexVersionListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{corpus_id}/index-versions/{version_id}": {
+      "get": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "Get Index Version Endpoint",
+        "description": "Детали версии индекса (прогресс сборки).",
+        "operationId": "get_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__get",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexVersionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{corpus_id}/index-versions/{version_id}/activate": {
+      "post": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "Activate Index Version Endpoint",
+        "description": "Активация версии индекса (ADR-8 blue-green).\n\nВозвращает warning если для версии нет успешного прогона оценки.",
+        "operationId": "activate_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__activate_post",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{corpus_id}/index-versions/rollback": {
+      "post": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "Rollback Index Version Endpoint",
+        "description": "Откат к предыдущей версии индекса (ADR-8).",
+        "operationId": "rollback_index_version_endpoint_api_corpora__corpus_id__index_versions_rollback_post",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RollbackResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corpora/{corpus_id}/index-versions/cleanup": {
+      "post": {
+        "tags": [
+          "index-versions"
+        ],
+        "summary": "Cleanup Retired Versions Endpoint",
+        "description": "Удаление retired-версий индекса (chunks + vectors + index_version).",
+        "operationId": "cleanup_retired_versions_endpoint_api_corpora__corpus_id__index_versions_cleanup_post",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models": {
       "get": {
         "tags": [
@@ -2028,6 +2302,42 @@
   },
   "components": {
     "schemas": {
+      "ActivateResponse": {
+        "properties": {
+          "active_version_id": {
+            "type": "string",
+            "title": "Active Version Id"
+          },
+          "previous_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Version Id"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_version_id"
+        ],
+        "title": "ActivateResponse",
+        "description": "Результат активации версии индекса."
+      },
       "AnalyticsResponse": {
         "properties": {
           "summary": {
@@ -2139,6 +2449,25 @@
         ],
         "title": "Body_upload_document_endpoint_api_corpora__corpus_id__documents_post"
       },
+      "BuildResponse": {
+        "properties": {
+          "index_version_id": {
+            "type": "string",
+            "title": "Index Version Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "building"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index_version_id"
+        ],
+        "title": "BuildResponse",
+        "description": "Ответ на запуск сборки индекса (202 Accepted)."
+      },
       "ChatMessage": {
         "properties": {
           "role": {
@@ -2248,6 +2577,20 @@
           "messages"
         ],
         "title": "ChatRequest"
+      },
+      "CleanupResponse": {
+        "properties": {
+          "deleted_count": {
+            "type": "integer",
+            "title": "Deleted Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_count"
+        ],
+        "title": "CleanupResponse",
+        "description": "Результат очистки retired-версий."
       },
       "ConversationCreate": {
         "properties": {
@@ -3090,6 +3433,85 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "IndexVersionListResponse": {
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/IndexVersionResponse"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "versions",
+          "total"
+        ],
+        "title": "IndexVersionListResponse",
+        "description": "Список версий индекса корпуса."
+      },
+      "IndexVersionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "corpus_id": {
+            "type": "string",
+            "title": "Corpus Id"
+          },
+          "embedding_model": {
+            "type": "string",
+            "title": "Embedding Model"
+          },
+          "chunker": {
+            "type": "string",
+            "title": "Chunker"
+          },
+          "chunker_version": {
+            "type": "string",
+            "title": "Chunker Version"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stats"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "corpus_id",
+          "embedding_model",
+          "chunker",
+          "chunker_version",
+          "status",
+          "created_at"
+        ],
+        "title": "IndexVersionResponse",
+        "description": "Версия индекса с прогрессом."
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -3770,6 +4192,31 @@
         ],
         "title": "RoleUpdate",
         "description": "Обновление политики роли. Только policy, name не меняется."
+      },
+      "RollbackResponse": {
+        "properties": {
+          "active_version_id": {
+            "type": "string",
+            "title": "Active Version Id"
+          },
+          "retired_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_version_id"
+        ],
+        "title": "RollbackResponse",
+        "description": "Результат отката версии индекса."
       },
       "RoutingRuleCreate": {
         "properties": {

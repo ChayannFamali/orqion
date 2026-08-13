@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
-import { ArrowLeft, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, FileText, GitBranch, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useDeleteDocument } from "../hooks/useDocuments";
 import { useDocuments } from "../hooks/useDocuments";
 import { useUploadDocument } from "../hooks/useDocuments";
+import { IndexVersionsPage } from "./IndexVersionsPage";
 import type { CorpusResponse } from "../api/types";
 import type { UploadProgress } from "../api/documents";
 
@@ -26,14 +27,20 @@ interface DocumentsPageProps {
   onBack: () => void;
 }
 
-export function DocumentsPage({ corpus, onBack }: DocumentsPageProps) {
+export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPageProps) {
   const { data, isLoading, error } = useDocuments(corpus.id);
   const uploadMutation = useUploadDocument(corpus.id);
   const deleteMutation = useDeleteDocument(corpus.id);
   const [showUpload, setShowUpload] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
+
+  if (showVersions) {
+    return <IndexVersionsPage corpus={corpus} onBack={() => setShowVersions(false)} />;
+  }
 
   const documents = data?.documents ?? [];
+  const canManage = capabilities.includes("*") || capabilities.includes("manage_corpora");
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -49,13 +56,24 @@ export function DocumentsPage({ corpus, onBack }: DocumentsPageProps) {
           <span className="text-muted-foreground">/</span>
           <h2 className="text-lg font-semibold">{corpus.name}</h2>
         </div>
-        <button
-          onClick={() => setShowUpload(true)}
-          className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Upload className="h-4 w-4" />
-          Загрузить
-        </button>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <button
+              onClick={() => setShowVersions(true)}
+              className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <GitBranch className="h-4 w-4" />
+              Версии индекса
+            </button>
+          )}
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Upload className="h-4 w-4" />
+            Загрузить
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">

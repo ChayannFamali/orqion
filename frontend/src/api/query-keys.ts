@@ -40,4 +40,7 @@ export const queryKeys = {
   documents: {
     byCorpus: (corpusId: string) => ["documents", "corpus", corpusId] as const,
   },
+  indexVersions: {
+    byCorpus: (corpusId: string) => ["index-versions", "corpus", corpusId] as const,
+  },
 } as const;

@@ -430,6 +430,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpora/{corpus_id}/index-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Index Versions Endpoint
+         * @description Список версий индекса корпуса.
+         */
+        get: operations["list_index_versions_endpoint_api_corpora__corpus_id__index_versions_get"];
+        put?: never;
+        /**
+         * Build Index Endpoint
+         * @description Запуск сборки версии индекса (background task).
+         *
+         *     Возвращает 202 с index_version_id. Прогресс поллится через GET /{id}.
+         *     Embedding model и chunker не передаются в body — backend использует
+         *     единственный настроенный backend (app.state.embedding_backend).
+         */
+        post: operations["build_index_endpoint_api_corpora__corpus_id__index_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corpora/{corpus_id}/index-versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Index Version Endpoint
+         * @description Детали версии индекса (прогресс сборки).
+         */
+        get: operations["get_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corpora/{corpus_id}/index-versions/{version_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Index Version Endpoint
+         * @description Активация версии индекса (ADR-8 blue-green).
+         *
+         *     Возвращает warning если для версии нет успешного прогона оценки.
+         */
+        post: operations["activate_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corpora/{corpus_id}/index-versions/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rollback Index Version Endpoint
+         * @description Откат к предыдущей версии индекса (ADR-8).
+         */
+        post: operations["rollback_index_version_endpoint_api_corpora__corpus_id__index_versions_rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corpora/{corpus_id}/index-versions/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Retired Versions Endpoint
+         * @description Удаление retired-версий индекса (chunks + vectors + index_version).
+         */
+        post: operations["cleanup_retired_versions_endpoint_api_corpora__corpus_id__index_versions_cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models": {
         parameters: {
             query?: never;
@@ -734,6 +844,18 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActivateResponse
+         * @description Результат активации версии индекса.
+         */
+        ActivateResponse: {
+            /** Active Version Id */
+            active_version_id: string;
+            /** Previous Version Id */
+            previous_version_id?: string | null;
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * AnalyticsResponse
          * @description Полный ответ аналитики.
          */
@@ -774,6 +896,19 @@ export interface components {
             /** File */
             file: string;
         };
+        /**
+         * BuildResponse
+         * @description Ответ на запуск сборки индекса (202 Accepted).
+         */
+        BuildResponse: {
+            /** Index Version Id */
+            index_version_id: string;
+            /**
+             * Status
+             * @default building
+             */
+            status: string;
+        };
         /** ChatMessage */
         ChatMessage: {
             /** Role */
@@ -807,6 +942,14 @@ export interface components {
             corpus_name?: string | null;
             /** Task Type */
             task_type?: string | null;
+        };
+        /**
+         * CleanupResponse
+         * @description Результат очистки retired-версий.
+         */
+        CleanupResponse: {
+            /** Deleted Count */
+            deleted_count: number;
         };
         /** ConversationCreate */
         ConversationCreate: {
@@ -1147,6 +1290,43 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * IndexVersionListResponse
+         * @description Список версий индекса корпуса.
+         */
+        IndexVersionListResponse: {
+            /** Versions */
+            versions: components["schemas"]["IndexVersionResponse"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * IndexVersionResponse
+         * @description Версия индекса с прогрессом.
+         */
+        IndexVersionResponse: {
+            /** Id */
+            id: string;
+            /** Corpus Id */
+            corpus_id: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Chunker */
+            chunker: string;
+            /** Chunker Version */
+            chunker_version: string;
+            /** Status */
+            status: string;
+            /** Stats */
+            stats?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */
@@ -1387,6 +1567,16 @@ export interface components {
             policy: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * RollbackResponse
+         * @description Результат отката версии индекса.
+         */
+        RollbackResponse: {
+            /** Active Version Id */
+            active_version_id: string;
+            /** Retired Version Id */
+            retired_version_id?: string | null;
         };
         /**
          * RoutingRuleCreate
@@ -2539,6 +2729,194 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalComparisonRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_index_versions_endpoint_api_corpora__corpus_id__index_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexVersionListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_index_endpoint_api_corpora__corpus_id__index_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_index_version_endpoint_api_corpora__corpus_id__index_versions__version_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_index_version_endpoint_api_corpora__corpus_id__index_versions_rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_retired_versions_endpoint_api_corpora__corpus_id__index_versions_cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupResponse"];
                 };
             };
             /** @description Validation Error */
