@@ -6,6 +6,7 @@ import { ChatPage } from "../pages/ChatPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { TraceListPage } from "../pages/TraceListPage";
 import { TraceDetailPage } from "../pages/TraceDetailPage";
+import { ProvidersPage } from "../pages/ProvidersPage";
 
 interface AppLayoutProps {
   email: string;
@@ -23,6 +24,9 @@ export function AppLayout({ email, capabilities }: AppLayoutProps) {
   const renderContent = () => {
     if (activeSection === "chat") {
       return <ChatPage />;
+    }
+    if (activeSection === "providers") {
+      return <ProvidersPage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {

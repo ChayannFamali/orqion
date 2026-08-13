@@ -14,9 +14,12 @@ import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText
  *   chat, upload, custom_prompts, manage_corpora, share, view_analytics,
  *   view_traces, "*" (admin wildcard)
  *
- * Capabilities для будущих разделов (manage_providers, manage_users,
- * view_audit) ещё не определены в seed-пресетах ролей.
- * Они появятся в T-308+. Пока эти разделы видны только admin (через "*").
+ * manage_providers — enforced на backend (T-308), не в seed presets,
+ * только admin через "*".
+ *
+ * Capabilities для будущих разделов (manage_users, view_audit) ещё не
+ * определены в seed-пресетах ролей. Они появятся в T-308+.
+ * Пока эти разделы видны только admin (через "*").
  */
 
 export interface NavItem {

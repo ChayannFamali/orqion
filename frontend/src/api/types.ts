@@ -8,7 +8,7 @@
  * типы обновляются автоматически через `npm run gen:types`.
  */
 
-export type { ApiError, SSEEvent, SourceEntry, ChatCompletionResult } from "./runtime";
+export type { ApiError, SSEEvent, SourceEntry, ChatCompletionResult, ModelStatus, ProbeResult } from "./runtime";
 
 import type { components } from "./generated";
 
@@ -22,8 +22,12 @@ export type ConversationListResponse = components["schemas"]["ConversationListRe
 export type ChatMessage = components["schemas"]["ChatMessage"];
 export type ChatRequest = components["schemas"]["ChatRequest"];
 export type ModelInfo = components["schemas"]["ModelResponse"];
+export type ModelResponse = components["schemas"]["ModelResponse"];
 export type ProviderInfo = components["schemas"]["ProviderResponse"];
+export type ProviderResponse = components["schemas"]["ProviderResponse"];
 export type ProviderListResponse = components["schemas"]["ProviderListResponse"];
+export type ProviderCreate = components["schemas"]["ProviderCreate"];
+export type ProviderUpdate = components["schemas"]["ProviderUpdate"];
 export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];

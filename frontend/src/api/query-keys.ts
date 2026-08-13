@@ -25,4 +25,7 @@ export const queryKeys = {
     all: ["traces"] as const,
     detail: (id: string) => ["traces", id] as const,
   },
+  providers: {
+    all: ["providers"] as const,
+  },
 } as const;

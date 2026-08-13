@@ -41,3 +41,21 @@ export interface ChatCompletionResult {
   rag_degraded?: boolean;
   rag_errors?: string[];
 }
+
+/** Статус модели после probe (T-308). */
+export interface ModelStatus {
+  model_id: string;
+  alias: string;
+  upstream_name: string;
+  status: string;
+}
+
+/** Результат probe провайдера (T-308). Не из OpenAPI — untyped dict на backend. */
+export interface ProbeResult {
+  available_models: string[];
+  supports_streaming: boolean;
+  max_parallel: number;
+  model_statuses: ModelStatus[];
+  error: string | null;
+  observed_context?: Record<string, number | null>;
+}
