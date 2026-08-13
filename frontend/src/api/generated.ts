@@ -497,6 +497,42 @@ export interface paths {
         patch: operations["update_model_api_providers_models__model_id__patch"];
         trace?: never;
     };
+    "/api/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Roles */
+        get: operations["list_roles_api_roles_get"];
+        put?: never;
+        /** Create Role */
+        post: operations["create_role_api_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Role */
+        get: operations["get_role_api_roles__role_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Role */
+        patch: operations["update_role_api_roles__role_id__patch"];
+        trace?: never;
+    };
     "/api/routing-rules": {
         parameters: {
             query?: never;
@@ -1160,6 +1196,52 @@ export interface components {
             api_key?: string | null;
             /** Enabled */
             enabled?: boolean | null;
+        };
+        /**
+         * RoleCreate
+         * @description Создание кастомной роли. is_builtin всегда False (игнорируется из тела).
+         */
+        RoleCreate: {
+            /** Name */
+            name: string;
+            /** Policy */
+            policy: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * RoleListResponse
+         * @description Список ролей.
+         */
+        RoleListResponse: {
+            /** Roles */
+            roles: components["schemas"]["RoleResponse"][];
+        };
+        /**
+         * RoleResponse
+         * @description Роль с полной политикой для ответа API.
+         */
+        RoleResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Is Builtin */
+            is_builtin: boolean;
+            /** Policy */
+            policy: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * RoleUpdate
+         * @description Обновление политики роли. Только policy, name не меняется.
+         */
+        RoleUpdate: {
+            /** Policy */
+            policy: {
+                [key: string]: unknown;
+            };
         };
         /**
          * RoutingRuleCreate
@@ -2360,6 +2442,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roles_api_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleListResponse"];
+                };
+            };
+        };
+    };
+    create_role_api_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_role_api_roles__role_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_role_api_roles__role_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleResponse"];
                 };
             };
             /** @description Validation Error */

@@ -129,7 +129,7 @@ async def test_ensure_builtin_roles_idempotent_preserves_all_edits(
     )
     for role in result.scalars().all():
         assert role.policy["models"] == ["local/edited"], f"{role.name} policy was overwritten"
-        assert (
-            role.policy["max_input_tokens"] == 12345
-        ), f"{role.name} max_input_tokens was overwritten"
+        assert role.policy["max_input_tokens"] == 12345, (
+            f"{role.name} max_input_tokens was overwritten"
+        )
         assert role.policy["capabilities"] == ["chat"], f"{role.name} capabilities were overwritten"

@@ -1328,6 +1328,158 @@
         }
       }
     },
+    "/api/roles": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "List Roles",
+        "operationId": "list_roles_api_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Create Role",
+        "operationId": "create_role_api_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/roles/{role_id}": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Get Role",
+        "operationId": "get_role_api_roles__role_id__get",
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Update Role",
+        "operationId": "update_role_api_roles__role_id__patch",
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/routing-rules": {
       "get": {
         "tags": [
@@ -3116,6 +3268,90 @@
         },
         "type": "object",
         "title": "ProviderUpdate"
+      },
+      "RoleCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "policy": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "policy"
+        ],
+        "title": "RoleCreate",
+        "description": "Создание кастомной роли. is_builtin всегда False (игнорируется из тела)."
+      },
+      "RoleListResponse": {
+        "properties": {
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleResponse"
+            },
+            "type": "array",
+            "title": "Roles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "roles"
+        ],
+        "title": "RoleListResponse",
+        "description": "Список ролей."
+      },
+      "RoleResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "title": "Is Builtin"
+          },
+          "policy": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_builtin",
+          "policy"
+        ],
+        "title": "RoleResponse",
+        "description": "Роль с полной политикой для ответа API."
+      },
+      "RoleUpdate": {
+        "properties": {
+          "policy": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy"
+        ],
+        "title": "RoleUpdate",
+        "description": "Обновление политики роли. Только policy, name не меняется."
       },
       "RoutingRuleCreate": {
         "properties": {
