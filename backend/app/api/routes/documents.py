@@ -1,12 +1,14 @@
-"""POST /api/corpora/{corpus_id}/documents, GET /api/corpora/{corpus_id}/documents.
+"""POST /api/corpora/{corpus_id}/documents, GET /api/corpora/{corpus_id}/documents,
+GET /api/documents/{document_id}, GET /api/documents/{document_id}/content.
 
-Загрузка документов в корпус (T-204).
-Доступ — через capability upload, не через role.name (§5.2).
+Доступ — через capability (upload/manage_corpora) + policy.corpora visibility (§5.2).
+Non-authorized → 404 (прецедент T-308/T-310/T-311/T-312 — скрываем существование).
 Оригинал сохраняется в BlobStore до разбора (ADR-7).
 """
 
 from __future__ import annotations
 
+import fnmatch
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
@@ -20,9 +22,9 @@ from app.api.schemas.document import (
 )
 from app.auth.dependencies import current_user
 from app.config import Settings
-from app.db.models import Document, User
+from app.db.models import Corpus, Document, User
 from app.db.session import get_session
-from app.errors import NotFound, OrqionError
+from app.errors import NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.rag.service import get_document, list_documents, upload_document
@@ -36,21 +38,68 @@ router = APIRouter(
 _READ_CHUNK = 64 * 1024  # 64 KB
 
 
-class UploadPermissionDenied(OrqionError):
-    error_code = "upload_permission_denied"
-    reason = "Нет прав для загрузки документов"
-    status_code = 403
-    hint = "Требуется capability upload"
+def _corpus_visible(corpora_patterns: list[str], corpus_name: str) -> bool:
+    """Проверяет, виден ли корпус пользователю по policy.corpora."""
+    if WILDCARD in corpora_patterns:
+        return True
+    return any(fnmatch.fnmatch(corpus_name, p) for p in corpora_patterns)
 
 
-async def _check_upload_capability(
+async def _resolve_policy_and_check(
     session: AsyncSession,
     user: User,
-) -> None:
-    """Проверяет capability upload через resolve_policy."""
+    *,
+    require_upload: bool = False,
+) -> list[str]:
+    """Проверяет capability через resolve_policy.
+
+    Возвращает policy.corpora для дальнейшей проверки visibility.
+    Raises NotFound (404) если capability нет — скрываем существование.
+    """
     policy = await resolve_policy(session, user)
-    if WILDCARD not in policy.capabilities and "upload" not in policy.capabilities:
-        raise UploadPermissionDenied()
+
+    has_wildcard = WILDCARD in policy.capabilities
+    has_upload = "upload" in policy.capabilities
+    has_manage = "manage_corpora" in policy.capabilities
+
+    if require_upload:
+        allowed = has_wildcard or has_upload
+    else:
+        allowed = has_wildcard or has_upload or has_manage
+
+    if not allowed:
+        raise NotFound(
+            constraint={"object": "documents"},
+            hint="Недостаточно прав для доступа к документам",
+        )
+
+    return policy.corpora
+
+
+async def _check_corpus_visibility(
+    session: AsyncSession,
+    corpora_patterns: list[str],
+    corpus_id: str,
+    workspace_id: str,
+) -> Corpus:
+    """Загружает корпус и проверяет policy.corpora visibility.
+
+    Raises NotFound если корпус не существует или не виден.
+    """
+    corpus = await session.get(Corpus, corpus_id)
+    if corpus is None or corpus.workspace_id != workspace_id:
+        raise NotFound(
+            constraint={"object": "corpus", "id": corpus_id},
+            hint="Корпус не найден",
+        )
+
+    if not _corpus_visible(corpora_patterns, corpus.name):
+        raise NotFound(
+            constraint={"object": "corpus", "id": corpus_id},
+            hint="Корпус не найден",
+        )
+
+    return corpus
 
 
 def _to_response(doc: Document) -> DocumentResponse:
@@ -93,7 +142,9 @@ async def upload_document_endpoint(
     Оригинал сохраняется в BlobStore (ADR-7), затем создаётся Document(status=pending).
     Дубликат определяется по (corpus_id, sha256).
     """
-    await _check_upload_capability(session, user)
+    workspace_id = request.app.state.workspace_id
+    corpora_patterns = await _resolve_policy_and_check(session, user, require_upload=True)
+    await _check_corpus_visibility(session, corpora_patterns, corpus_id, workspace_id)
 
     settings = Settings()
     max_size_bytes = settings.max_upload_size_mb * 1024 * 1024
@@ -106,7 +157,7 @@ async def upload_document_endpoint(
     result = await upload_document(
         session,
         blob_store,
-        workspace_id=request.app.state.workspace_id,
+        workspace_id=workspace_id,
         corpus_id=corpus_id,
         filename=file.filename or "unknown",
         mime=file.content_type or "application/octet-stream",
@@ -126,11 +177,13 @@ async def list_documents_endpoint(
     user: User = Depends(current_user),
 ) -> DocumentListResponse:
     """Список документов корпуса."""
-    await _check_upload_capability(session, user)
+    workspace_id = request.app.state.workspace_id
+    corpora_patterns = await _resolve_policy_and_check(session, user)
+    await _check_corpus_visibility(session, corpora_patterns, corpus_id, workspace_id)
 
     documents = await list_documents(
         session,
-        workspace_id=request.app.state.workspace_id,
+        workspace_id=workspace_id,
         corpus_id=corpus_id,
     )
 
@@ -160,6 +213,28 @@ def _to_detail_response(doc: Document) -> DocumentDetailResponse:
     )
 
 
+async def _load_document_with_corpus_check(
+    session: AsyncSession,
+    user: User,
+    document_id: str,
+    workspace_id: str,
+) -> Document:
+    """Загружает документ и проверяет capability + policy.corpora visibility.
+
+    Raises NotFound (404) если документ не существует или нет прав.
+    """
+    document = await get_document(
+        session,
+        workspace_id=workspace_id,
+        document_id=document_id,
+    )
+
+    corpora_patterns = await _resolve_policy_and_check(session, user)
+    await _check_corpus_visibility(session, corpora_patterns, document.corpus_id, workspace_id)
+
+    return document
+
+
 @document_router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document_endpoint(
     document_id: str,
@@ -171,11 +246,7 @@ async def get_document_endpoint(
 
     Не возвращает blob_uri — это внутренний идентификатор хранения.
     """
-    document = await get_document(
-        session,
-        workspace_id=user.workspace_id,
-        document_id=document_id,
-    )
+    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
     return _to_detail_response(document)
 
 
@@ -191,11 +262,7 @@ async def get_document_content_endpoint(
     Оригинал читается через абстракцию BlobStore (ADR-7),
     не отдаёт blob_uri напрямую.
     """
-    document = await get_document(
-        session,
-        workspace_id=user.workspace_id,
-        document_id=document_id,
-    )
+    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
 
     blob_store = request.app.state.blob_store
 

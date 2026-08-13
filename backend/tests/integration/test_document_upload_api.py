@@ -1,4 +1,4 @@
-"""Тесты загрузки документов (T-204).
+"""Тесты загрузки документов (T-204) и access control (T-313).
 
 Проверки:
 - успешная загрузка → 201, blob существует, document status=pending
@@ -6,8 +6,10 @@
 - превышение размера → 413
 - неразрешённое расширение → 415
 - корпус не найден → 404
-- роль support (нет capability upload) → 403
+- роль support (нет capability upload) → 404 (скрываем существование)
 - список документов корпуса
+- policy.corpora visibility: corpus не в списке → 404
+- manage_corpora без upload → list доступен, upload → 404
 """
 
 from __future__ import annotations
@@ -60,12 +62,16 @@ async def _login_with_role(
     return user.id
 
 
-async def _create_corpus(app_fixture: FastAPI, name: str = "Test corpus") -> str:
+async def _create_corpus(
+    app_fixture: FastAPI,
+    name: str = "public",
+    data_class: str | None = None,
+) -> str:
     """Создаёт корпус и возвращает его ID."""
     factory = app_fixture.state.db_session_factory
     workspace_id = app_fixture.state.workspace_id
     async with factory() as session:
-        corpus = Corpus(name=name, workspace_id=workspace_id)
+        corpus = Corpus(name=name, workspace_id=workspace_id, data_class=data_class)
         session.add(corpus)
         await session.flush()
         corpus_id = corpus.id
@@ -143,20 +149,6 @@ async def test_upload_file_too_large(
     await _login_with_role(api_client, app_fixture, role_name="developer")
     corpus_id = await _create_corpus(app_fixture)
 
-    # Создаём файл больше дефолтного лимита (50 МБ)
-    # Используем 51 МБ — но это 51 МБ в памяти.
-    # Вместо этого — переопределим settings через патч.
-    # Проще: отправим 60 байт и проверим логику через маленький лимит.
-    # Логика проверки: total_size > max_size_bytes.
-    # Проверим с реальным лимитом 50 МБ — нужен большой файл.
-    # Альтернатива: проверяем, что малый файл проходит, а превышение
-    # тестируем на уровне service.
-    # Для интеграционного теста используем 60 МБ — слишком много для CI.
-    # Проверим через unit-тест service-слоя с малым лимитом.
-    # Здесь — только что малый файл проходит (уже test_upload_document_success).
-    # Для интеграционного теста: создадим файл чуть больше 50 МБ.
-    # 50 МБ = 52428800 байт. Создадим 52428801 байт.
-    # Это ~50 МБ в памяти — приемлемо для одного теста.
     large_content = b"x" * (50 * 1024 * 1024 + 1)
     resp = await _upload_file(api_client, corpus_id, content=large_content)
 
@@ -213,15 +205,15 @@ async def test_upload_permission_denied(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
 ) -> None:
-    """Роль support (нет capability upload) → 403."""
+    """Роль support (нет capability upload) → 404 (скрываем существование)."""
     await _login_with_role(api_client, app_fixture, role_name="support")
     corpus_id = await _create_corpus(app_fixture)
 
     resp = await _upload_file(api_client, corpus_id, content=b"test")
 
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     data = resp.json()
-    assert data["error"] == "upload_permission_denied"
+    assert data["error"] == "not_found"
 
 
 @pytest.mark.asyncio
@@ -257,8 +249,8 @@ async def test_same_content_different_corpus_allowed(
 ) -> None:
     """Тот же файл в другой корпус — легитимная отдельная запись (не дубликат)."""
     await _login_with_role(api_client, app_fixture, role_name="developer")
-    corpus1 = await _create_corpus(app_fixture, "Project A")
-    corpus2 = await _create_corpus(app_fixture, "Project B")
+    corpus1 = await _create_corpus(app_fixture, "public")
+    corpus2 = await _create_corpus(app_fixture, "team")
 
     shared_content = b"Shared README content"
     resp1 = await _upload_file(api_client, corpus1, filename="readme.md", content=shared_content)
@@ -269,3 +261,207 @@ async def test_same_content_different_corpus_allowed(
     assert resp1.json()["id"] != resp2.json()["id"]
     assert resp1.json()["sha256"] == resp2.json()["sha256"]
     assert resp1.json()["blob_uri"] == resp2.json()["blob_uri"]
+
+
+# ---------------------------------------------------------------------------
+# Access control tests (T-313)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_denied_for_support_role(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Support (нет upload/manage_corpora) → 404 на list."""
+    await _login_with_role(api_client, app_fixture, role_name="support")
+    corpus_id = await _create_corpus(app_fixture)
+
+    resp = await api_client.get(f"/api/corpora/{corpus_id}/documents")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_allowed_for_manage_corpora_without_upload(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Architect (manage_corpora, upload) → list доступен."""
+    await _login_with_role(api_client, app_fixture, role_name="architect")
+    corpus_id = await _create_corpus(app_fixture)
+
+    resp = await api_client.get(f"/api/corpora/{corpus_id}/documents")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_upload_denied_for_manage_corpora_without_upload(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Custom role: manage_corpora but no upload → list OK, upload 404."""
+    custom_policy = {
+        "models": ["*"],
+        "max_input_tokens": 100000,
+        "max_output_tokens": 10000,
+        "reasoning": "off",
+        "budget": None,
+        "rpm": 100,
+        "tpm": 100000,
+        "corpora": ["*"],
+        "capabilities": ["manage_corpora", "chat"],
+    }
+    await _login_with_role(api_client, app_fixture, role_name="custom_mgr", policy=custom_policy)
+    corpus_id = await _create_corpus(app_fixture)
+
+    # List — доступен (manage_corpora)
+    resp_list = await api_client.get(f"/api/corpora/{corpus_id}/documents")
+    assert resp_list.status_code == 200
+
+    # Upload — 404 (нет upload capability)
+    resp_upload = await _upload_file(api_client, corpus_id, content=b"test")
+    assert resp_upload.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_corpus_visibility_denied(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Developer с corpora=['public'] не видит корпус 'private'."""
+    restricted_policy = {
+        "models": ["*"],
+        "max_input_tokens": 100000,
+        "max_output_tokens": 10000,
+        "reasoning": "off",
+        "budget": None,
+        "rpm": 100,
+        "tpm": 100000,
+        "corpora": ["public"],
+        "capabilities": ["chat", "upload", "custom_prompts"],
+    }
+    await _login_with_role(
+        api_client, app_fixture, role_name="restricted_dev", policy=restricted_policy
+    )
+    corpus_id = await _create_corpus(app_fixture, name="private-project")
+
+    # Upload → 404 (corpus не в policy.corpora)
+    resp_upload = await _upload_file(api_client, corpus_id, content=b"test")
+    assert resp_upload.status_code == 404
+
+    # List → 404
+    resp_list = await api_client.get(f"/api/corpora/{corpus_id}/documents")
+    assert resp_list.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_corpus_visibility_wildcard_allows_all(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Admin (corpora=['*']) видит любой корпус."""
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture, name="private-project")
+
+    resp = await _upload_file(api_client, corpus_id, content=b"test")
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_document_detail_denied_without_capability(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Support (нет upload/manage_corpora) → 404 на GET /api/documents/{id}."""
+    # Сначала загружаем как developer
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Test content")
+    assert upload_resp.status_code == 201
+    document_id = upload_resp.json()["id"]
+
+    # Логинимся как support
+    await _login_with_role(api_client, app_fixture, role_name="support")
+
+    resp = await api_client.get(f"/api/documents/{document_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_document_content_denied_without_capability(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Support → 404 на GET /api/documents/{id}/content."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Test content")
+    document_id = upload_resp.json()["id"]
+
+    await _login_with_role(api_client, app_fixture, role_name="support")
+
+    resp = await api_client.get(f"/api/documents/{document_id}/content")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_document_detail_denied_for_invisible_corpus(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Developer с corpora=['public'] → 404 на документ в корпусе 'private'."""
+    # Загружаем как admin (corpora=['*'])
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture, name="private-data")
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Secret")
+    document_id = upload_resp.json()["id"]
+
+    # Логинимся как restricted developer
+    restricted_policy = {
+        "models": ["*"],
+        "max_input_tokens": 100000,
+        "max_output_tokens": 10000,
+        "reasoning": "off",
+        "budget": None,
+        "rpm": 100,
+        "tpm": 100000,
+        "corpora": ["public"],
+        "capabilities": ["chat", "upload", "custom_prompts"],
+    }
+    await _login_with_role(
+        api_client, app_fixture, role_name="restricted_dev2", policy=restricted_policy
+    )
+
+    resp = await api_client.get(f"/api/documents/{document_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_document_content_denied_for_invisible_corpus(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Developer с corpora=['public'] → 404 на content в корпусе 'private'."""
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture, name="private-data")
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Secret")
+    document_id = upload_resp.json()["id"]
+
+    restricted_policy = {
+        "models": ["*"],
+        "max_input_tokens": 100000,
+        "max_output_tokens": 10000,
+        "reasoning": "off",
+        "budget": None,
+        "rpm": 100,
+        "tpm": 100000,
+        "corpora": ["public"],
+        "capabilities": ["chat", "upload", "custom_prompts"],
+    }
+    await _login_with_role(
+        api_client, app_fixture, role_name="restricted_dev3", policy=restricted_policy
+    )
+
+    resp = await api_client.get(f"/api/documents/{document_id}/content")
+    assert resp.status_code == 404

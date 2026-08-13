@@ -59,7 +59,7 @@ async def _login_with_role(
     return user.id
 
 
-async def _create_corpus(app_fixture: FastAPI, name: str = "Test corpus") -> str:
+async def _create_corpus(app_fixture: FastAPI, name: str = "public") -> str:
     factory = app_fixture.state.db_session_factory
     workspace_id = app_fixture.state.workspace_id
     async with factory() as session:
