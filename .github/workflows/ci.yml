@@ -218,3 +218,18 @@ jobs:
         env:
           ORQION_EVAL_GATE: "1"
         run: pytest backend/tests/eval -v --timeout=300
+
+  oidc-gate:
+    name: OIDC Security Gate (authlib extras)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install orqion[oidc] — real authlib for JWT validation
+        run: pip install -e ".[oidc,dev]"
+      - name: Run adversarial JWT tests (real authlib validation)
+        run: pytest backend/tests/integration/test_oidc_adversarial.py -v
+      - name: Run OIDC provider tests
+        run: pytest backend/tests/integration/test_oidc_provider.py -v
