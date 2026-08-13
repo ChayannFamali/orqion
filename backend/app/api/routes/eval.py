@@ -1,13 +1,18 @@
-"""CRUD для наборов оценки и импорт (T-224).
+"""CRUD для наборов оценки, импорт, прогон, сравнение (T-224, T-225, T-226, T-315).
 
 POST   /api/corpora/{corpus_id}/eval-sets       — создать набор с элементами
 GET    /api/corpora/{corpus_id}/eval-sets       — список наборов корпуса
 GET    /api/eval-sets/{id}                       — набор с элементами
 DELETE /api/eval-sets/{id}                       — удалить набор
 POST   /api/eval-sets/{id}/import                — импорт CodeSearchNet JSONL
+POST   /api/eval-sets/{id}/items                 — добавить вопрос (T-315)
+DELETE /api/eval-sets/{id}/items/{item_id}        — удалить вопрос (T-315)
 POST   /api/eval-sets/{id}/runs                  — запуск прогона (T-225)
 GET    /api/eval-sets/{id}/runs                  — список прогонов (T-225)
 GET    /api/eval-runs/{id}                       — получить прогон (T-225)
+POST   /api/eval-runs/compare                    — сравнение прогонов (T-226)
+
+Доступ: manage_corpora → 404 для остальных (T-315).
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from app.api.schemas.eval import (
     EvalCompareRequest,
     EvalComparisonRead,
     EvalImportResponse,
+    EvalItemCreate,
     EvalItemRead,
     EvalRunCreate,
     EvalRunListResponse,
@@ -40,6 +46,8 @@ from app.auth.dependencies import current_user
 from app.db.models import Corpus, EvalItem, EvalRun, EvalSet, IndexVersion, Model, Provider, User
 from app.db.session import get_session
 from app.errors import BadRequest, NotFound
+from app.policy.models import WILDCARD
+from app.policy.resolve import resolve_policy
 from app.rag.eval_import import ImportItem, import_eval_set
 
 router = APIRouter(
@@ -70,6 +78,17 @@ def _eval_item_to_read(item: EvalItem) -> EvalItemRead:
     )
 
 
+async def _check_manage_corpora(session: AsyncSession, user: User) -> None:
+    """Проверяет manage_corpora capability. Raises NotFound (404) если нет."""
+    policy = await resolve_policy(session, user)
+    if WILDCARD in policy.capabilities or "manage_corpora" in policy.capabilities:
+        return
+    raise NotFound(
+        constraint={"object": "eval"},
+        hint="Недостаточно прав для доступа к оценке качества",
+    )
+
+
 async def _get_corpus_or_404(session: AsyncSession, corpus_id: str, workspace_id: str) -> Corpus:
     result = await session.execute(
         select(Corpus).where(Corpus.id == corpus_id, Corpus.workspace_id == workspace_id)
@@ -84,11 +103,14 @@ async def _get_corpus_or_404(session: AsyncSession, corpus_id: str, workspace_id
 async def create_eval_set(
     corpus_id: str,
     body: EvalSetCreateWithItems,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalSetReadWithItems:
     """Создать набор оценки с элементами."""
-    await _get_corpus_or_404(session, corpus_id, user.workspace_id)
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
+    await _get_corpus_or_404(session, corpus_id, workspace_id)
 
     items = [
         ImportItem(
@@ -102,7 +124,7 @@ async def create_eval_set(
     try:
         eval_set = await import_eval_set(
             session,
-            user.workspace_id,
+            workspace_id,
             corpus_id,
             body.name,
             items,
@@ -128,17 +150,20 @@ async def create_eval_set(
 @router.get("/corpora/{corpus_id}/eval-sets", response_model=EvalSetListResponse)
 async def list_eval_sets(
     corpus_id: str,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalSetListResponse:
     """Список наборов оценки корпуса."""
-    await _get_corpus_or_404(session, corpus_id, user.workspace_id)
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
+    await _get_corpus_or_404(session, corpus_id, workspace_id)
 
     result = await session.execute(
         select(EvalSet)
         .where(
             EvalSet.corpus_id == corpus_id,
-            EvalSet.workspace_id == user.workspace_id,
+            EvalSet.workspace_id == workspace_id,
         )
         .order_by(EvalSet.created_at.desc())
     )
@@ -149,15 +174,18 @@ async def list_eval_sets(
 @router.get("/eval-sets/{eval_set_id}", response_model=EvalSetReadWithItems)
 async def get_eval_set(
     eval_set_id: str,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalSetReadWithItems:
     """Получить набор с элементами."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     result = await session.execute(
         select(EvalSet)
         .where(
             EvalSet.id == eval_set_id,
-            EvalSet.workspace_id == user.workspace_id,
+            EvalSet.workspace_id == workspace_id,
         )
         .options(selectinload(EvalSet.items))
     )
@@ -178,14 +206,17 @@ async def get_eval_set(
 @router.delete("/eval-sets/{eval_set_id}", status_code=204)
 async def delete_eval_set(
     eval_set_id: str,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Удалить набор оценки (каскадно удаляет элементы и прогоны)."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     result = await session.execute(
         select(EvalSet).where(
             EvalSet.id == eval_set_id,
-            EvalSet.workspace_id == user.workspace_id,
+            EvalSet.workspace_id == workspace_id,
         )
     )
     eval_set = result.scalar_one_or_none()
@@ -199,6 +230,7 @@ async def delete_eval_set(
 @router.post("/eval-sets/{eval_set_id}/import", response_model=EvalImportResponse)
 async def import_to_eval_set(
     eval_set_id: str,
+    request: Request,
     file: UploadFile = File(...),
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
@@ -207,11 +239,13 @@ async def import_to_eval_set(
 
     Файл парсится in-memory, не сохраняется на диск.
     """
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     # Проверяем что eval_set существует
     result = await session.execute(
         select(EvalSet).where(
             EvalSet.id == eval_set_id,
-            EvalSet.workspace_id == user.workspace_id,
+            EvalSet.workspace_id == workspace_id,
         )
     )
     eval_set = result.scalar_one_or_none()
@@ -247,7 +281,7 @@ async def import_to_eval_set(
         # Добавляем items в существующий набор
         for item in items_to_add:
             new_item = EvalItem(
-                workspace_id=user.workspace_id,
+                workspace_id=workspace_id,
                 eval_set_id=eval_set_id,
                 question=item.question,
                 expected_doc_ids=item.expected_doc_ids,
@@ -270,6 +304,74 @@ async def import_to_eval_set(
         total_items=total,
         matched_items=matched,
     )
+
+
+# ---------------------------------------------------------------------------
+# T-315: Single EvalItem CRUD
+# ---------------------------------------------------------------------------
+
+
+@router.post("/eval-sets/{eval_set_id}/items", response_model=EvalItemRead, status_code=201)
+async def create_eval_item(
+    eval_set_id: str,
+    body: EvalItemCreate,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> EvalItemRead:
+    """Добавить вопрос в существующий набор оценки."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
+
+    result = await session.execute(
+        select(EvalSet).where(
+            EvalSet.id == eval_set_id,
+            EvalSet.workspace_id == workspace_id,
+        )
+    )
+    eval_set = result.scalar_one_or_none()
+    if eval_set is None:
+        raise NotFound(f"Eval set {eval_set_id} not found")
+
+    item = EvalItem(
+        workspace_id=workspace_id,
+        eval_set_id=eval_set_id,
+        question=body.question,
+        expected_doc_ids=body.expected_doc_ids,
+        expected_answer=body.expected_answer,
+    )
+    session.add(item)
+    await session.commit()
+    await session.refresh(item)
+
+    return _eval_item_to_read(item)
+
+
+@router.delete("/eval-sets/{eval_set_id}/items/{item_id}", status_code=204)
+async def delete_eval_item(
+    eval_set_id: str,
+    item_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Удалить вопрос из набора оценки."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
+
+    result = await session.execute(
+        select(EvalItem).where(
+            EvalItem.id == item_id,
+            EvalItem.eval_set_id == eval_set_id,
+            EvalItem.workspace_id == workspace_id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise NotFound(f"Eval item {item_id} not found")
+
+    await session.delete(item)
+    await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -300,11 +402,13 @@ async def create_eval_run(
     """Запустить прогон оценки."""
     from app.rag.eval_runner import run_eval
 
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     # Проверяем что eval_set существует
     result = await session.execute(
         select(EvalSet).where(
             EvalSet.id == eval_set_id,
-            EvalSet.workspace_id == user.workspace_id,
+            EvalSet.workspace_id == workspace_id,
         )
     )
     eval_set = result.scalar_one_or_none()
@@ -315,7 +419,7 @@ async def create_eval_run(
     iv_result = await session.execute(
         select(IndexVersion).where(
             IndexVersion.id == body.index_version_id,
-            IndexVersion.workspace_id == user.workspace_id,
+            IndexVersion.workspace_id == workspace_id,
         )
     )
     index_version = iv_result.scalar_one_or_none()
@@ -325,9 +429,7 @@ async def create_eval_run(
     # Загружаем модель и провайдер для generate
     # Используем первую доступную модель в workspace
     model_result = await session.execute(
-        select(Model)
-        .where(Model.workspace_id == user.workspace_id, Model.enabled.is_(True))
-        .limit(1)
+        select(Model).where(Model.workspace_id == workspace_id, Model.enabled.is_(True)).limit(1)
     )
     model = model_result.scalar_one_or_none()
     if model is None:
@@ -343,7 +445,7 @@ async def create_eval_run(
     # Запускаем прогон
     eval_run = await run_eval(
         session=session,
-        workspace_id=user.workspace_id,
+        workspace_id=workspace_id,
         eval_set_id=eval_set_id,
         index_version_id=body.index_version_id,
         settings=request.app.state.settings,
@@ -362,15 +464,18 @@ async def create_eval_run(
 @router.get("/eval-sets/{eval_set_id}/runs", response_model=EvalRunListResponse)
 async def list_eval_runs(
     eval_set_id: str,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalRunListResponse:
     """Список прогонов набора."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     result = await session.execute(
         select(EvalRun)
         .where(
             EvalRun.eval_set_id == eval_set_id,
-            EvalRun.workspace_id == user.workspace_id,
+            EvalRun.workspace_id == workspace_id,
         )
         .order_by(EvalRun.ts.desc())
     )
@@ -381,14 +486,17 @@ async def list_eval_runs(
 @router.get("/eval-runs/{run_id}", response_model=EvalRunRead)
 async def get_eval_run(
     run_id: str,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalRunRead:
     """Получить прогон с метриками."""
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
     result = await session.execute(
         select(EvalRun).where(
             EvalRun.id == run_id,
-            EvalRun.workspace_id == user.workspace_id,
+            EvalRun.workspace_id == workspace_id,
         )
     )
     run = result.scalar_one_or_none()
@@ -406,6 +514,7 @@ async def get_eval_run(
 @router.post("/eval-runs/compare", response_model=EvalComparisonRead)
 async def compare_eval_runs(
     body: EvalCompareRequest,
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvalComparisonRead:
@@ -416,13 +525,16 @@ async def compare_eval_runs(
     """
     from app.rag.eval_compare import compare_runs
 
+    workspace_id = request.app.state.workspace_id
+    await _check_manage_corpora(session, user)
+
     if len(body.run_ids) < 2:
         raise BadRequest("Need at least 2 run IDs to compare")
 
     result = await session.execute(
         select(EvalRun).where(
             EvalRun.id.in_(body.run_ids),
-            EvalRun.workspace_id == user.workspace_id,
+            EvalRun.workspace_id == workspace_id,
         )
     )
     runs = list(result.scalars().all())
