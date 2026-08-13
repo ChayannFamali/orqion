@@ -27,8 +27,12 @@ async def test_builtin_roles_created_on_first_call(db_session: AsyncSession) -> 
 
 
 @pytest.mark.asyncio
-async def test_builtin_roles_reseeded_on_second_call(db_session: AsyncSession) -> None:
-    """При повторном старте политика builtin-ролей восстанавливается из пресетов."""
+async def test_builtin_roles_preserve_edited_policy_on_reseed(db_session: AsyncSession) -> None:
+    """При повторном старте политика builtin-ролей НЕ перезаписывается.
+
+    arch.md §5.2: ролевая модель меняется миграцией данных, а не схемы.
+    Изменения, внесённые администратором через API, сохраняются после рестарта.
+    """
     ws_id = await ensure_default_workspace(db_session)
     await db_session.flush()
 
@@ -39,7 +43,7 @@ async def test_builtin_roles_reseeded_on_second_call(db_session: AsyncSession) -
         select(Role).where(Role.workspace_id == ws_id, Role.name == "support")
     )
     support = result.scalar_one()
-    support.policy = {"models": ["hacked"], "max_input_tokens": 999999}
+    support.policy = {"models": ["local/custom-model"], "max_input_tokens": 999999}
     await db_session.flush()
 
     await ensure_builtin_roles(db_session, ws_id)
@@ -49,8 +53,8 @@ async def test_builtin_roles_reseeded_on_second_call(db_session: AsyncSession) -
         select(Role).where(Role.workspace_id == ws_id, Role.name == "support")
     )
     support = result.scalar_one()
-    assert support.policy["models"] == ["local/*"]
-    assert support.policy["max_input_tokens"] == 16000
+    assert support.policy["models"] == ["local/custom-model"]
+    assert support.policy["max_input_tokens"] == 999999
 
 
 @pytest.mark.asyncio
@@ -80,3 +84,52 @@ async def test_custom_roles_not_touched_by_reseed(db_session: AsyncSession) -> N
     intern = result.scalar_one()
     assert intern.policy["models"] == ["local/qwen3-4b"]
     assert intern.is_builtin is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_builtin_roles_idempotent_preserves_all_edits(
+    db_session: AsyncSession,
+) -> None:
+    """Полный цикл: создание → редактирование всех 5 ролей → повторный вызов → все правки сохранены.
+
+    Документирует контракт: ensure_builtin_roles создаёт роли при первом старте,
+    но никогда не перезаписывает политику существующих ролей. Это защита от
+    повторного появления бага перезаписи при рефакторинге bootstrap-кода.
+    """
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    await ensure_builtin_roles(db_session, ws_id)
+    await db_session.flush()
+
+    edited_policy = {
+        "models": ["local/edited"],
+        "max_input_tokens": 12345,
+        "max_output_tokens": 6789,
+        "reasoning": "on",
+        "budget": {"tokens_month": 111, "cost_month": 222},
+        "rpm": 99,
+        "tpm": 999,
+        "corpora": ["edited"],
+        "capabilities": ["chat"],
+    }
+
+    result = await db_session.execute(
+        select(Role).where(Role.workspace_id == ws_id, Role.is_builtin.is_(True))
+    )
+    for role in result.scalars().all():
+        role.policy = dict(edited_policy)
+    await db_session.flush()
+
+    await ensure_builtin_roles(db_session, ws_id)
+    await db_session.flush()
+
+    result = await db_session.execute(
+        select(Role).where(Role.workspace_id == ws_id, Role.is_builtin.is_(True))
+    )
+    for role in result.scalars().all():
+        assert role.policy["models"] == ["local/edited"], f"{role.name} policy was overwritten"
+        assert (
+            role.policy["max_input_tokens"] == 12345
+        ), f"{role.name} max_input_tokens was overwritten"
+        assert role.policy["capabilities"] == ["chat"], f"{role.name} capabilities were overwritten"

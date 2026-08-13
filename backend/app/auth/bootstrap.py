@@ -2,8 +2,9 @@
 
 Пароль генерируется и выводится в stdout однократно.
 В логи (stderr/JSON) пароль не попадает никогда (AGENTS.md §14).
-Встроенные роли пересеваются идемпотентно: при каждом старте восстанавливается
-эталонная политика (is_builtin=True).
+Встроенные роли создаются идемпотентно: при первом старте создаются из пресетов,
+при последующих — НЕ перезаписываются (arch.md §5.2: ролевая модель меняется
+миграцией данных, а не схемы). Изменения, внесённые через API, сохраняются.
 """
 
 from __future__ import annotations
@@ -20,10 +21,11 @@ from app.policy.presets import BUILTIN_ROLES
 
 
 async def ensure_builtin_roles(session: AsyncSession, workspace_id: str) -> None:
-    """Создаёт или обновляет встроенные роли с эталонной политикой.
+    """Создаёт встроенные роли с эталонной политикой при первом старте.
 
-    Идемпотентно: при каждом старте policy builtin-ролей восстанавливается
-    из пресетов. Пользовательские роли (is_builtin=False) не затрагиваются.
+    Идемпотентно: если builtin-роль уже существует, её политика НЕ перезаписывается.
+    Изменения, внесённые администратором через API, сохраняются после рестарта.
+    Пользовательские роли (is_builtin=False) не затрагиваются.
     """
     result = await session.execute(
         select(Role).where(
@@ -34,9 +36,7 @@ async def ensure_builtin_roles(session: AsyncSession, workspace_id: str) -> None
     existing = {r.name: r for r in result.scalars().all()}
 
     for name, policy in BUILTIN_ROLES.items():
-        if name in existing:
-            existing[name].policy = policy.model_dump()
-        else:
+        if name not in existing:
             role = Role(
                 workspace_id=workspace_id,
                 name=name,
