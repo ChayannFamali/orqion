@@ -50,4 +50,8 @@ export const queryKeys = {
   evalRuns: {
     bySet: (evalSetId: string) => ["eval-runs", "set", evalSetId] as const,
   },
+  analytics: {
+    all: ["analytics"] as const,
+    range: (start: string, end: string) => ["analytics", start, end] as const,
+  },
 } as const;

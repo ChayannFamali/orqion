@@ -11,6 +11,7 @@ import { ProvidersPage } from "../pages/ProvidersPage";
 import { RolesPage } from "../pages/RolesPage";
 import { UsersPage } from "../pages/UsersPage";
 import { CorporaPage } from "../pages/CorporaPage";
+import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
 interface AppLayoutProps {
@@ -48,6 +49,9 @@ export function AppLayout({
     }
     if (activeSection === "corpora") {
       return <CorporaPage capabilities={capabilities} />;
+    }
+    if (activeSection === "analytics") {
+      return <AnalyticsPage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {
