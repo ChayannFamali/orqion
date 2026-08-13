@@ -40,7 +40,7 @@ function mockHooks(
   vi.mocked(useUpdateCorpus).mockReturnValue({
     isPending: false,
     mutateAsync: mockMutateAsync,
-  } as ReturnType<typeof useUpdateCorpus>);
+  } as unknown as ReturnType<typeof useUpdateCorpus>);
 }
 
 describe("CorporaPage", () => {
