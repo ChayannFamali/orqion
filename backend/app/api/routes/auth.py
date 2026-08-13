@@ -1,4 +1,4 @@
-"""POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me."""
+"""POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me, POST /api/auth/exit-impersonation."""
 
 from __future__ import annotations
 
@@ -10,11 +10,16 @@ from app.api.schemas.auth import LoginRequest, LoginResponse, UserResponse
 from app.auth.dependencies import current_user
 from app.auth.passwords import verify_password
 from app.auth.rate_limit import LoginRateLimiter
-from app.auth.sessions import COOKIE_NAME, create_session, invalidate_session
+from app.auth.sessions import (
+    COOKIE_NAME,
+    create_session,
+    get_session_record,
+    invalidate_session,
+)
 from app.config import Settings
 from app.db.models import User
 from app.db.session import get_session
-from app.errors import OrqionError
+from app.errors import BadRequest, OrqionError
 from app.policy.resolve import resolve_policy
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -112,13 +117,96 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def me(
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> UserResponse:
     policy = await resolve_policy(session, user)
+
+    is_impersonating = False
+    impersonated_by_email: str | None = None
+
+    session_id = request.cookies.get(COOKIE_NAME)
+    if session_id:
+        current_session = await get_session_record(session, session_id)
+        if current_session is not None and current_session.impersonated_by is not None:
+            # Это сессия имперсонации — находим actor по родительской сессии
+            parent_session = await get_session_record(session, current_session.impersonated_by)
+            if parent_session is not None:
+                actor_result = await session.execute(
+                    select(User).where(User.id == parent_session.user_id)
+                )
+                actor = actor_result.scalar_one_or_none()
+                if actor is not None:
+                    is_impersonating = True
+                    impersonated_by_email = actor.email
+
     return UserResponse(
         id=user.id,
         email=user.email,
         is_active=user.is_active,
         capabilities=policy.capabilities,
+        is_impersonating=is_impersonating,
+        impersonated_by_email=impersonated_by_email,
     )
+
+
+@router.post("/exit-impersonation")
+async def exit_impersonation(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Выход из имперсонации: восстанавливает родительскую сессию.
+
+    Если родительская сессия истекла или удалена — полный logout.
+    """
+    session_id = request.cookies.get(COOKIE_NAME)
+    if not session_id:
+        raise OrqionError(
+            "Нет активной сессии",
+            hint="Войдите в систему",
+        )
+
+    current_session = await get_session_record(session, session_id)
+    if current_session is None or current_session.impersonated_by is None:
+        raise BadRequest(
+            "Текущая сессия не является имперсонацией",
+            hint="Вы не в режиме имперсонации",
+        )
+
+    parent_session_id = current_session.impersonated_by
+
+    # Инвалидируем текущую (имперсонационную) сессию
+    await invalidate_session(session, session_id)
+
+    # Проверяем родительскую сессию
+    from datetime import UTC, datetime
+
+    parent_session = await get_session_record(session, parent_session_id)
+    now = datetime.now(UTC)
+    parent_expired = (
+        parent_session is None
+        or (
+            parent_session.expires_at.tzinfo is None
+            and parent_session.expires_at.replace(tzinfo=UTC) <= now
+        )
+        or (parent_session.expires_at.tzinfo is not None and parent_session.expires_at <= now)
+    )
+    if parent_expired:
+        # Родительская сессия истекла или удалена — полный logout
+        response.delete_cookie(key=COOKIE_NAME, path="/")
+        await session.commit()
+        return {"status": "logged_out", "reason": "parent_session_expired"}
+
+    # Восстанавливаем родительскую сессию
+    await session.commit()
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=parent_session_id,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=Settings().session_cookie_secure,
+    )
+    return {"status": "restored"}

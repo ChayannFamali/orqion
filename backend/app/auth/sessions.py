@@ -18,12 +18,17 @@ async def create_session(
     user_id: str,
     workspace_id: str,
     settings: Settings,
+    impersonated_by: str | None = None,
 ) -> str:
-    """Создаёт сессию, возвращает ID для cookie."""
+    """Создаёт сессию, возвращает ID для cookie.
+
+    impersonated_by — ID родительской сессии при имперсонации (None для обычной).
+    """
     record = Session(
         workspace_id=workspace_id,
         user_id=user_id,
         expires_at=datetime.now(UTC) + timedelta(days=settings.session_ttl_days),
+        impersonated_by=impersonated_by,
     )
     session.add(record)
     await session.flush()
@@ -48,6 +53,15 @@ async def get_user_by_session(
         select(User).where(User.id == record.user_id).where(User.is_active.is_(True))
     )
     return user_result.scalar_one_or_none()
+
+
+async def get_session_record(
+    session: AsyncSession,
+    session_id: str,
+) -> Session | None:
+    """Возвращает запись сессии по ID (включая impersonated_by). Не проверяет expiry."""
+    result = await session.execute(select(Session).where(Session.id == session_id))
+    return result.scalar_one_or_none()
 
 
 async def invalidate_session(

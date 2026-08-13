@@ -55,7 +55,11 @@ class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
 
 
 class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):
-    """Сессия: user_id, expires_at. Инвалидируется при выходе."""
+    """Сессия: user_id, expires_at. Инвалидируется при выходе.
+
+    impersonated_by — ID родительской сессии админа при имперсонации.
+    None для обычных сессий. Позволяет восстановить админскую сессию при выходе.
+    """
 
     __tablename__ = "session"
 
@@ -68,6 +72,11 @@ class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+    impersonated_by: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        default=None,
     )
 
 

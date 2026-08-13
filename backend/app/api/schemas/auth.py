@@ -15,6 +15,8 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     capabilities: list[str]
+    is_impersonating: bool = False
+    impersonated_by_email: str | None = None
 
 
 class LoginResponse(BaseModel):

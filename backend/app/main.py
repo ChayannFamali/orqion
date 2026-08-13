@@ -151,6 +151,7 @@ def create_app() -> FastAPI:
         roles_router,
         routing_router,
         traces_router,
+        users_router,
     )
 
     app.include_router(health_router)
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(roles_router)
     app.include_router(routing_router)
     app.include_router(traces_router)
+    app.include_router(users_router)
 
     _mount_static(app)
 

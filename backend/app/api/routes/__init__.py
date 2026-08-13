@@ -12,6 +12,7 @@ from app.api.routes.providers import router as providers_router
 from app.api.routes.roles import router as roles_router
 from app.api.routes.routing import router as routing_router
 from app.api.routes.traces import router as traces_router
+from app.api.routes.users import router as users_router
 
 __all__ = [
     "analytics_router",
@@ -26,4 +27,5 @@ __all__ = [
     "roles_router",
     "routing_router",
     "traces_router",
+    "users_router",
 ]
