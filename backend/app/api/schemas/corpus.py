@@ -18,6 +18,12 @@ class CorpusCreate(BaseModel):
     pinned_model_id: str | None = None
 
 
+class CorpusUpdate(BaseModel):
+    """Изменение корпуса (T-401). Только data_class; pinned_model_id — T-402."""
+
+    data_class: DataClass | None = None
+
+
 class CorpusResponse(BaseModel):
     """Корпус в ответе API."""
 

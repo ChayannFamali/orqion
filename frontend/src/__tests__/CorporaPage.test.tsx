@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CorporaPage } from "../pages/CorporaPage";
-import { useCorpora, useCreateCorpus } from "../hooks/useCorpora";
+import { useCorpora, useCreateCorpus, useUpdateCorpus } from "../hooks/useCorpora";
 import type { CorpusListResponse } from "../api/types";
 
 vi.mock("../hooks/useCorpora");
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
 function makeCorpus(overrides: Partial<CorpusListResponse["corpora"][0]> = {}) {
   return {
@@ -16,6 +22,8 @@ function makeCorpus(overrides: Partial<CorpusListResponse["corpora"][0]> = {}) {
     ...overrides,
   };
 }
+
+const mockMutateAsync = vi.fn();
 
 function mockHooks(
   corporaData?: CorpusListResponse,
@@ -29,6 +37,10 @@ function mockHooks(
   vi.mocked(useCreateCorpus).mockReturnValue({
     isPending: false,
   } as ReturnType<typeof useCreateCorpus>);
+  vi.mocked(useUpdateCorpus).mockReturnValue({
+    isPending: false,
+    mutateAsync: mockMutateAsync,
+  } as ReturnType<typeof useUpdateCorpus>);
 }
 
 describe("CorporaPage", () => {
@@ -125,5 +137,121 @@ describe("CorporaPage", () => {
 
     expect(screen.getByText(/Индекс активен/)).toBeInTheDocument();
     expect(screen.getByText(/Индекс не построен/)).toBeInTheDocument();
+  });
+
+  // --- T-401: Edit data_class modal ---
+
+  it("shows edit button when canManage", () => {
+    mockHooks({ corpora: [makeCorpus()] });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    expect(screen.getByTitle("Изменить класс данных")).toBeInTheDocument();
+  });
+
+  it("hides edit button when cannot manage", () => {
+    mockHooks({ corpora: [makeCorpus()] });
+
+    render(<CorporaPage capabilities={["chat"]} />);
+
+    expect(screen.queryByTitle("Изменить класс данных")).not.toBeInTheDocument();
+  });
+
+  it("opens edit modal with current data_class", () => {
+    mockHooks({ corpora: [makeCorpus({ data_class: "К2" })] });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+
+    expect(screen.getByText(/Класс данных: public/)).toBeInTheDocument();
+    expect(screen.getByText("Сохранить")).toBeInTheDocument();
+  });
+
+  it("shows confirm warning on downgrade К2→К0", () => {
+    mockHooks({ corpora: [makeCorpus({ data_class: "К2" })] });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+    const select = screen.getByDisplayValue("К2 — персональные данные");
+    fireEvent.change(select, { target: { value: "К0" } });
+    fireEvent.click(screen.getByText("Сохранить"));
+
+    expect(screen.getByText("Понижение класса конфиденциальности")).toBeInTheDocument();
+    expect(screen.getByText("Подтвердить понижение")).toBeInTheDocument();
+  });
+
+  it("does not show confirm on upgrade К0→К3", () => {
+    mockHooks({ corpora: [makeCorpus({ data_class: "К0" })] });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+    const select = screen.getByDisplayValue("К0 — публичные материалы");
+    fireEvent.change(select, { target: { value: "К3" } });
+    fireEvent.click(screen.getByText("Сохранить"));
+
+    expect(screen.queryByText("Понижение класса конфиденциальности")).not.toBeInTheDocument();
+  });
+
+  it("calls mutateAsync on upgrade without confirm", async () => {
+    mockHooks({ corpora: [makeCorpus({ data_class: "К0", id: "c1" })] });
+    mockMutateAsync.mockResolvedValue({});
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+    const select = screen.getByDisplayValue("К0 — публичные материалы");
+    fireEvent.change(select, { target: { value: "К3" } });
+    fireEvent.click(screen.getByText("Сохранить"));
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        id: "c1",
+        body: { data_class: "К3" },
+      });
+    });
+  });
+
+  it("requires second click to confirm downgrade", async () => {
+    mockHooks({ corpora: [makeCorpus({ data_class: "К3", id: "c1" })] });
+    mockMutateAsync.mockResolvedValue({});
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+    const select = screen.getByDisplayValue("К3 — коммерческая тайна");
+    fireEvent.change(select, { target: { value: "К0" } });
+
+    // First click → shows confirm, does NOT call API
+    fireEvent.click(screen.getByText("Сохранить"));
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+
+    // Second click → confirms, calls API
+    fireEvent.click(screen.getByText("Подтвердить понижение"));
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        id: "c1",
+        body: { data_class: "К0" },
+      });
+    });
+  });
+
+  it("shows toast error on API failure", async () => {
+    const { toast } = await import("sonner");
+    mockHooks({ corpora: [makeCorpus({ data_class: "К0", id: "c1" })] });
+    mockMutateAsync.mockRejectedValue(new Error("fetch failed"));
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByTitle("Изменить класс данных"));
+    const select = screen.getByDisplayValue("К0 — публичные материалы");
+    fireEvent.change(select, { target: { value: "К3" } });
+    fireEvent.click(screen.getByText("Сохранить"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Не удалось изменить класс данных");
+    });
   });
 });

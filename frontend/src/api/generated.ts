@@ -245,6 +245,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpora/{corpus_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Corpus */
+        patch: operations["update_corpus_api_corpora__corpus_id__patch"];
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}/documents": {
         parameters: {
             query?: never;
@@ -1159,6 +1176,14 @@ export interface components {
             pinned_model_id: string | null;
             /** Active Index Version Id */
             active_index_version_id: string | null;
+        };
+        /**
+         * CorpusUpdate
+         * @description Изменение корпуса (T-401). Только data_class; pinned_model_id — T-402.
+         */
+        CorpusUpdate: {
+            /** Data Class */
+            data_class?: ("К0" | "К1" | "К2" | "К3") | null;
         };
         /**
          * DailyBreakdown
@@ -2443,6 +2468,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorpusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_corpus_api_corpora__corpus_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorpusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

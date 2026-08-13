@@ -1,4 +1,4 @@
-"""Тест corpora API: список, создание, access control, валидация, duplicate name."""
+"""Тест corpora API: список, создание, access control, валидация, duplicate name, PATCH data_class (T-401)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
-from app.db.models import Corpus, Role, User
+from app.db.models import AuditLog, Corpus, Role, User
 from fastapi import FastAPI
 
 
@@ -340,3 +340,238 @@ async def test_list_corpora_workspace_isolated(
     names = [c["name"] for c in corpora]
     assert "visible-corpus" in names
     assert "other-ws-corpus" not in names
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/corpora/{id} — T-401: change data_class with audit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_data_class(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH /api/corpora/{id} → меняет data_class."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "patch-test", "data_class": "К0"},
+    )
+    assert create.status_code == 201
+    corpus_id = create.json()["id"]
+
+    resp = await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К2"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["data_class"] == "К2"
+    assert data["id"] == corpus_id
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_data_class_writes_audit(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH с изменением data_class → audit log содержит corpus.data_class_changed с old/new."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "audit-test", "data_class": "К1"},
+    )
+    corpus_id = create.json()["id"]
+
+    await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К3"},
+    )
+
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "corpus.data_class_changed",
+                AuditLog.object_id == corpus_id,
+            )
+        )
+        audit = result.scalar_one_or_none()
+        assert audit is not None
+        assert audit.meta["old"] == "К1"
+        assert audit.meta["new"] == "К3"
+        assert audit.meta["corpus_name"] == "audit-test"
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_no_change_no_audit(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH с тем же data_class → 200, audit НЕ пишется."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "no-change-test", "data_class": "К2"},
+    )
+    corpus_id = create.json()["id"]
+
+    resp = await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К2"},
+    )
+    assert resp.status_code == 200
+
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "corpus.data_class_changed",
+                AuditLog.object_id == corpus_id,
+            )
+        )
+        assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_data_class_upgrade(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH К0→К3 (повышение класса) → audit пишется, confirm на фронте не нужен."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "upgrade-test", "data_class": "К0"},
+    )
+    corpus_id = create.json()["id"]
+
+    resp = await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К3"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data_class"] == "К3"
+
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "corpus.data_class_changed",
+                AuditLog.object_id == corpus_id,
+            )
+        )
+        audit = result.scalar_one_or_none()
+        assert audit is not None
+        assert audit.meta["old"] == "К0"
+        assert audit.meta["new"] == "К3"
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH несуществующего корпуса → 404."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    resp = await api_client.patch(
+        "/api/corpora/nonexistent-id",
+        json={"data_class": "К2"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_non_architect_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH /api/corpora/{id} → 404 для developer."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "forbidden-patch", "data_class": "К0"},
+    )
+    corpus_id = create.json()["id"]
+
+    await _login_as_role(api_client, app_fixture, "developer", email_suffix="-2")
+
+    resp = await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К2"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_workspace_isolated(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH корпуса из другого workspace → 404."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    # Создаём корпус в другом workspace напрямую
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        from app.db.models import Workspace
+
+        other_ws = Workspace(name="patch-other-ws")
+        session.add(other_ws)
+        await session.flush()
+
+        other_corpus = Corpus(
+            workspace_id=other_ws.id,
+            name="other-ws-patch",
+            data_class="К0",
+        )
+        session.add(other_corpus)
+        await session.flush()
+        other_corpus_id = other_corpus.id
+        await session.commit()
+
+    resp = await api_client.patch(
+        f"/api/corpora/{other_corpus_id}",
+        json={"data_class": "К2"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_corpus_invalid_data_class(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH с невалидным data_class → 422."""
+    await _login_as_role(api_client, app_fixture, "architect")
+
+    create = await api_client.post(
+        "/api/corpora",
+        json={"name": "invalid-patch", "data_class": "К0"},
+    )
+    corpus_id = create.json()["id"]
+
+    resp = await api_client.patch(
+        f"/api/corpora/{corpus_id}",
+        json={"data_class": "К5"},
+    )
+    assert resp.status_code == 422

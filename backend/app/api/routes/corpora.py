@@ -15,7 +15,9 @@ from app.api.schemas.corpus import (
     CorpusCreate,
     CorpusListResponse,
     CorpusResponse,
+    CorpusUpdate,
 )
+from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.db.models import Corpus, User
 from app.db.session import get_session
@@ -111,6 +113,59 @@ async def create_corpus(
         raise BadRequest(
             "Имя корпуса должно быть уникально в рамках workspace",
             hint=f"Имя '{body.name}' уже существует",
+        )
+
+    await session.commit()
+    await session.refresh(corpus)
+
+    return _to_response(corpus)
+
+
+@router.patch("/{corpus_id}", response_model=CorpusResponse)
+async def update_corpus(
+    corpus_id: str,
+    body: CorpusUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> CorpusResponse:
+    if not await _check_manage_corpora(session, user):
+        raise NotFound(
+            constraint={"object": "corpora", "reason": "manage_corpora required"},
+            hint="Нет права на управление корпусами",
+        )
+
+    workspace_id = request.app.state.workspace_id
+
+    result = await session.execute(
+        select(Corpus).where(
+            Corpus.workspace_id == workspace_id,
+            Corpus.id == corpus_id,
+        )
+    )
+    corpus = result.scalar_one_or_none()
+    if corpus is None:
+        raise NotFound(
+            constraint={"object": "corpus", "id": corpus_id},
+            hint="Корпус не найден в workspace",
+        )
+
+    if body.data_class is not None and body.data_class != corpus.data_class:
+        old_data_class = corpus.data_class
+        corpus.data_class = body.data_class
+
+        await write_audit(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="corpus.data_class_changed",
+            object_type="corpus",
+            object_id=corpus.id,
+            meta={
+                "old": old_data_class,
+                "new": body.data_class,
+                "corpus_name": corpus.name,
+            },
         )
 
     await session.commit()

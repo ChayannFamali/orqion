@@ -135,3 +135,8 @@ export interface CorpusCreate {
   data_class: "К0" | "К1" | "К2" | "К3" | null;
   pinned_model_id?: string | null;
 }
+
+/** Обновление data_class корпуса (T-401). */
+export interface CorpusUpdate {
+  data_class: "К0" | "К1" | "К2" | "К3" | null;
+}
