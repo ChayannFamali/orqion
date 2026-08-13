@@ -465,3 +465,136 @@ async def test_document_content_denied_for_invisible_corpus(
 
     resp = await api_client.get(f"/api/documents/{document_id}/content")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE endpoint tests (T-313)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_document_success(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """DELETE /api/documents/{id} → 204 для документа без чанков."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Delete me")
+    assert upload_resp.status_code == 201
+    document_id = upload_resp.json()["id"]
+
+    resp = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 204
+
+    # Документ больше не доступен
+    resp_get = await api_client.get(f"/api/documents/{document_id}")
+    assert resp_get.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_document_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """DELETE /api/documents/{id} → 404 для несуществующего документа."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+
+    resp = await api_client.delete("/api/documents/nonexistent-id-12345")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_document_denied_without_capability(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Support → 404 на DELETE."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Test")
+    document_id = upload_resp.json()["id"]
+
+    await _login_with_role(api_client, app_fixture, role_name="support")
+
+    resp = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_document_denied_for_invisible_corpus(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Developer с corpora=['public'] → 404 на DELETE документа в корпусе 'private'."""
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture, name="private-data")
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Secret")
+    document_id = upload_resp.json()["id"]
+
+    restricted_policy = {
+        "models": ["*"],
+        "max_input_tokens": 100000,
+        "max_output_tokens": 10000,
+        "reasoning": "off",
+        "budget": None,
+        "rpm": 100,
+        "tpm": 100000,
+        "corpora": ["public"],
+        "capabilities": ["chat", "upload", "custom_prompts"],
+    }
+    await _login_with_role(
+        api_client, app_fixture, role_name="restricted_del", policy=restricted_policy
+    )
+
+    resp = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_document_blocked_when_has_chunks(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """DELETE → 400 если документ имеет чанки в любой версии индекса."""
+    from app.db.models import Chunk, IndexVersion
+
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"Indexed doc")
+    assert upload_resp.status_code == 201
+    document_id = upload_resp.json()["id"]
+
+    # Создаём index_version + chunk вручную
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        iv = IndexVersion(
+            workspace_id=workspace_id,
+            corpus_id=corpus_id,
+            embedding_model="test",
+            chunker="mixed-v1",
+            chunker_version="1.0",
+            status="active",
+            stats={"status": "completed"},
+        )
+        session.add(iv)
+        await session.flush()
+
+        chunk = Chunk(
+            workspace_id=workspace_id,
+            index_version_id=iv.id,
+            document_id=document_id,
+            ordinal=0,
+            text="test chunk",
+            meta={},
+        )
+        session.add(chunk)
+        await session.commit()
+
+    resp = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["error"] == "bad_request"

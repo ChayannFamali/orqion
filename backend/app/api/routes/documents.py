@@ -1,5 +1,6 @@
 """POST /api/corpora/{corpus_id}/documents, GET /api/corpora/{corpus_id}/documents,
-GET /api/documents/{document_id}, GET /api/documents/{document_id}/content.
+GET /api/documents/{document_id}, GET /api/documents/{document_id}/content,
+DELETE /api/documents/{document_id}.
 
 Доступ — через capability (upload/manage_corpora) + policy.corpora visibility (§5.2).
 Non-authorized → 404 (прецедент T-308/T-310/T-311/T-312 — скрываем существование).
@@ -13,6 +14,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.document import (
@@ -22,9 +24,9 @@ from app.api.schemas.document import (
 )
 from app.auth.dependencies import current_user
 from app.config import Settings
-from app.db.models import Corpus, Document, User
+from app.db.models import Chunk, Corpus, Document, User
 from app.db.session import get_session
-from app.errors import NotFound
+from app.errors import BadRequest, NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.rag.service import get_document, list_documents, upload_document
@@ -291,3 +293,35 @@ async def get_document_content_endpoint(
             "Content-Disposition": f'inline; filename="{document.filename}"',
         },
     )
+
+
+@document_router.delete("/{document_id}", status_code=204)
+async def delete_document_endpoint(
+    document_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> None:
+    """Удаление документа.
+
+    Блокируется если документ имеет чанки в любой версии индекса
+    (active/building/retired) — удаление чанков ломает rollback (ADR-8).
+    Разрешено только для документов без чанков (status=pending/failed).
+
+    Blob не удаляется — физическая очистка отдельная задача (T-406).
+    """
+    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
+
+    has_chunks = await session.execute(select(exists().where(Chunk.document_id == document.id)))
+    if has_chunks.scalar():
+        raise BadRequest(
+            "Документ участвует в версии индекса и не может быть удалён",
+            constraint={
+                "document_id": document.id,
+                "status": document.status,
+            },
+            hint="Удалите все версии индекса, содержащие этот документ, перед удалением",
+        )
+
+    await session.delete(document)
+    await session.commit()
