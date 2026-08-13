@@ -17,7 +17,7 @@ from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
 from app.crypto.service import encrypt_api_key
-from app.db.models import Model, Provider, Role, RoutingRule, User
+from app.db.models import AuditLog, Model, Provider, Role, RoutingRule, User
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
 from fastapi import FastAPI
@@ -712,3 +712,104 @@ async def test_admin_k3_no_pinned_model_explicit_external_alias_rejected(
     assert body["constraint"]["data_class"] == "\u041a3"
     assert body["hint"] is not None
     assert "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0435" in body["hint"]
+
+
+@pytest.mark.asyncio
+async def test_data_class_violation_logged_in_audit(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-403: DataClassViolation (ADR-12 bypass attempt) logged in audit_log."""
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    await _seed_provider_and_model(app_fixture, "external/gpt-4", "gpt-4-upstream", "external")
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_data_class": "\u041a3",
+            "model_alias": "external/gpt-4",
+            "stream": False,
+        },
+    )
+
+    # Request rejected (503 NoRouteAvailable — _filter_data_class removes external)
+    assert response.status_code == 503
+
+    # Audit log contains security.data_class_violation
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from sqlalchemy import select as sa_select
+
+        result = await session.execute(
+            sa_select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "security.data_class_violation",
+            )
+        )
+        audit = result.scalar_one_or_none()
+        assert audit is not None
+        assert audit.meta["error"] == "no_route_available"
+        assert audit.meta["constraint"]["data_class"] == "\u041a3"
+        assert audit.meta["model_alias"] == "external/gpt-4"
+
+
+@pytest.mark.asyncio
+async def test_data_class_violation_enforce_path_logged_in_audit(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-403: DataClassViolation from enforce() (second layer) also logged in audit.
+
+    Covers the DataClassViolation branch of _is_adr12_violation() — distinct from
+    the NoRouteAvailable branch tested above. enforce() is the second layer of ADR-12
+    defence, triggered when _filter_data_class somehow lets an external model through.
+    """
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    await _seed_provider_and_model(app_fixture, "local/test", "test-upstream", "local")
+
+    # Mock enforce_all to raise DataClassViolation (simulates second-layer defence)
+    from app.errors import DataClassViolation
+    from app.chat import service as chat_service
+
+    async def _mock_enforce_all(*args: object, **kwargs: object) -> None:
+        raise DataClassViolation(
+            constraint={"data_class": "\u041a3", "model_locality": "external"},
+            hint="\u041a3 requires local-only models",
+        )
+
+    monkeypatch.setattr(chat_service, "enforce_all", _mock_enforce_all)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "secret"}],
+            "corpus_data_class": "\u041a3",
+            "stream": False,
+        },
+    )
+
+    # DataClassViolation → 403
+    assert response.status_code == 403
+
+    # Audit log contains security.data_class_violation with error=data_class_violation
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        from sqlalchemy import select as sa_select
+
+        result = await session.execute(
+            sa_select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "security.data_class_violation",
+            )
+        )
+        audit = result.scalar_one_or_none()
+        assert audit is not None
+        assert audit.meta["error"] == "data_class_violation"
+        assert audit.meta["constraint"]["data_class"] == "\u041a3"

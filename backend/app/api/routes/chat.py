@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.schemas.chat import ChatRequest
+from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.chat.service import (
     ChatContext,
@@ -26,6 +27,7 @@ from app.chat.service import (
 )
 from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
+from app.errors import DataClassViolation, NoRouteAvailable
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from app.rag.pipeline import RagContext, RagState, run_pipeline
@@ -34,6 +36,12 @@ from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
+
+
+def _is_adr12_violation(exc: DataClassViolation | NoRouteAvailable) -> bool:
+    """True если ошибка связана с ограничением ADR-12 (data_class в constraint)."""
+    constraint = exc.constraint or {}
+    return "data_class" in constraint
 
 
 def _build_usage_record(
@@ -114,25 +122,44 @@ async def chat(
             model_alias = corpus.pinned_model_id
 
     async with span(trace_ctx, "prepare"):
-        chat_ctx, model, provider, fallbacks = await prepare_chat(
-            session=session,
-            user=user,
-            role_name=role.name,
-            policy=policy,
-            messages=messages_dicts,
-            model_alias=model_alias,
-            max_tokens=body.max_tokens,
-            temperature=body.temperature,
-            stream=body.stream,
-            corpus_data_class=corpus_data_class,
-            corpus_name=body.corpus_name,
-            task_type=body.task_type,
-            conversation_id=body.conversation_id,
-            rate_limiter=rate_limiter,
-            secret_key=secret_key,
-            workspace_id=workspace_id,
-            trace_ctx=trace_ctx,
-        )
+        try:
+            chat_ctx, model, provider, fallbacks = await prepare_chat(
+                session=session,
+                user=user,
+                role_name=role.name,
+                policy=policy,
+                messages=messages_dicts,
+                model_alias=model_alias,
+                max_tokens=body.max_tokens,
+                temperature=body.temperature,
+                stream=body.stream,
+                corpus_data_class=corpus_data_class,
+                corpus_name=body.corpus_name,
+                task_type=body.task_type,
+                conversation_id=body.conversation_id,
+                rate_limiter=rate_limiter,
+                secret_key=secret_key,
+                workspace_id=workspace_id,
+                trace_ctx=trace_ctx,
+            )
+        except (DataClassViolation, NoRouteAvailable) as exc:
+            if _is_adr12_violation(exc):
+                await write_audit(
+                    session,
+                    workspace_id=workspace_id,
+                    actor_user_id=user.id,
+                    action="security.data_class_violation",
+                    object_type="chat",
+                    meta={
+                        "error": exc.error_code,
+                        "reason": exc.reason,
+                        "constraint": exc.constraint,
+                        "model_alias": model_alias,
+                        "corpus_name": body.corpus_name,
+                    },
+                )
+                await session.commit()
+            raise
         chat_ctx.trace_id = trace_ctx.trace_id
 
     # Коммитим trace + prepare данные до возврата StreamingResponse,
