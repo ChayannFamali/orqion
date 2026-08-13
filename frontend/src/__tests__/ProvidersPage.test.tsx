@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ProvidersPage } from "../pages/ProvidersPage";
-import { useProviders, useCreateProvider, useUpdateProvider, useProbeProvider } from "../hooks/useProviders";
-import type { ProviderListResponse, ProbeResult } from "../api/types";
+import { useProviders, useCreateProvider, useUpdateProvider, useProbeProvider, useCreateModel, useUpdateModel } from "../hooks/useProviders";
+import type { ProviderListResponse } from "../api/types";
 
 vi.mock("../hooks/useProviders");
 
@@ -39,6 +39,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -57,6 +59,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -72,6 +76,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -87,6 +93,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     const { container } = render(<ProvidersPage />);
 
@@ -102,6 +110,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -120,6 +130,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -139,6 +151,8 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
@@ -162,10 +176,105 @@ describe("ProvidersPage", () => {
     vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
     vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
     vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
 
     render(<ProvidersPage />);
 
     expect(screen.getByText("включён")).toBeInTheDocument();
     expect(screen.getByText("отключён")).toBeInTheDocument();
+  });
+
+  it("opens model create form when Add Model clicked", () => {
+    const provider = makeProvider({ id: "p1", models: [] });
+    vi.mocked(useProviders).mockReturnValue({
+      data: mockProvidersResponse([provider]),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useProviders>);
+    vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
+    vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
+    vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
+
+    render(<ProvidersPage />);
+
+    fireEvent.click(screen.getByText("Добавить модель"));
+    expect(screen.getByText("Новая модель")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("my-model")).toBeInTheDocument();
+  });
+
+  it("shows model create button when provider has no models", () => {
+    const provider = makeProvider({ id: "p1", models: [] });
+    vi.mocked(useProviders).mockReturnValue({
+      data: mockProvidersResponse([provider]),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useProviders>);
+    vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
+    vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
+    vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
+
+    render(<ProvidersPage />);
+
+    expect(screen.getByText("Добавить модель")).toBeInTheDocument();
+  });
+
+  it("edit model modal stays open on duplicate alias error", async () => {
+    const model = {
+      id: "m1",
+      alias: "model-a",
+      upstream_name: "test",
+      locality: "local",
+      max_input_tokens: null,
+      max_output_tokens: null,
+      supports_reasoning: false,
+      cost_in: null,
+      cost_out: null,
+      enabled: true,
+    };
+    const provider = makeProvider({ id: "p1", models: [model] });
+    vi.mocked(useProviders).mockReturnValue({
+      data: mockProvidersResponse([provider]),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useProviders>);
+    vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
+    vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
+    vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue({
+        error: "bad_request",
+        reason: "Алиас модели должен быть уникален в рамках workspace",
+        hint: "Алиас 'model-b' уже существует",
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateModel>);
+
+    render(<ProvidersPage />);
+
+    // Открываем форму редактирования модели (кнопка с Settings2 — последняя в списке)
+    const allButtons = screen.getAllByRole("button");
+    // Кнопка edit model — последняя в ProviderCard (после probe/toggle/edit provider/model toggle)
+    const editModelBtn = allButtons[allButtons.length - 1];
+    fireEvent.click(editModelBtn);
+
+    // Ждём появления модалки
+    expect(screen.getByText("Изменить модель")).toBeInTheDocument();
+
+    // Меняем alias на дубликат
+    const aliasInput = screen.getByDisplayValue("model-a");
+    fireEvent.change(aliasInput, { target: { value: "model-b" } });
+
+    // Отправляем форму
+    const saveButton = screen.getByText("Сохранить");
+    await fireEvent.click(saveButton);
+
+    // Модалка остаётся открытой (не закрылась из-за ошибки)
+    expect(screen.getByText("Изменить модель")).toBeInTheDocument();
   });
 });
