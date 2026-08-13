@@ -25,7 +25,7 @@ from app.auth.dependencies import current_user
 from app.crypto.service import encrypt_api_key
 from app.db.models import Model, Provider, User
 from app.db.session import get_session
-from app.errors import NotFound, OrqionError
+from app.errors import BadRequest, NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 
@@ -283,7 +283,7 @@ async def create_model(
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        raise OrqionError(
+        raise BadRequest(
             "Алиас модели должен быть уникален в рамках workspace",
             hint=f"Алиас '{body.alias}' уже существует",
         )
@@ -332,7 +332,14 @@ async def update_model(
         if value is not None:
             setattr(model, field, value)
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise BadRequest(
+            "Алиас модели должен быть уникален в рамках workspace",
+            hint=f"Алиас '{body.alias}' уже существует",
+        )
     await session.refresh(model)
 
     return _model_to_response(model)

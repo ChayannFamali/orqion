@@ -294,3 +294,100 @@ async def test_probe_provider_non_admin_forbidden(
     await _login_as_role(api_client, app_fixture, "developer")
     resp = await api_client.post(f"/api/providers/{provider_id}/probe")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# T-309: Model CRUD — IntegrityError handling + provider_id ignored
+# ---------------------------------------------------------------------------
+
+
+async def _create_provider_and_model(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    *,
+    model_alias: str = "test-model",
+) -> tuple[str, str]:
+    """Создаёт провайдер и модель, возвращает (provider_id, model_id)."""
+    await _login_as_admin(api_client, app_fixture)
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://localhost:1234/v1"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    model_resp = await api_client.post(
+        f"/api/providers/{provider_id}/models",
+        json={
+            "provider_id": provider_id,
+            "alias": model_alias,
+            "upstream_name": "test-model",
+        },
+    )
+    assert model_resp.status_code == 201
+    return provider_id, model_resp.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_update_model_duplicate_alias_clean_error(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH model с alias, который уже занят → чистая ошибка, не 500."""
+    # Создаём две модели с разными alias
+    _, model1_id = await _create_provider_and_model(api_client, app_fixture, model_alias="model-a")
+    await _create_provider_and_model(api_client, app_fixture, model_alias="model-b")
+
+    # Пытаемся переименовать model-a в model-b (занят)
+    resp = await api_client.patch(
+        f"/api/providers/models/{model1_id}",
+        json={"alias": "model-b"},
+    )
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["reason"]  # не пустой — чистая доменная ошибка, не 500
+
+
+@pytest.mark.asyncio
+async def test_create_model_provider_id_in_body_ignored(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """provider_id в теле запроса игнорируется — path param авторитетен.
+
+    ModelCreate.schema требует provider_id, но endpoint использует path.
+    Если body.provider_id отличается от path — модель всё равно создаётся
+    под провайдером из path, не из body.
+    """
+    await _login_as_admin(api_client, app_fixture)
+
+    # Создаём два провайдера
+    resp1 = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://p1.test/v1"},
+    )
+    provider1_id = resp1.json()["id"]
+    resp2 = await api_client.post(
+        "/api/providers",
+        json={"kind": "openai", "base_url": "http://p2.test/v1"},
+    )
+    provider2_id = resp2.json()["id"]
+
+    # Создаём модель под provider1, но в body указываем provider2
+    model_resp = await api_client.post(
+        f"/api/providers/{provider1_id}/models",
+        json={
+            "provider_id": provider2_id,  # отличается от path
+            "alias": "cross-provider-test",
+            "upstream_name": "test",
+        },
+    )
+    assert model_resp.status_code == 201
+
+    # Проверяем, что модель привязана к provider1 (из path), не к provider2
+    list_resp = await api_client.get("/api/providers")
+    providers = list_resp.json()["providers"]
+    p1 = next(p for p in providers if p["id"] == provider1_id)
+    p2 = next(p for p in providers if p["id"] == provider2_id)
+    assert len(p1["models"]) == 1
+    assert p1["models"][0]["alias"] == "cross-provider-test"
+    assert len(p2["models"]) == 0
