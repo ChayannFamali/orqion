@@ -10,6 +10,7 @@ import { TraceDetailPage } from "../pages/TraceDetailPage";
 import { ProvidersPage } from "../pages/ProvidersPage";
 import { RolesPage } from "../pages/RolesPage";
 import { UsersPage } from "../pages/UsersPage";
+import { CorporaPage } from "../pages/CorporaPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
 interface AppLayoutProps {
@@ -44,6 +45,9 @@ export function AppLayout({
     }
     if (activeSection === "users") {
       return <UsersPage />;
+    }
+    if (activeSection === "corpora") {
+      return <CorporaPage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {

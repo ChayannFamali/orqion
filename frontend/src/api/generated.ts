@@ -193,6 +193,24 @@ export interface paths {
         patch: operations["update_conversation_api_conversations__conversation_id__patch"];
         trace?: never;
     };
+    "/api/corpora": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Corpora */
+        get: operations["list_corpora_api_corpora_get"];
+        put?: never;
+        /** Create Corpus */
+        post: operations["create_corpus_api_corpora_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}/documents": {
         parameters: {
             query?: never;
@@ -841,6 +859,42 @@ export interface components {
             title?: string | null;
             /** Archived */
             archived?: boolean | null;
+        };
+        /**
+         * CorpusCreate
+         * @description Создание корпуса. data_class валидируется (К0–К3 или None).
+         */
+        CorpusCreate: {
+            /** Name */
+            name: string;
+            /** Data Class */
+            data_class?: ("К0" | "К1" | "К2" | "К3") | null;
+            /** Pinned Model Id */
+            pinned_model_id?: string | null;
+        };
+        /**
+         * CorpusListResponse
+         * @description Список корпусов.
+         */
+        CorpusListResponse: {
+            /** Corpora */
+            corpora: components["schemas"]["CorpusResponse"][];
+        };
+        /**
+         * CorpusResponse
+         * @description Корпус в ответе API.
+         */
+        CorpusResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Data Class */
+            data_class: string | null;
+            /** Pinned Model Id */
+            pinned_model_id: string | null;
+            /** Active Index Version Id */
+            active_index_version_id: string | null;
         };
         /**
          * DailyBreakdown
@@ -1970,6 +2024,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_corpora_api_corpora_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorpusListResponse"];
+                };
+            };
+        };
+    };
+    create_corpus_api_corpora_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorpusCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorpusResponse"];
                 };
             };
             /** @description Validation Error */

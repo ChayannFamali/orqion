@@ -114,3 +114,24 @@ export interface UserUpdate {
   role_id?: string;
   is_active?: boolean;
 }
+
+/** Корпус (T-312). */
+export interface CorpusResponse {
+  id: string;
+  name: string;
+  data_class: string | null;
+  pinned_model_id: string | null;
+  active_index_version_id: string | null;
+}
+
+/** Список корпусов (T-312). */
+export interface CorpusListResponse {
+  corpora: CorpusResponse[];
+}
+
+/** Создание корпуса (T-312). */
+export interface CorpusCreate {
+  name: string;
+  data_class: "К0" | "К1" | "К2" | "К3" | null;
+  pinned_model_id?: string | null;
+}

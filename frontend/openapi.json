@@ -476,6 +476,66 @@
         }
       }
     },
+    "/api/corpora": {
+      "get": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "List Corpora",
+        "operationId": "list_corpora_api_corpora_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "Create Corpus",
+        "operationId": "create_corpus_api_corpora_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora/{corpus_id}/documents": {
       "post": {
         "tags": [
@@ -2296,6 +2356,122 @@
         },
         "type": "object",
         "title": "ConversationUpdate"
+      },
+      "CorpusCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "data_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "К0",
+                  "К1",
+                  "К2",
+                  "К3"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Class"
+          },
+          "pinned_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned Model Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CorpusCreate",
+        "description": "Создание корпуса. data_class валидируется (К0–К3 или None)."
+      },
+      "CorpusListResponse": {
+        "properties": {
+          "corpora": {
+            "items": {
+              "$ref": "#/components/schemas/CorpusResponse"
+            },
+            "type": "array",
+            "title": "Corpora"
+          }
+        },
+        "type": "object",
+        "required": [
+          "corpora"
+        ],
+        "title": "CorpusListResponse",
+        "description": "Список корпусов."
+      },
+      "CorpusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "data_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Class"
+          },
+          "pinned_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned Model Id"
+          },
+          "active_index_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Index Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "data_class",
+          "pinned_model_id",
+          "active_index_version_id"
+        ],
+        "title": "CorpusResponse",
+        "description": "Корпус в ответе API."
       },
       "DailyBreakdown": {
         "properties": {

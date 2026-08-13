@@ -34,4 +34,7 @@ export const queryKeys = {
   users: {
     all: ["users"] as const,
   },
+  corpora: {
+    all: ["corpora"] as const,
+  },
 } as const;
