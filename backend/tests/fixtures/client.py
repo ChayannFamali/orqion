@@ -70,9 +70,11 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     app.state.vector_store = SQLiteVectorStore(test_settings.vector_store_path)
 
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
 
-    app.state.embedding_backend = AsyncMock()
+    embedding_backend = AsyncMock()
+    embedding_backend.model_name = MagicMock(return_value="test-embed")
+    app.state.embedding_backend = embedding_backend
 
     yield app
 

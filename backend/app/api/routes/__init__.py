@@ -8,6 +8,7 @@ from app.api.routes.corpora import router as corpora_router
 from app.api.routes.documents import document_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.eval import router as eval_router
+from app.api.routes.index_versions import router as index_versions_router
 from app.api.routes.models import router as models_router
 from app.api.routes.providers import router as providers_router
 from app.api.routes.roles import router as roles_router
@@ -24,6 +25,7 @@ __all__ = [
     "document_router",
     "documents_router",
     "eval_router",
+    "index_versions_router",
     "models_router",
     "providers_router",
     "roles_router",

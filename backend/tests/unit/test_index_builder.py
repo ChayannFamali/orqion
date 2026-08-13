@@ -3,7 +3,7 @@
 Проверки:
 - test_build_creates_index_version_and_chunks: базовый сценарий
 - test_search_works_during_build: настоящий конкурентный доступ (не случайная последовательность)
-- test_interruption_leaves_building_status: прерывание посередине
+- test_interruption_leaves_building_status: прерывание посередине (status=interrupted)
 - test_progress_tracking: прогресс обновляется после каждого документа
 - test_active_version_not_affected: действующая версия не затронута
 - test_per_document_chunker_selection: .py → code, .md → header, .sql → sql
@@ -243,7 +243,7 @@ async def test_build_creates_index_version_and_chunks(
     # index_version создан
     version = await db_session.get(IndexVersion, result.index_version_id)
     assert version is not None
-    assert version.status == "building"
+    assert version.status == "completed"
     assert version.chunker == "mixed-v1"
     assert version.embedding_model == "test-embed"
 
@@ -362,7 +362,7 @@ async def test_search_works_during_build(
     # Новая версия создана
     new_version = await db_session.get(IndexVersion, build_result.index_version_id)
     assert new_version is not None
-    assert new_version.status == "building"
+    assert new_version.status == "completed"
 
 
 @pytest.mark.asyncio
@@ -371,7 +371,7 @@ async def test_interruption_leaves_building_status(
     blob_store: LocalBlobStore,
     vector_store: SQLiteVectorStore,
 ) -> None:
-    """Прерывание посередине: index_version.status=building, active не изменился."""
+    """Прерывание посередине: index_version.status=interrupted, active не изменился."""
     workspace = Workspace(name="test")
     db_session.add(workspace)
     await db_session.flush()
@@ -395,10 +395,10 @@ async def test_interruption_leaves_building_status(
         corpus_id=corpus.id,
     )
 
-    # index_version остался в building
+    # index_version прерван
     version = await db_session.get(IndexVersion, result.index_version_id)
     assert version is not None
-    assert version.status == "building"
+    assert version.status == "interrupted"
 
     # stats — interrupted
     stats = version.stats

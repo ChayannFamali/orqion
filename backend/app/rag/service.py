@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import _utcnow
 from app.db.models import AuditLog, Chunk, Corpus, Document, IndexVersion
 from app.errors import (
+    BadRequest,
     CorpusNotReady,
     DuplicateDocument,
     FileTooLarge,
@@ -221,6 +222,15 @@ async def activate_index_version(
         raise NotFound(
             constraint={"object": "index_version", "id": new_version_id},
             hint="Версия индекса не найдена",
+        )
+    if new_version.status != "completed":
+        raise BadRequest(
+            "Версия индекса не завершена и не может быть активирована",
+            constraint={
+                "version_id": new_version_id,
+                "status": new_version.status,
+            },
+            hint="Дождитесь завершения сборки индекса перед активацией",
         )
 
     previous_version_id = corpus.active_index_version_id

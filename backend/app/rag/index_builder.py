@@ -24,6 +24,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Chunk, Corpus, Document, IndexVersion
+from app.errors import NotFound
 from app.rag.blob import BlobStore
 from app.rag.chunker import chunk_document
 from app.rag.code_chunker import CodeChunk, chunk_code
@@ -101,7 +102,10 @@ async def build_index_version(
     # 1. Проверка корпуса
     corpus = await session.get(Corpus, corpus_id)
     if corpus is None or corpus.workspace_id != workspace_id:
-        raise ValueError(f"Corpus {corpus_id} not found in workspace {workspace_id}")
+        raise NotFound(
+            constraint={"object": "corpus", "id": corpus_id},
+            hint="Корпус не найден",
+        )
 
     # 2. Создание index_version
     model_name = embedding_model or embedding_backend.model_name()
@@ -170,6 +174,7 @@ async def build_index_version(
             progress.error = str(exc)
             await _update_stats(session, index_version_id, progress)
 
+            index_version.status = "interrupted"
             doc.status = "failed"
             doc.error = str(exc)
             await session.flush()
@@ -190,6 +195,9 @@ async def build_index_version(
     progress.status = "completed"
     progress.current_document = None
     await _update_stats(session, index_version_id, progress)
+
+    index_version.status = "completed"
+    await session.flush()
 
     return BuildResult(
         index_version_id=index_version_id,

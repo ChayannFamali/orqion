@@ -104,7 +104,7 @@ async def _setup_corpus(
         embedding_model="test-model",
         chunker="mixed-v1",
         chunker_version="1.0",
-        status="building",
+        status="completed",
         stats={"status": "completed"},
     )
     session.add(v2)

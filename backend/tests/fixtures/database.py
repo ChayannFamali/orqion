@@ -26,6 +26,7 @@ def test_settings(tmp_path: Path) -> Settings:
     return Settings(
         database_url=f"sqlite:///{db_path}",
         blob_store_path=str(tmp_path / "blobs"),
+        vector_store_path=str(tmp_path / "vec.db"),
         log_level="WARNING",
     )
 
