@@ -16,6 +16,7 @@ class DocumentResponse(BaseModel):
     blob_uri: str
     source_type: str
     status: str
+    error: str | None = None
     uploaded_at: datetime
 
 
@@ -29,6 +30,7 @@ class DocumentDetailResponse(BaseModel):
     sha256: str
     source_type: str
     status: str
+    error: str | None = None
     uploaded_at: datetime
 
 

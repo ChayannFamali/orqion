@@ -141,6 +141,10 @@ async def build_index_version(
         progress.current_document = doc.filename
         await _update_stats(session, index_version_id, progress)
 
+        doc.status = "indexing"
+        doc.error = None
+        await session.flush()
+
         try:
             chunks_created = await _process_document(
                 session,
@@ -156,12 +160,20 @@ async def build_index_version(
             progress.documents_done = docs_done
             progress.chunks_total = chunks_total
             await _update_stats(session, index_version_id, progress)
+
+            doc.status = "ready"
+            await session.flush()
         except Exception as exc:  # noqa: BLE001 — граница системы: парсер/эмбеддер/vector store
             # Прерывание построения: stats фиксирует ошибку, статус остаётся building.
             # Это не suppress — ошибка регистрируется и логируется, построение останавливается.
             progress.status = "interrupted"
             progress.error = str(exc)
             await _update_stats(session, index_version_id, progress)
+
+            doc.status = "failed"
+            doc.error = str(exc)
+            await session.flush()
+
             logger.warning(
                 "Index build interrupted for corpus %s, version %s: %s",
                 corpus_id,
@@ -210,6 +222,9 @@ async def _process_document(
             raw_bytes.extend(part)
         source = bytes(raw_bytes)
         if not source.strip():
+            document.status = "failed"
+            document.error = "Пустой файл"
+            await session.flush()
             return 0
     else:
         # Документы — парсинг через Docling/direct
@@ -225,6 +240,9 @@ async def _process_document(
                 document.filename,
                 parse_result.error,
             )
+            document.status = "failed"
+            document.error = parse_result.error or "Пустой контент после разбора"
+            await session.flush()
             return 0
         source = parse_result.markdown.encode("utf-8")
 

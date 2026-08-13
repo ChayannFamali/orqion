@@ -112,6 +112,7 @@ def _to_response(doc: Document) -> DocumentResponse:
         blob_uri=doc.blob_uri,
         source_type=doc.source_type,
         status=doc.status,
+        error=doc.error,
         uploaded_at=doc.uploaded_at,
     )
 
@@ -209,6 +210,7 @@ def _to_detail_response(doc: Document) -> DocumentDetailResponse:
         sha256=doc.sha256,
         source_type=doc.source_type,
         status=doc.status,
+        error=doc.error,
         uploaded_at=doc.uploaded_at,
     )
 

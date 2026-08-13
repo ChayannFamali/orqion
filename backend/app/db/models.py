@@ -440,6 +440,7 @@ class Document(Base, IdMixin, WorkspaceMixin):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, default="upload")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

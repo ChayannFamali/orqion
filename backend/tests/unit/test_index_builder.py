@@ -600,3 +600,85 @@ async def test_per_document_chunker_selection(
         meta = ch.meta or {}
         assert "operation" in meta, f"SQL chunk missing 'operation' in meta: {ch.meta}"
         assert "tables" in meta, f"SQL chunk missing 'tables' in meta: {ch.meta}"
+
+
+@pytest.mark.asyncio
+async def test_document_status_transitions_to_ready_after_build(
+    db_session: AsyncSession,
+    blob_store: LocalBlobStore,
+    vector_store: SQLiteVectorStore,
+    embedding_backend: StubEmbeddingBackend,
+) -> None:
+    """После успешного build все документы получают status=ready."""
+    workspace = Workspace(name="test")
+    db_session.add(workspace)
+    await db_session.flush()
+
+    corpus = await _make_corpus(db_session, workspace)
+    doc1 = await _add_document(
+        db_session, blob_store, workspace, corpus, "doc1.md", b"# Title\nHello world"
+    )
+    doc2 = await _add_document(
+        db_session, blob_store, workspace, corpus, "doc2.py", b"def foo():\n    return 1\n"
+    )
+    await db_session.commit()
+
+    await build_index_version(
+        db_session,
+        blob_store,
+        vector_store,
+        embedding_backend,
+        workspace_id=workspace.id,
+        corpus_id=corpus.id,
+    )
+
+    # Refresh documents — status should be "ready"
+    await db_session.refresh(doc1)
+    await db_session.refresh(doc2)
+    assert doc1.status == "ready"
+    assert doc1.error is None
+    assert doc2.status == "ready"
+    assert doc2.error is None
+
+
+@pytest.mark.asyncio
+async def test_document_status_failed_on_interruption(
+    db_session: AsyncSession,
+    blob_store: LocalBlobStore,
+    vector_store: SQLiteVectorStore,
+) -> None:
+    """При прерывании build текущий документ получает status=failed + error reason."""
+    workspace = Workspace(name="test")
+    db_session.add(workspace)
+    await db_session.flush()
+
+    corpus = await _make_corpus(db_session, workspace)
+    doc1 = await _add_document(
+        db_session, blob_store, workspace, corpus, "doc1.md", b"# Doc1\nHello"
+    )
+    doc2 = await _add_document(
+        db_session, blob_store, workspace, corpus, "doc2.md", b"# Doc2\nWorld"
+    )
+    await db_session.commit()
+
+    failing_backend = FailingEmbeddingBackend()
+
+    await build_index_version(
+        db_session,
+        blob_store,
+        vector_store,
+        failing_backend,
+        workspace_id=workspace.id,
+        corpus_id=corpus.id,
+    )
+
+    # doc1 may have been processed successfully before the failure on doc2
+    await db_session.refresh(doc1)
+    await db_session.refresh(doc2)
+
+    # The document being processed when the failure occurred should be "failed"
+    # doc1 might be "ready" if it was processed before the error
+    # doc2 should be "failed" since FailingEmbeddingBackend fails on second embed call
+    assert doc2.status == "failed"
+    assert doc2.error is not None
+    assert "Simulated interruption" in doc2.error
