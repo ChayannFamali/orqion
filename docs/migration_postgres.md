@@ -114,5 +114,10 @@ engine, тот же pool) — 100/100 OK при 10 concurrent в 10 раунда
 - Тюнинг `pool_size`/`max_overflow` в `create_async_engine` (engine.py) —
   не помогает (проблема в HTTP layer, не в DB pool).
 
+**Платформа:** Диагностика проводилась на Windows (dev-машина). uvicorn без
+`--workers` на Windows под нагрузкой — слабое место (ProactorEventLoop).
+Не подтверждено на Linux — воспроизведение на production-платформе может не
+показать тот же эффект.
+
 T-505 (профили развёртывания) должен включить load test с реальными числами
 после выбора production deployment.
