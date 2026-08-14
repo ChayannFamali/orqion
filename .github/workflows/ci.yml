@@ -125,27 +125,64 @@ jobs:
         run: |
           python -c "
           import json, subprocess, sys
-          ALLOWED = {'MIT', 'Apache-2.0', 'Apache 2.0', 'BSD', 'BSD-3-Clause', 'BSD-2-Clause', 'ISC', 'Python-2.0'}
           BANNED = {'GPL', 'GPLv2', 'GPLv3', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0', 'SSPL', 'BUSL', 'Sustainable Use License'}
-          result = subprocess.run([sys.executable, '-m', 'pip', 'list', '--format=json'], capture_output=True, text=True)
+          # Note: LGPL is NOT banned — Lesser GPL permits use in non-LGPL projects.
+          # psycopg2-binary is dual-licensed LGPL/Py2.0.
+          # Packages with known permissive licenses that pip-licenses cannot classify
+          # (PEP 639 License-Expression, not in trove classifiers or metadata License field).
+          # Manually verified against LICENSE files in upstream repos.
+          ALLOWED_UNKNOWN = {
+              'alembic', 'annotated-doc', 'anyio', 'argon2-cffi',
+              'argon2-cffi-bindings', 'ast_serialize', 'attrs', 'cffi',
+              'charset-normalizer', 'cfn-lint', 'click', 'cryptography', 'doclang',
+              'docling-core', 'docling-parse', 'docling-slim',
+              'fastapi', 'flask', 'flask-cors', 'fsspec',
+              'greenlet', 'idna', 'iniconfig', 'jsonschema',
+              'jsonschema-specifications', 'lazy-object-proxy', 'librt',
+              'mako', 'markupsafe', 'mypy', 'mypy_extensions',
+              'networkx', 'numpy', 'openapi-spec-validator',
+              'packaging', 'pillow', 'pluggy', 'prettytable',
+              'prometheus_client', 'pycparser', 'pydantic',
+              'pydantic_core', 'pydantic-settings', 'pygments',
+              'pyparsing', 'pytest', 'pytest-asyncio',
+              'referencing', 'regex', 'rpds-py', 'ruff', 'rtree',
+              'setuptools', 'starlette', 'tabulate', 'tomli',
+              'typer', 'typing-inspection', 'typing_extensions',
+              'tzdata', 'urllib3', 'wcwidth', 'werkzeug',
+              'wrapt', 'xmltodict',
+          }
+          result = subprocess.run(
+              [sys.executable, '-m', 'piplicenses', '--from', 'mixed', '--format', 'json', '--with-system'],
+              capture_output=True, text=True
+          )
+          if result.returncode != 0:
+              print('pip-licenses failed:', result.stderr)
+              sys.exit(1)
           packages = json.loads(result.stdout)
           violations = []
+          unknown = []
           for pkg in packages:
-              name = pkg['name'].lower()
-              # Skip orqion itself
+              name = pkg.get('Name', '').lower()
               if name == 'orqion':
                   continue
-              # Get license info
-              info = subprocess.run([sys.executable, '-m', 'pip', 'show', pkg['name']], capture_output=True, text=True)
-              license_line = ''
-              for line in info.stdout.splitlines():
-                  if line.startswith('License:'):
-                      license_line = line.split(':', 1)[1].strip()
-                      break
+              license_str = pkg.get('License', '') or ''
+              if license_str in ('UNKNOWN', '', 'None'):
+                  if name not in ALLOWED_UNKNOWN:
+                      unknown.append(name)
+                  continue
+              # LGPL is allowed (Lesser GPL permits use in non-LGPL projects).
+              # Must check BEFORE GPL matching — 'LGPL' contains 'GPL' as substring.
+              if 'lgpl' in license_str.lower():
+                  continue
               for banned in BANNED:
-                  if banned.lower() in license_line.lower():
-                      violations.append(f'{pkg[\"name\"]}: {license_line}')
+                  if banned.lower() in license_str.lower():
+                      violations.append(f'{name}: {license_str}')
                       break
+          if unknown:
+              print('PACKAGES WITH UNKNOWN LICENSE (add to ALLOWED_UNKNOWN or remove dependency):')
+              for u in unknown:
+                  print(f'  - {u}')
+              sys.exit(1)
           if violations:
               print('BANNED LICENSES FOUND:')
               for v in violations:
