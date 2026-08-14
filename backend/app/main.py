@@ -104,7 +104,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.probe_interval_seconds,
         )
     )
-    aggregate_task = asyncio.create_task(aggregate_scheduler(session_factory, workspace_id))
+    aggregate_task = asyncio.create_task(
+        aggregate_scheduler(session_factory, workspace_id, settings)
+    )
 
     # OIDC sync scheduler (T-405) — только если oidc_sync_enabled
     oidc_sync_task: asyncio.Task[None] | None = None
@@ -115,12 +117,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             oidc_sync_scheduler(session_factory, settings, secret_key, workspace_id)
         )
 
+    # Retention scheduler (T-406) — всегда запущен, no-op если все retention=0
+    from app.retention.scheduler import retention_scheduler
+
+    retention_task = asyncio.create_task(
+        retention_scheduler(session_factory, settings, workspace_id)
+    )
+
     yield
 
     probe_task.cancel()
     aggregate_task.cancel()
     if oidc_sync_task is not None:
         oidc_sync_task.cancel()
+    retention_task.cancel()
     try:
         await probe_task
     except asyncio.CancelledError:
@@ -134,6 +144,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await oidc_sync_task
         except asyncio.CancelledError:
             pass
+    try:
+        await retention_task
+    except asyncio.CancelledError:
+        pass
 
     # Закрытие ресурсов: vector_store.close() и др.
     # AsyncExitStack гарантирует, что исключение при закрытии одного

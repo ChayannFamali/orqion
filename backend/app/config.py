@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     oidc_sync_enabled: bool = False
     oidc_sync_interval_seconds: int = 300
 
+    # Retention (T-406). arch.md §5.3. 0 = бессрочно.
+    span_retention_days: int = 30
+    usage_event_retention_days: int = 90
+    message_retention_days: int = 0
+    retention_cleanup_interval_seconds: int = 3600
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.config import Settings
 from app.usage.aggregate import aggregate_yesterday, catch_up_missing_days
 
 logger = logging.getLogger("orqion.usage.scheduler")
@@ -35,18 +36,26 @@ _INITIAL_DELAY_SECONDS = _seconds_until_next_run()
 async def aggregate_scheduler(
     session_factory: async_sessionmaker,  # type: ignore[type-arg]
     workspace_id: str,
+    settings: Settings | None = None,
 ) -> None:
     """Фоновый цикл: агрегирует вчерашний день каждые 24 часа.
 
     При старте досчитывает пропущенные дни (catch-up), затем входит в цикл
     ожидания до 03:00 UTC. Профиль minimal: ноутбук не работает 24/7.
 
+    settings: если передан — catch_up использует retention_days из настроек
+    для защиты от обнуления агрегатов после purge (T-406).
+
     Отменяется через CancelledError при shutdown.
     """
+    retention_days = settings.usage_event_retention_days if settings is not None else 90
+
     # Catch-up: досчитать пропущенные дни при старте
     try:
         async with session_factory() as session:
-            caught = await catch_up_missing_days(session, workspace_id)
+            caught = await catch_up_missing_days(
+                session, workspace_id, retention_days=retention_days
+            )
             if caught > 0:
                 logger.info("Catch-up: %d missing days aggregated", caught)
     except asyncio.CancelledError:

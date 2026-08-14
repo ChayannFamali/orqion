@@ -189,6 +189,11 @@ class Conversation(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
     messages: Mapped[list[Message]] = relationship(
         back_populates="conversation",
         order_by="Message.created_at",
@@ -248,12 +253,12 @@ class UsageEvent(Base, IdMixin, WorkspaceMixin):
     )
     conversation_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("conversation.id"),
+        ForeignKey("conversation.id", ondelete="SET NULL"),
         nullable=True,
     )
     message_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("message.id"),
+        ForeignKey("message.id", ondelete="SET NULL"),
         nullable=True,
     )
     ts: Mapped[datetime] = mapped_column(
@@ -287,12 +292,12 @@ class Trace(Base, IdMixin, WorkspaceMixin, TimestampMixin):
     )
     conversation_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("conversation.id"),
+        ForeignKey("conversation.id", ondelete="SET NULL"),
         nullable=True,
     )
     message_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("message.id"),
+        ForeignKey("message.id", ondelete="SET NULL"),
         nullable=True,
     )
     ts: Mapped[datetime] = mapped_column(

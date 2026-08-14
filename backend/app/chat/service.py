@@ -20,6 +20,7 @@ import json
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import tiktoken
 from sqlalchemy import select
@@ -450,6 +451,14 @@ async def save_messages(
         session.add(assistant_msg)
         await session.flush()
         assistant_message_id = assistant_msg.id
+
+    # Обновляем last_activity_at для retention (T-406)
+    conv_result = await session.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv_for_update: Conversation | None = conv_result.scalar_one_or_none()
+    if conv_for_update is not None:
+        conv_for_update.last_activity_at = datetime.now(UTC)
 
     await session.commit()
     return conversation_id, assistant_message_id

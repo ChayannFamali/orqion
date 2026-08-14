@@ -119,6 +119,7 @@ async def catch_up_missing_days(
     session: AsyncSession,
     workspace_id: str,
     today: date | None = None,
+    retention_days: int = 90,
 ) -> int:
     """Досчитывает пропущенные дни при старте.
 
@@ -127,11 +128,17 @@ async def catch_up_missing_days(
     последнюю агрегированную дату и досчитывает все дни до вчера включительно.
 
     today: по умолчанию datetime.now(UTC).date(). Передаётся явно в тестах.
+    retention_days: не backfill-ить дни старше этого срока — events уже
+    удалены (T-406), re-aggregation обнулит существующие агрегаты.
     Возвращает количество обработанных дней.
     """
     if today is None:
         today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
+
+    # Guard (T-406): не backfill-ить дни старше retention window,
+    # т.к. events уже purged → aggregate_day обнулит существующие агрегаты.
+    retention_cutoff = today - timedelta(days=retention_days)
 
     last = await get_last_aggregated_date(session, workspace_id)
     if last is not None:
@@ -145,6 +152,10 @@ async def catch_up_missing_days(
         if first_ts is None:
             return 0  # Нет событий — нечего агрегировать
         start_day = first_ts.date()
+
+    # Не backfill-ить старше retention window
+    if start_day <= retention_cutoff:
+        start_day = retention_cutoff + timedelta(days=1)
 
     if start_day > yesterday:
         return 0  # Всё актуально
