@@ -598,3 +598,94 @@ async def test_delete_document_blocked_when_has_chunks(
     assert resp.status_code == 400
     data = resp.json()
     assert data["error"] == "bad_request"
+
+
+# ---------------------------------------------------------------------------
+# T-406a: Physical blob cleanup — reference counting
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_document_removes_blob_when_last_ref(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-406a: удаление последнего документа, ссылающегося на blob → файл удалён."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+
+    upload_resp = await _upload_file(api_client, corpus_id, content=b"unique blob content")
+    assert upload_resp.status_code == 201
+    document_id = upload_resp.json()["id"]
+
+    # Blob существует
+    factory = app_fixture.state.db_session_factory
+    blob_store = app_fixture.state.blob_store
+    async with factory() as session:
+        from app.db.models import Document
+
+        doc = await session.get(Document, document_id)
+        assert doc is not None
+        blob_uri = doc.blob_uri
+        assert await blob_store.exists(blob_uri)
+
+    # Удаляем документ
+    resp = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 204
+
+    # Blob удалён — последний документ удалён
+    assert not await blob_store.exists(blob_uri)
+
+
+@pytest.mark.asyncio
+async def test_delete_document_keeps_blob_when_other_refs(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-406a: удаление документа при наличии других ссылок на тот же blob → файл остаётся.
+
+    Два документа в разных корпусах с одинаковым содержимым (sha256) —
+    dedup в BlobStore.put не дублирует файл. Удаление одного документа
+    не должно удалять blob, пока второй документ ссылается на него.
+    """
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id_1 = await _create_corpus(app_fixture, name="corpus-a")
+    corpus_id_2 = await _create_corpus(app_fixture, name="corpus-b")
+
+    # Загружаем один и тот же контент в два разных корпуса
+    shared_content = b"shared blob content for dedup"
+    upload1 = await _upload_file(api_client, corpus_id_1, content=shared_content)
+    assert upload1.status_code == 201
+    doc1_id = upload1.json()["id"]
+
+    upload2 = await _upload_file(api_client, corpus_id_2, content=shared_content)
+    assert upload2.status_code == 201
+    doc2_id = upload2.json()["id"]
+
+    # Оба документа ссылаются на один blob
+    factory = app_fixture.state.db_session_factory
+    blob_store = app_fixture.state.blob_store
+    async with factory() as session:
+        from app.db.models import Document
+
+        doc1 = await session.get(Document, doc1_id)
+        doc2 = await session.get(Document, doc2_id)
+        assert doc1 is not None
+        assert doc2 is not None
+        assert doc1.blob_uri == doc2.blob_uri
+        blob_uri = doc1.blob_uri
+        assert await blob_store.exists(blob_uri)
+
+    # Удаляем первый документ
+    resp = await api_client.delete(f"/api/documents/{doc1_id}")
+    assert resp.status_code == 204
+
+    # Blob всё ещё существует — второй документ ссылается
+    assert await blob_store.exists(blob_uri)
+
+    # Удаляем второй документ
+    resp = await api_client.delete(f"/api/documents/{doc2_id}")
+    assert resp.status_code == 204
+
+    # Теперь blob удалён — последний документ удалён
+    assert not await blob_store.exists(blob_uri)

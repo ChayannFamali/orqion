@@ -357,7 +357,9 @@ export interface paths {
          *     (active/building/retired) — удаление чанков ломает rollback (ADR-8).
          *     Разрешено только для документов без чанков (status=pending/failed).
          *
-         *     Blob не удаляется — физическая очистка отдельная задача (T-406).
+         *     Blob физически удаляется если нет других документов, ссылающихся на тот же
+         *     sha256 (dedup — разные документы в разных корпусах могут делить blob).
+         *     Reference counting через SELECT count(*) (T-406a).
          */
         delete: operations["delete_document_endpoint_api_documents__document_id__delete"];
         options?: never;

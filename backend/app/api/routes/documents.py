@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.document import (
@@ -308,7 +308,9 @@ async def delete_document_endpoint(
     (active/building/retired) — удаление чанков ломает rollback (ADR-8).
     Разрешено только для документов без чанков (status=pending/failed).
 
-    Blob не удаляется — физическая очистка отдельная задача (T-406).
+    Blob физически удаляется если нет других документов, ссылающихся на тот же
+    sha256 (dedup — разные документы в разных корпусах могут делить blob).
+    Reference counting через SELECT count(*) (T-406a).
     """
     document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
 
@@ -323,5 +325,24 @@ async def delete_document_endpoint(
             hint="Удалите все версии индекса, содержащие этот документ, перед удалением",
         )
 
+    blob_uri = document.blob_uri
+    workspace_id = document.workspace_id
+
     await session.delete(document)
     await session.commit()
+
+    # Reference counting ПОСЛЕ commit — DB durable, затем best-effort удаление файла.
+    # Если процесс упадёт между commit и delete — осиротевший файл (мусор),
+    # не битая ссылка (ADR-7: оригиналы — источник правды).
+    ref_count_result = await session.execute(
+        select(func.count())
+        .select_from(Document)
+        .where(
+            Document.blob_uri == blob_uri,
+            Document.workspace_id == workspace_id,
+        )
+    )
+    ref_count = ref_count_result.scalar() or 0
+    if ref_count == 0:
+        blob_store = request.app.state.blob_store
+        await blob_store.delete(blob_uri)
