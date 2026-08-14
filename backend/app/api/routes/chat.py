@@ -25,6 +25,7 @@ from app.chat.service import (
     prepare_chat,
     save_messages,
 )
+from app.config import Settings
 from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
 from app.errors import DataClassViolation, NoRouteAvailable
@@ -143,6 +144,8 @@ async def chat(
                 workspace_id=workspace_id,
                 trace_ctx=trace_ctx,
             )
+            chat_ctx.session = session
+            chat_ctx.settings = Settings()
         except (DataClassViolation, NoRouteAvailable) as exc:
             if _is_adr12_violation(exc):
                 await write_audit(

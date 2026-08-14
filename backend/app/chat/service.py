@@ -26,7 +26,9 @@ import tiktoken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.db.models import Conversation, Message, Model, Provider, User
+from app.detectors.service import run_detectors
 from app.errors import NotFound, OrqionError
 from app.policy.enforce import enforce_all
 from app.policy.models import WILDCARD, Policy
@@ -103,6 +105,8 @@ class ChatContext:
     error_code: str | None = None
     started_at: float = field(default_factory=time.monotonic)
     trace_id: str | None = None
+    session: AsyncSession | None = None
+    settings: Settings | None = None
 
 
 @dataclass
@@ -276,6 +280,18 @@ async def execute_stream(
             upstream_name = current_model.upstream_name
             got_token = False
 
+            # T-409: DLP-детекторы перед отправкой внешнему провайдеру
+            if chat_ctx.session is not None and chat_ctx.settings is not None:
+                await run_detectors(
+                    chat_ctx.session,
+                    chat_ctx.settings,
+                    chat_ctx.user,
+                    current_model.id,
+                    chat_ctx.conversation_id,
+                    chat_ctx.messages,
+                    current_provider.kind,
+                )
+
             try:
                 upstream_gen = client.stream(
                     messages=chat_ctx.messages,
@@ -339,6 +355,18 @@ async def execute_complete(
     for current_model, current_provider in attempts:
         client = ProviderClient(current_provider, secret_key)
         upstream_name = current_model.upstream_name
+
+        # T-409: DLP-детекторы перед отправкой внешнему провайдеру
+        if chat_ctx.session is not None and chat_ctx.settings is not None:
+            await run_detectors(
+                chat_ctx.session,
+                chat_ctx.settings,
+                chat_ctx.user,
+                current_model.id,
+                chat_ctx.conversation_id,
+                chat_ctx.messages,
+                current_provider.kind,
+            )
 
         try:
             result = await client.complete(

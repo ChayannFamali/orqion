@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     # Включение без установленного extras — явный fail при старте.
     metrics_enabled: bool = False
 
+    # DLP-детекторы (T-409). arch.md ADR-13. По умолчанию выключены.
+    # Плагины для обнаружения персональных данных/секретов в исходящих
+    # запросах к внешним провайдерам. Страховка от случайной вставки,
+    # не средство защиты от умысла.
+    detectors_enabled: bool = False
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.
