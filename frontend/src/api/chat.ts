@@ -34,6 +34,7 @@ export async function* streamChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, stream: true }),
     signal,
+    credentials: "include",
   });
 
   if (!res.ok) {
@@ -94,6 +95,7 @@ export async function completeChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, stream: false }),
     signal,
+    credentials: "include",
   });
 
   if (!res.ok) {

@@ -78,7 +78,10 @@ describe("apiFetch", () => {
     expect(result).toEqual({ id: "1", email: "test@orqion.local" });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/auth/me",
-      expect.objectContaining({ headers: expect.any(Headers) }),
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        credentials: "include",
+      }),
     );
   });
 

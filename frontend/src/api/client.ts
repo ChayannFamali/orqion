@@ -41,7 +41,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: "include" });
 
   if (!res.ok) {
     throw await parseError(res);
