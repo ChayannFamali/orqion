@@ -250,7 +250,8 @@ async def get_document_endpoint(
 
     Не возвращает blob_uri — это внутренний идентификатор хранения.
     """
-    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
+    workspace_id = request.app.state.workspace_id
+    document = await _load_document_with_corpus_check(session, user, document_id, workspace_id)
     return _to_detail_response(document)
 
 
@@ -266,7 +267,8 @@ async def get_document_content_endpoint(
     Оригинал читается через абстракцию BlobStore (ADR-7),
     не отдаёт blob_uri напрямую.
     """
-    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
+    workspace_id = request.app.state.workspace_id
+    document = await _load_document_with_corpus_check(session, user, document_id, workspace_id)
 
     blob_store = request.app.state.blob_store
 
@@ -312,7 +314,8 @@ async def delete_document_endpoint(
     sha256 (dedup — разные документы в разных корпусах могут делить blob).
     Reference counting через SELECT count(*) (T-406a).
     """
-    document = await _load_document_with_corpus_check(session, user, document_id, user.workspace_id)
+    workspace_id = request.app.state.workspace_id
+    document = await _load_document_with_corpus_check(session, user, document_id, workspace_id)
 
     has_chunks = await session.execute(select(exists().where(Chunk.document_id == document.id)))
     if has_chunks.scalar():

@@ -6,7 +6,7 @@ User isolation: пользователь видит только свои тра
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.trace import (
@@ -36,6 +36,7 @@ def _has_view_traces(capabilities: list[str]) -> bool:
 
 @router.get("", response_model=TraceListResponse)
 async def list_traces_endpoint(
+    request: Request,
     conversation_id: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -43,6 +44,7 @@ async def list_traces_endpoint(
     user: User = Depends(current_user),
 ) -> TraceListResponse:
     """Список трассировок. Для admin — все в workspace, иначе — только свои."""
+    workspace_id = request.app.state.workspace_id
     policy = await resolve_policy(session, user)
     if not _has_view_traces(policy.capabilities):
         raise NotFound(
@@ -53,7 +55,7 @@ async def list_traces_endpoint(
     is_admin = WILDCARD in policy.capabilities
     traces, total = await list_traces(
         session,
-        workspace_id=user.workspace_id,
+        workspace_id=workspace_id,
         user_id=user.id,
         is_admin=is_admin,
         conversation_id=conversation_id,
@@ -97,10 +99,12 @@ async def list_traces_endpoint(
 @router.get("/{trace_id}", response_model=TraceDetailResponse)
 async def get_trace_endpoint(
     trace_id: str,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ) -> TraceDetailResponse:
     """Полная трассировка со всеми span'ами."""
+    workspace_id = request.app.state.workspace_id
     policy = await resolve_policy(session, user)
     if not _has_view_traces(policy.capabilities):
         raise NotFound(
@@ -111,7 +115,7 @@ async def get_trace_endpoint(
     is_admin = WILDCARD in policy.capabilities
     trace = await get_trace(
         session,
-        workspace_id=user.workspace_id,
+        workspace_id=workspace_id,
         trace_id=trace_id,
         user_id=user.id,
         is_admin=is_admin,
@@ -124,7 +128,7 @@ async def get_trace_endpoint(
 
     spans = await get_spans(
         session,
-        workspace_id=user.workspace_id,
+        workspace_id=workspace_id,
         trace_id=trace_id,
     )
 

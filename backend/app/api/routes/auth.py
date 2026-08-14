@@ -46,12 +46,13 @@ def _get_client_ip(request: Request) -> str:
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
-    body: LoginRequest,
     request: Request,
+    body: LoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
+    workspace_id = request.app.state.workspace_id
     ip = _get_client_ip(request)
     limiter: LoginRateLimiter = request.app.state.login_rate_limiter
 
@@ -74,7 +75,7 @@ async def login(
 
     limiter.reset(body.email, ip)
 
-    session_id = await create_session(session, user.id, user.workspace_id, settings)
+    session_id = await create_session(session, user.id, workspace_id, settings)
     await session.commit()
 
     response.set_cookie(
@@ -155,6 +156,7 @@ async def exit_impersonation(
 
     Если родительская сессия истекла или удалена — полный logout.
     """
+    workspace_id = request.app.state.workspace_id
     session_id = request.cookies.get(COOKIE_NAME)
     if not session_id:
         raise OrqionError(
@@ -180,7 +182,7 @@ async def exit_impersonation(
     if actor_user is not None:
         await write_audit(
             session,
-            workspace_id=actor_user.workspace_id,
+            workspace_id=workspace_id,
             actor_user_id=actor_user.id,
             action="impersonate.exit",
             object_type="user",
@@ -350,7 +352,7 @@ async def oidc_callback(
     response.delete_cookie(key=OIDC_VERIFIER_COOKIE, path="/")
 
     # Создание сессии
-    session_id = await create_session(session, user.id, user.workspace_id, settings)
+    session_id = await create_session(session, user.id, workspace_id, settings)
     await session.commit()
 
     response.set_cookie(

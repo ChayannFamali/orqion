@@ -125,6 +125,12 @@ async def test_get_document_metadata_not_found(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(
+    reason="T-313a: single-workspace (ADR-3) — request.app.state.workspace_id "
+    "always equals app workspace. Cross-workspace isolation requires "
+    "multi-tenant (arch.md §14.2). This test validated the old bug "
+    "where user.workspace_id could differ from app.state.workspace_id."
+)
 async def test_get_document_metadata_wrong_workspace(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import DateRange, get_by_day, get_by_model, get_by_user, get_summary
@@ -60,6 +60,7 @@ def _parse_range(
 
 @router.get("", response_model=AnalyticsResponse)
 async def get_analytics(
+    request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
     start: str | None = Query(None, description="Начало периода (ISO date)"),
@@ -67,7 +68,7 @@ async def get_analytics(
 ) -> AnalyticsResponse:
     """Полный ответ аналитики: summary + by_day + by_model + by_user."""
     await _check_access(session, user)
-    workspace_id = user.workspace_id
+    workspace_id = request.app.state.workspace_id
     date_range = _parse_range(start, end)
 
     summary_dict = await get_summary(session, workspace_id, date_range)
