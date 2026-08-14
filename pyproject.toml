@@ -50,6 +50,9 @@ s3 = [
 oidc = [
     "authlib==1.7.2",
 ]
+metrics = [
+    "prometheus-client==0.22.1",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
@@ -155,6 +158,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "qdrant_client.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "prometheus_client.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

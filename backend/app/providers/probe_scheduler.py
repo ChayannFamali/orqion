@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Provider
+from app.metrics.registry import record_provider_last_probe, record_provider_probe
 from app.providers.probe import probe_provider
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,17 @@ async def probe_scheduler(
                         "last_probe_at": probe_result.probed_at.isoformat(),
                     }
                     provider.last_probe_at = probe_result.probed_at
+
+                    probe_status = "error" if probe_result.error else "ok"
+                    record_provider_probe(
+                        provider_kind=provider.kind,
+                        status=probe_status,
+                        available_models=len(probe_result.available_models),
+                    )
+                    record_provider_last_probe(
+                        provider_kind=provider.kind,
+                        timestamp_seconds=probe_result.probed_at.timestamp(),
+                    )
 
                     if probe_result.error:
                         logger.warning(

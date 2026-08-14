@@ -28,6 +28,7 @@ from app.chat.service import (
 from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
 from app.errors import DataClassViolation, NoRouteAvailable
+from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from app.rag.pipeline import RagContext, RagState, run_pipeline
@@ -249,6 +250,13 @@ async def chat(
                 for s in rag_state.sources
             ],
         }
+        record_rag_query(status=status)
+        rag_latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
+        record_chat_request(
+            status=status,
+            error_code="rag_generate_failed" if generate_failed else "",
+            duration_seconds=rag_latency_s,
+        )
         return result
 
     if body.stream:
@@ -295,6 +303,13 @@ async def chat(
     )
 
     result["conversation_id"] = conv_id
+
+    latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
+    status = "error" if chat_ctx.error_code else "ok"
+    record_chat_request(
+        status=status, error_code=chat_ctx.error_code or "", duration_seconds=latency_s
+    )
+
     return result
 
 
@@ -351,6 +366,14 @@ async def _stream_with_save(
                 message_id=msg_id,
                 error=chat_ctx.error_code is not None,
             )
+
+        latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
+        stream_status = "error" if chat_ctx.error_code else "ok"
+        record_chat_request(
+            status=stream_status,
+            error_code=chat_ctx.error_code or "",
+            duration_seconds=latency_s,
+        )
 
 
 def _find_model(

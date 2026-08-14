@@ -97,6 +97,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.providers.probe_scheduler import probe_scheduler
     from app.usage.scheduler import aggregate_scheduler
 
+    # T-407: init Prometheus metrics registry if enabled
+    if settings.metrics_enabled:
+        from app.metrics.registry import init_metrics
+
+        init_metrics()
+
     probe_task = asyncio.create_task(
         probe_scheduler(
             session_factory,
@@ -204,6 +210,14 @@ def create_app() -> FastAPI:
     app.include_router(routing_router)
     app.include_router(traces_router)
     app.include_router(users_router)
+
+    # T-407: /metrics endpoint — только если metrics_enabled
+    from app.config import Settings
+
+    if Settings().metrics_enabled:
+        from app.api.metrics import router as metrics_router
+
+        app.include_router(metrics_router)
 
     _mount_static(app)
 

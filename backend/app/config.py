@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     message_retention_days: int = 0
     retention_cleanup_interval_seconds: int = 3600
 
+    # Технические метрики (T-407). arch.md ADR-16. Профиль full.
+    # extras: orqion[metrics] (prometheus-client). Ленивый импорт.
+    # Включение без установленного extras — явный fail при старте.
+    metrics_enabled: bool = False
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.
