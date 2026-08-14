@@ -38,7 +38,7 @@ export async function apiCreateModel(
 ): Promise<ModelResponse> {
   return apiFetch<ModelResponse>(`/api/providers/${providerId}/models`, {
     method: "POST",
-    body: JSON.stringify({ ...body, provider_id: providerId }),
+    body: JSON.stringify(body),
   });
 }
 

@@ -1582,8 +1582,6 @@ export interface components {
         };
         /** ModelCreate */
         ModelCreate: {
-            /** Provider Id */
-            provider_id: string;
             /** Alias */
             alias: string;
             /** Upstream Name */

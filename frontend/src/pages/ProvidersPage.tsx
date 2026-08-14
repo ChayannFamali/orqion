@@ -463,7 +463,6 @@ function CreateModelModal({
       await createMutation.mutateAsync({
         providerId,
         body: {
-          provider_id: providerId,
           alias,
           upstream_name: upstreamName,
           locality,

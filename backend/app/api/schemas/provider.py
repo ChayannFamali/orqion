@@ -41,7 +41,6 @@ class ProviderResponse(BaseModel):
 
 
 class ModelCreate(BaseModel):
-    provider_id: str
     alias: str
     upstream_name: str
     locality: str = "local"

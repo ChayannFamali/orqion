@@ -4194,10 +4194,6 @@
       },
       "ModelCreate": {
         "properties": {
-          "provider_id": {
-            "type": "string",
-            "title": "Provider Id"
-          },
           "alias": {
             "type": "string",
             "title": "Alias"
@@ -4268,7 +4264,6 @@
         },
         "type": "object",
         "required": [
-          "provider_id",
           "alias",
           "upstream_name"
         ],
