@@ -23,6 +23,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
+# Эти тесты требуют настоящую authlib для JWT-валидации.
+# В основном CI job (без extras) модуль пропускается.
+# В oidc-gate job (pip install -e ".[oidc,dev]") — выполняется полностью.
+pytest.importorskip("authlib")
+
 
 def _generate_rsa_key() -> tuple[RSAPrivateKey, bytes, dict[str, Any]]:
     """Генерирует RSA-пару, возвращает (private_key, public_pem, jwk_key)."""
