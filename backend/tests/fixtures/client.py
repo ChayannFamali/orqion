@@ -80,15 +80,25 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
 
     await app.state.vector_store.close()
     await engine.dispose()
-    # Отдельный sync engine без event listener для drop_all
-    # (PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK)
+
     from sqlalchemy import create_engine as create_sync_engine
 
-    sync_eng = create_sync_engine(test_settings.database_url)
-    with sync_eng.connect() as conn:
-        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
-        Base.metadata.drop_all(conn)
-    sync_eng.dispose()
+    if test_settings.database_url.startswith("sqlite"):
+        # SQLite: PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK
+        sync_eng = create_sync_engine(test_settings.database_url)
+        with sync_eng.connect() as conn:
+            conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            Base.metadata.drop_all(conn)
+        sync_eng.dispose()
+    else:
+        # PostgreSQL: drop_all через sync engine
+        url = test_settings.database_url
+        if "+asyncpg" in url:
+            url = url.replace("+asyncpg", "+psycopg2")
+        sync_eng = create_sync_engine(url)
+        with sync_eng.connect() as conn:
+            Base.metadata.drop_all(conn)
+        sync_eng.dispose()
 
 
 @pytest_asyncio.fixture

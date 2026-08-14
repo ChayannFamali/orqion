@@ -78,25 +78,41 @@ def upgrade() -> None:
     op.create_index("ix_chunk_document_id", "chunk", ["document_id"])
 
     # FK на corpus.active_index_version_id → index_version.id
-    # SQLite не умеет ALTER ADD CONSTRAINT — используем batch_alter_table
-    with op.batch_alter_table("corpus") as batch_op:
-        batch_op.alter_column(
-            "active_index_version_id",
-            existing_type=sa.String(36),
-            nullable=True,
-        )
-        batch_op.create_foreign_key(
-            "fk_corpus_active_index_version_id",
-            "index_version",
-            ["active_index_version_id"],
-            ["id"],
-            ondelete="SET NULL",
+    # SQLite не умеет ALTER ADD CONSTRAINT — используем batch_alter_table.
+    # BUG-005: на PostgreSQL batch_alter_table пересоздаёт таблицу (drop PK),
+    # что падает из-за зависимых FK от document/index_version/eval_set.
+    # Используем dialect guard: прямой ALTER на PostgreSQL.
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("corpus") as batch_op:
+            batch_op.alter_column(
+                "active_index_version_id",
+                existing_type=sa.String(36),
+                nullable=True,
+            )
+            batch_op.create_foreign_key(
+                "fk_corpus_active_index_version_id",
+                "index_version",
+                ["active_index_version_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+    else:
+        op.execute("ALTER TABLE corpus ALTER COLUMN active_index_version_id DROP NOT NULL")
+        op.execute(
+            "ALTER TABLE corpus ADD CONSTRAINT fk_corpus_active_index_version_id "
+            "FOREIGN KEY (active_index_version_id) REFERENCES index_version(id) "
+            "ON DELETE SET NULL"
         )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("corpus") as batch_op:
-        batch_op.drop_constraint("fk_corpus_active_index_version_id", type_="foreignkey")
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("corpus") as batch_op:
+            batch_op.drop_constraint("fk_corpus_active_index_version_id", type_="foreignkey")
+    else:
+        op.execute("ALTER TABLE corpus DROP CONSTRAINT fk_corpus_active_index_version_id")
 
     op.drop_index("ix_chunk_document_id", table_name="chunk")
     op.drop_index("ix_chunk_index_version_id", table_name="chunk")

@@ -230,7 +230,7 @@ class Message(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
-class UsageEvent(Base, IdMixin, WorkspaceMixin):
+class UsageEvent(Base, IdMixin, WorkspaceMixin, TimestampMixin):
     """Запись о расходе. arch.md §5.1.
 
     Содержимое запросов и ответов НЕ пишется (AGENTS.md §5.2, §14).

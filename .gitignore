@@ -14,4 +14,5 @@ build/
 .env.*
 !.env.example
 .DS_Store
-docs/
+docs/*
+!docs/migration_postgres.md

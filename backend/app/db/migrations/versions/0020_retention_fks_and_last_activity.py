@@ -28,84 +28,131 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 1. FK ondelete="SET NULL" для trace
-    with op.batch_alter_table("trace") as batch_op:
-        batch_op.alter_column(
-            "conversation_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
-        )
-        batch_op.alter_column(
-            "message_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
-        )
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
 
-    # Пересоздаём FK с ondelete="SET NULL" через batch_alter_table
-    # (SQLite не умеет ALTER FK, batch_alter_table пересоздаёт таблицу)
-    with op.batch_alter_table("trace", recreate="always") as batch_op:
-        batch_op.alter_column(
-            "conversation_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
+    # 1. FK ondelete="SET NULL" для trace
+    # BUG-005: batch_alter_table(recreate="always") на PostgreSQL падает —
+    # drop PK trace конфликтует с зависимым FK span_trace_id_fkey.
+    # dialect guard: прямой ALTER на PostgreSQL.
+    if is_sqlite:
+        with op.batch_alter_table("trace") as batch_op:
+            batch_op.alter_column(
+                "conversation_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+            batch_op.alter_column(
+                "message_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+
+        with op.batch_alter_table("trace", recreate="always") as batch_op:
+            batch_op.alter_column(
+                "conversation_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+            batch_op.alter_column(
+                "message_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+            batch_op.create_foreign_key(
+                "fk_trace_conversation_id",
+                "conversation",
+                ["conversation_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+            batch_op.create_foreign_key(
+                "fk_trace_message_id",
+                "message",
+                ["message_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+    else:
+        # PostgreSQL: drop old FK (auto-named *_fkey or fk_trace_*),
+        # alter column, add new FK with ondelete.
+        # IF EXISTS: на повторном upgrade после downgrade имя уже fk_trace_*.
+        op.execute("ALTER TABLE trace DROP CONSTRAINT IF EXISTS trace_conversation_id_fkey")
+        op.execute("ALTER TABLE trace DROP CONSTRAINT IF EXISTS fk_trace_conversation_id")
+        op.execute("ALTER TABLE trace DROP CONSTRAINT IF EXISTS trace_message_id_fkey")
+        op.execute("ALTER TABLE trace DROP CONSTRAINT IF EXISTS fk_trace_message_id")
+        op.execute("ALTER TABLE trace ALTER COLUMN conversation_id DROP NOT NULL")
+        op.execute("ALTER TABLE trace ALTER COLUMN message_id DROP NOT NULL")
+        op.execute(
+            "ALTER TABLE trace ADD CONSTRAINT fk_trace_conversation_id "
+            "FOREIGN KEY (conversation_id) REFERENCES conversation(id) "
+            "ON DELETE SET NULL"
         )
-        batch_op.alter_column(
-            "message_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
-        )
-        batch_op.create_foreign_key(
-            "fk_trace_conversation_id",
-            "conversation",
-            ["conversation_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
-        batch_op.create_foreign_key(
-            "fk_trace_message_id",
-            "message",
-            ["message_id"],
-            ["id"],
-            ondelete="SET NULL",
+        op.execute(
+            "ALTER TABLE trace ADD CONSTRAINT fk_trace_message_id "
+            "FOREIGN KEY (message_id) REFERENCES message(id) "
+            "ON DELETE SET NULL"
         )
 
     # 2. FK ondelete="SET NULL" для usage_event
-    with op.batch_alter_table("usage_event", recreate="always") as batch_op:
-        batch_op.alter_column(
-            "conversation_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
+    if is_sqlite:
+        with op.batch_alter_table("usage_event", recreate="always") as batch_op:
+            batch_op.alter_column(
+                "conversation_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+            batch_op.alter_column(
+                "message_id",
+                existing_type=sa.String(36),
+                nullable=True,
+                existing_server_default=None,
+                postgresql_server_default=None,
+            )
+            batch_op.create_foreign_key(
+                "fk_usage_event_conversation_id",
+                "conversation",
+                ["conversation_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+            batch_op.create_foreign_key(
+                "fk_usage_event_message_id",
+                "message",
+                ["message_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+    else:
+        op.execute(
+            "ALTER TABLE usage_event DROP CONSTRAINT IF EXISTS usage_event_conversation_id_fkey"
         )
-        batch_op.alter_column(
-            "message_id",
-            existing_type=sa.String(36),
-            nullable=True,
-            existing_server_default=None,
-            postgresql_server_default=None,
+        op.execute(
+            "ALTER TABLE usage_event DROP CONSTRAINT IF EXISTS fk_usage_event_conversation_id"
         )
-        batch_op.create_foreign_key(
-            "fk_usage_event_conversation_id",
-            "conversation",
-            ["conversation_id"],
-            ["id"],
-            ondelete="SET NULL",
+        op.execute("ALTER TABLE usage_event DROP CONSTRAINT IF EXISTS usage_event_message_id_fkey")
+        op.execute("ALTER TABLE usage_event DROP CONSTRAINT IF EXISTS fk_usage_event_message_id")
+        op.execute("ALTER TABLE usage_event ALTER COLUMN conversation_id DROP NOT NULL")
+        op.execute("ALTER TABLE usage_event ALTER COLUMN message_id DROP NOT NULL")
+        op.execute(
+            "ALTER TABLE usage_event ADD CONSTRAINT fk_usage_event_conversation_id "
+            "FOREIGN KEY (conversation_id) REFERENCES conversation(id) "
+            "ON DELETE SET NULL"
         )
-        batch_op.create_foreign_key(
-            "fk_usage_event_message_id",
-            "message",
-            ["message_id"],
-            ["id"],
-            ondelete="SET NULL",
+        op.execute(
+            "ALTER TABLE usage_event ADD CONSTRAINT fk_usage_event_message_id "
+            "FOREIGN KEY (message_id) REFERENCES message(id) "
+            "ON DELETE SET NULL"
         )
 
     # 3. conversation.last_activity_at — 3-шаговый backfill
@@ -128,39 +175,64 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+
     # Удаляем last_activity_at
     with op.batch_alter_table("conversation") as batch_op:
         batch_op.drop_column("last_activity_at")
 
     # Возвращаем FK без ondelete (NO ACTION)
-    with op.batch_alter_table("usage_event", recreate="always") as batch_op:
-        batch_op.drop_constraint("fk_usage_event_conversation_id", type_="foreignkey")
-        batch_op.drop_constraint("fk_usage_event_message_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_usage_event_conversation_id",
-            "conversation",
-            ["conversation_id"],
-            ["id"],
-        )
-        batch_op.create_foreign_key(
-            "fk_usage_event_message_id",
-            "message",
-            ["message_id"],
-            ["id"],
-        )
+    if is_sqlite:
+        with op.batch_alter_table("usage_event", recreate="always") as batch_op:
+            batch_op.drop_constraint("fk_usage_event_conversation_id", type_="foreignkey")
+            batch_op.drop_constraint("fk_usage_event_message_id", type_="foreignkey")
+            batch_op.create_foreign_key(
+                "fk_usage_event_conversation_id",
+                "conversation",
+                ["conversation_id"],
+                ["id"],
+            )
+            batch_op.create_foreign_key(
+                "fk_usage_event_message_id",
+                "message",
+                ["message_id"],
+                ["id"],
+            )
 
-    with op.batch_alter_table("trace", recreate="always") as batch_op:
-        batch_op.drop_constraint("fk_trace_conversation_id", type_="foreignkey")
-        batch_op.drop_constraint("fk_trace_message_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_trace_conversation_id",
-            "conversation",
-            ["conversation_id"],
-            ["id"],
+        with op.batch_alter_table("trace", recreate="always") as batch_op:
+            batch_op.drop_constraint("fk_trace_conversation_id", type_="foreignkey")
+            batch_op.drop_constraint("fk_trace_message_id", type_="foreignkey")
+            batch_op.create_foreign_key(
+                "fk_trace_conversation_id",
+                "conversation",
+                ["conversation_id"],
+                ["id"],
+            )
+            batch_op.create_foreign_key(
+                "fk_trace_message_id",
+                "message",
+                ["message_id"],
+                ["id"],
+            )
+    else:
+        op.execute("ALTER TABLE usage_event DROP CONSTRAINT fk_usage_event_conversation_id")
+        op.execute("ALTER TABLE usage_event DROP CONSTRAINT fk_usage_event_message_id")
+        op.execute(
+            "ALTER TABLE usage_event ADD CONSTRAINT fk_usage_event_conversation_id "
+            "FOREIGN KEY (conversation_id) REFERENCES conversation(id)"
         )
-        batch_op.create_foreign_key(
-            "fk_trace_message_id",
-            "message",
-            ["message_id"],
-            ["id"],
+        op.execute(
+            "ALTER TABLE usage_event ADD CONSTRAINT fk_usage_event_message_id "
+            "FOREIGN KEY (message_id) REFERENCES message(id)"
+        )
+        op.execute("ALTER TABLE trace DROP CONSTRAINT fk_trace_conversation_id")
+        op.execute("ALTER TABLE trace DROP CONSTRAINT fk_trace_message_id")
+        op.execute(
+            "ALTER TABLE trace ADD CONSTRAINT fk_trace_conversation_id "
+            "FOREIGN KEY (conversation_id) REFERENCES conversation(id)"
+        )
+        op.execute(
+            "ALTER TABLE trace ADD CONSTRAINT fk_trace_message_id "
+            "FOREIGN KEY (message_id) REFERENCES message(id)"
         )

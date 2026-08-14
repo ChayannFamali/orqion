@@ -12,6 +12,10 @@ vec_chunk_map — маппинг rowid (vec0/FTS5) ↔ chunk_id (UUID String(36)
 vec_chunks (sqlite-vec) создаётся в runtime SQLiteVectorStore._get_conn,
 т.к. требует загруженного extension — SQLAlchemy async engine не позволяет
 load_extension через SQL.
+
+BUG-005: dialect guard — FTS5 и vec_chunk_map создаются только для SQLite.
+На PostgreSQL векторный store использует отдельный SQLite-файл (split stack,
+Вариант A T-410) или Qdrant — эти таблицы не нужны в основной БД.
 """
 
 from __future__ import annotations
@@ -32,7 +36,15 @@ def upgrade() -> None:
 
     FTS5 встроен в SQLite, не требует extension.
     vec0 таблица (sqlite-vec) создаётся в runtime SQLiteVectorStore.
+
+    BUG-005: dialect guard — на PostgreSQL эти таблицы не создаются.
+    Векторный store использует отдельный SQLite-файл (split stack)
+    или Qdrant — FTS5/vec0 живут только в SQLite.
     """
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+
     conn = op.get_bind()
     conn.execute(
         sa.text(
@@ -50,7 +62,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Удаление FTS5, vec_chunk_map и vec0 таблиц."""
+    """Удаление FTS5, vec_chunk_map и vec0 таблиц.
+
+    BUG-005: dialect guard — на PostgreSQL таблиц не было, нечего удалять.
+    """
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+
     conn = op.get_bind()
     conn.execute(sa.text("DROP TABLE IF EXISTS vec_chunks"))
     conn.execute(sa.text("DROP TABLE IF EXISTS vec_chunk_map"))

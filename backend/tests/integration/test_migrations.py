@@ -82,3 +82,65 @@ def test_trace_span_insert_after_migration(tmp_path: Path) -> None:
         assert saved_span.created_at is not None
 
     engine.dispose()
+
+
+def test_usage_event_insert_after_migration(tmp_path: Path) -> None:
+    """BUG-006: insert usage_event в БД, созданную через alembic upgrade.
+
+    До фикса: UsageEvent не имел TimestampMixin → created_at не замаплен →
+    insert падал с NOT NULL violation на migration-created БД.
+    record_usage ловил except Exception → молчаливая потеря биллинговых данных.
+    """
+    from app.db.models import Model, Provider, UsageEvent, Workspace
+
+    db_url = f"sqlite:///{tmp_path}/migrate_usage_test.db"
+    config = _make_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url)
+    with Session(engine) as session:
+        ws = Workspace(name="test-ws")
+        session.add(ws)
+        session.flush()
+
+        provider = Provider(
+            workspace_id=ws.id,
+            kind="openai",
+            base_url="https://api.openai.com/v1",
+            api_key_enc="encrypted",
+            enabled=True,
+            capabilities={},
+        )
+        session.add(provider)
+        session.flush()
+
+        model = Model(
+            workspace_id=ws.id,
+            provider_id=provider.id,
+            alias="gpt-4",
+            upstream_name="gpt-4",
+            locality="external",
+            enabled=True,
+        )
+        session.add(model)
+        session.flush()
+
+        usage = UsageEvent(
+            workspace_id=ws.id,
+            user_id=None,
+            model_id=model.id,
+            ts=datetime.now(UTC),
+            tokens_in=10,
+            tokens_out=20,
+            cost=0.001,
+            latency_ms=100,
+            status="ok",
+        )
+        session.add(usage)
+        session.commit()
+
+        result = session.execute(select(UsageEvent).where(UsageEvent.id == usage.id))
+        saved = result.scalar_one()
+        assert saved.created_at is not None
+
+    engine.dispose()
