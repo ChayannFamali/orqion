@@ -59,6 +59,7 @@ class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     auth_method: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
     external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     external_issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    refresh_token_enc: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):

@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     oidc_group_role_map: str = "{}"
     oidc_default_role: str = "support"
 
+    # OIDC sync (T-405). Отдельно от oidc_enabled: хранит долгоживущий
+    # refresh_token per-user — новый класс секрета. По умолчанию отключён.
+    oidc_sync_enabled: bool = False
+    oidc_sync_interval_seconds: int = 300
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

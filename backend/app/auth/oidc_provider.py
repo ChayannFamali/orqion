@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.service import write_audit
 from app.auth.provider import AuthResult, IdentityProvider
 from app.config import Settings
+from app.crypto.service import decrypt_api_key, encrypt_api_key
 from app.db.models import Role, User
 from app.errors import OrqionError
 
@@ -193,6 +194,12 @@ class OidcIdentityProvider(IdentityProvider):
         role_name = self._resolve_role(groups)
 
         user = await self._provision_user(email, subject, self._issuer, role_name)
+
+        # Сохраняем refresh_token для фоновой синхронизации (T-405)
+        refresh_token = tokens.get("refresh_token", "")
+        if refresh_token and self._settings.oidc_sync_enabled:
+            user.refresh_token_enc = encrypt_api_key(refresh_token, self._secret_key)
+
         return AuthResult(user=user, auth_method="oidc")
 
     def _extract_groups(self, claims: dict[str, object]) -> list[str]:
@@ -320,3 +327,131 @@ class OidcIdentityProvider(IdentityProvider):
             "code_challenge_method": "S256",
         }
         return f"{authorize_url}?{urlencode(params)}"
+
+    async def _refresh_token_exchange(
+        self, refresh_token: str, discovery: dict[str, str]
+    ) -> dict[str, str]:
+        """Обменивает refresh_token на новый access_token (+ возможно новый refresh_token).
+
+        Возвращает словарь с токенами. Возбуждает httpx.HTTPStatusError
+        при явном отказе IdP (400/401/invalid_grant).
+        """
+        token_url = discovery["token_endpoint"]
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+        }
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(token_url, data=data)
+            resp.raise_for_status()
+            tokens: dict[str, str] = resp.json()
+            return tokens
+
+    async def _fetch_userinfo(
+        self, access_token: str, discovery: dict[str, str]
+    ) -> dict[str, object]:
+        """Получает userinfo с IdP — группы и email.
+
+        Возбуждает httpx.HTTPStatusError при отказе.
+        """
+        userinfo_url = discovery.get("userinfo_endpoint", "")
+        if not userinfo_url:
+            return {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                userinfo_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            resp.raise_for_status()
+            raw: dict[str, object] = dict(resp.json())
+            return raw
+
+    async def sync_user(self, user: User) -> bool:
+        """Фоновая синхронизация одного OIDC-пользователя (T-405).
+
+        1. Расшифровать refresh_token.
+        2. Exchange → новый access_token (+ возможно новый refresh_token).
+        3. userinfo → группы → role update (переиспользует логику _provision_user).
+        4. Сохранить новый refresh_token (ротация).
+
+        Возвращает True если sync успешен, False если пользователь удалён/отозван.
+        Сетевые ошибки пробрасываются наверх (scheduler решает пропускать).
+        Явный отказ IdP (400/401) → is_active=False + audit + return False.
+        """
+        if not user.refresh_token_enc:
+            return True  # Нет токена — нечего синхронизировать
+
+        discovery = await self._fetch_discovery()
+        refresh_token = decrypt_api_key(user.refresh_token_enc, self._secret_key)
+
+        try:
+            tokens = await self._refresh_token_exchange(refresh_token, discovery)
+        except httpx.HTTPStatusError as exc:
+            # Явный отказ IdP — токен отозван / пользователь удалён
+            status = exc.response.status_code
+            if status in (400, 401):
+                user.is_active = False
+                user.refresh_token_enc = None
+                await write_audit(
+                    self._session,
+                    workspace_id=self._workspace_id,
+                    actor_user_id=user.id,
+                    action="user.status_changed",
+                    object_type="user",
+                    object_id=user.id,
+                    meta={
+                        "old": True,
+                        "new": False,
+                        "target_email": user.email,
+                        "source": "oidc_sync_revoked",
+                    },
+                )
+                await self._session.flush()
+                return False
+            raise  # 5xx и другие — пробрасываем как сетевую ошибку
+
+        # Ротация: сохраняем новый refresh_token если IdP его вернул
+        new_refresh_token = tokens.get("refresh_token", "")
+        if new_refresh_token:
+            user.refresh_token_enc = encrypt_api_key(new_refresh_token, self._secret_key)
+
+        # userinfo → группы → role update
+        access_token = tokens.get("access_token", "")
+        if access_token:
+            claims = await self._fetch_userinfo(access_token, discovery)
+            if claims:
+                groups = self._extract_groups(claims)
+                role_name = self._resolve_role(groups)
+
+                # Переиспользуем логику role resolution + audit из _provision_user
+                role_result = await self._session.execute(
+                    select(Role).where(
+                        Role.workspace_id == self._workspace_id,
+                        Role.name == role_name,
+                    )
+                )
+                role = role_result.scalar_one_or_none()
+                if role is not None and user.role_id != role.id:
+                    old_role_result = await self._session.execute(
+                        select(Role).where(Role.id == user.role_id)
+                    )
+                    old_role = old_role_result.scalar_one_or_none()
+                    await write_audit(
+                        self._session,
+                        workspace_id=self._workspace_id,
+                        actor_user_id=user.id,
+                        action="user.role_changed",
+                        object_type="user",
+                        object_id=user.id,
+                        meta={
+                            "old_role": old_role.name if old_role else None,
+                            "new_role": role.name,
+                            "source": "oidc_sync_group_mapping",
+                        },
+                    )
+                    user.role_id = role.id
+
+        await self._session.flush()
+        return True
