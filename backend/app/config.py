@@ -94,6 +94,18 @@ class Settings(BaseSettings):
     # не средство защиты от умысла.
     detectors_enabled: bool = False
 
+    def model_post_init(self, __context: object, /) -> None:
+        """Вычисляет session_cookie_secure после загрузки настроек.
+
+        Если ORQION_SESSION_COOKIE_SECURE явно задана в окружении — используется она.
+        Иначе: minimal → False (local, no TLS), standard/full → True (network, TLS).
+        """
+        import os
+
+        if "ORQION_SESSION_COOKIE_SECURE" not in os.environ:
+            self.session_cookie_secure = self.profile != "minimal"
+        super().model_post_init(__context)
+
 
 def get_or_create_secret_key(settings: Settings, data_dir: Path) -> str:
     """Возвращает секретный ключ: из настроек, из файла, или создаёт новый.

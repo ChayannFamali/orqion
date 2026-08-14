@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from app.config import Settings, get_or_create_secret_key
 
 
@@ -68,3 +69,51 @@ def test_secret_key_file_permissions(tmp_path: Path) -> None:
     key_path = data_dir / ".secret_key"
     stat = key_path.stat()
     assert (stat.st_mode & 0o777) == 0o600
+
+
+# TD-4: session_cookie_secure — дефолт зависимый от профиля
+
+
+def test_session_cookie_secure_default_minimal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Профиль minimal → session_cookie_secure=False (local, no TLS)."""
+    monkeypatch.delenv("ORQION_SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("ORQION_PROFILE", raising=False)
+    settings = Settings()
+    assert settings.profile == "minimal"
+    assert settings.session_cookie_secure is False
+
+
+def test_session_cookie_secure_standard_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Профиль standard → session_cookie_secure=True (network, TLS)."""
+    monkeypatch.delenv("ORQION_SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("ORQION_PROFILE", "standard")
+    settings = Settings()
+    assert settings.profile == "standard"
+    assert settings.session_cookie_secure is True
+
+
+def test_session_cookie_secure_full_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Профиль full → session_cookie_secure=True (network, TLS)."""
+    monkeypatch.delenv("ORQION_SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("ORQION_PROFILE", "full")
+    settings = Settings()
+    assert settings.profile == "full"
+    assert settings.session_cookie_secure is True
+
+
+def test_session_cookie_secure_explicit_override_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Явная ORQION_SESSION_COOKIE_SECURE=true побеждает дефолт профиля."""
+    monkeypatch.setenv("ORQION_SESSION_COOKIE_SECURE", "true")
+    monkeypatch.delenv("ORQION_PROFILE", raising=False)
+    settings = Settings()
+    assert settings.profile == "minimal"
+    assert settings.session_cookie_secure is True
+
+
+def test_session_cookie_secure_explicit_override_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Явная ORQION_SESSION_COOKIE_SECURE=false побеждает дефолт профиля."""
+    monkeypatch.setenv("ORQION_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ORQION_PROFILE", "standard")
+    settings = Settings()
+    assert settings.profile == "standard"
+    assert settings.session_cookie_secure is False
