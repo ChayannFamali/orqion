@@ -125,32 +125,20 @@ jobs:
         run: |
           python -c "
           import json, subprocess, sys
+          sys.path.insert(0, 'backend/scripts')
           BANNED = {'GPL', 'GPLv2', 'GPLv3', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0', 'SSPL', 'BUSL', 'Sustainable Use License'}
-          # Note: LGPL is NOT banned — Lesser GPL permits use in non-LGPL projects.
-          # psycopg2-binary is dual-licensed LGPL/Py2.0.
-          # Packages with known permissive licenses that pip-licenses cannot classify
-          # (PEP 639 License-Expression, not in trove classifiers or metadata License field).
-          # Manually verified against LICENSE files in upstream repos.
-          ALLOWED_UNKNOWN = {
-              'alembic', 'annotated-doc', 'anyio', 'argon2-cffi',
-              'argon2-cffi-bindings', 'ast_serialize', 'attrs', 'cffi',
-              'charset-normalizer', 'cfn-lint', 'click', 'cryptography', 'doclang',
-              'docling-core', 'docling-parse', 'docling-slim',
-              'fastapi', 'flask', 'flask-cors', 'fsspec',
-              'greenlet', 'idna', 'iniconfig', 'jsonschema',
-              'jsonschema-specifications', 'lazy-object-proxy', 'librt',
-              'mako', 'markupsafe', 'mypy', 'mypy_extensions',
-              'networkx', 'numpy', 'openapi-spec-validator',
-              'packaging', 'pillow', 'pluggy', 'prettytable',
-              'prometheus_client', 'pycparser', 'pydantic',
-              'pydantic_core', 'pydantic-settings', 'pygments',
-              'pyparsing', 'pytest', 'pytest-asyncio',
-              'referencing', 'regex', 'rpds-py', 'ruff', 'rtree',
-              'setuptools', 'starlette', 'tabulate', 'tomli',
-              'typer', 'typing-inspection', 'typing_extensions',
-              'tzdata', 'urllib3', 'wcwidth', 'werkzeug',
-              'wrapt', 'xmltodict',
-          }
+          # Packages with dual-license where one option is LGPL.
+          # LGPL is NOT opened as a category — only these specific packages are allowed
+          # under their permissive alternative license.
+          LGPL_DUAL_LICENSE = {'psycopg2-binary'}  # dual-licensed LGPL-3.0 OR Python-2.0
+          # Packages with permissive licenses that pip-licenses cannot classify
+          # (PEP 639 License-Expression, not in trove classifiers or metadata).
+          # Each entry manually verified — see backend/scripts/license_allowlist.py
+          # for license, source URL, and verification date.
+          # When adding a new dependency with UNKNOWN license: add it to license_allowlist.py
+          # with verification source, then add the name here.
+          from license_allowlist import ALLOWED_UNKNOWN_VERIFIED
+          ALLOWED_UNKNOWN = set(ALLOWED_UNKNOWN_VERIFIED.keys())
           result = subprocess.run(
               [sys.executable, '-m', 'piplicenses', '--from', 'mixed', '--format', 'json', '--with-system'],
               capture_output=True, text=True
@@ -170,16 +158,15 @@ jobs:
                   if name not in ALLOWED_UNKNOWN:
                       unknown.append(name)
                   continue
-              # LGPL is allowed (Lesser GPL permits use in non-LGPL projects).
-              # Must check BEFORE GPL matching — 'LGPL' contains 'GPL' as substring.
-              if 'lgpl' in license_str.lower():
+              # Dual-licensed packages with LGPL: allowed under permissive alternative
+              if name in LGPL_DUAL_LICENSE and 'lgpl' in license_str.lower():
                   continue
               for banned in BANNED:
                   if banned.lower() in license_str.lower():
                       violations.append(f'{name}: {license_str}')
                       break
           if unknown:
-              print('PACKAGES WITH UNKNOWN LICENSE (add to ALLOWED_UNKNOWN or remove dependency):')
+              print('PACKAGES WITH UNKNOWN LICENSE (add to license_allowlist.py with verification):')
               for u in unknown:
                   print(f'  - {u}')
               sys.exit(1)
