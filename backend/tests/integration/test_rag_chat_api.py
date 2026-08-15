@@ -827,12 +827,17 @@ async def test_chat_with_corpus_returns_sources(
     assert "Section 0" in sources[0]["structural_path"]
 
     # TD-5: sources персистятся в meta assistant-сообщения
+    # BUG-010: RAG-ответ (content) также должен сохраняться — ранее
+    # accumulated_content был пуст и assistant-сообщение не создавалось.
     conv_id = data["conversation_id"]
     conv_response = await api_client.get(f"/api/conversations/{conv_id}")
     assert conv_response.status_code == 200
     conv_data = conv_response.json()
     assistant_msgs = [m for m in conv_data["messages"] if m["role"] == "assistant"]
     assert len(assistant_msgs) == 1
+    # BUG-010 regression: content must be persisted
+    assert assistant_msgs[0]["content"] == data["content"]
+    # TD-5: sources must be in meta
     saved_meta = assistant_msgs[0]["meta"]
     assert "sources" in saved_meta
     assert len(saved_meta["sources"]) == 2
