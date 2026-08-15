@@ -1,8 +1,8 @@
 import { FileText, AlertTriangle } from "lucide-react";
-import type { SourceEntry } from "../api/types";
+import type { ChatSourceEntry } from "../api/types";
 
 interface SourceListProps {
-  sources: SourceEntry[];
+  sources: ChatSourceEntry[];
   ragDegraded?: boolean;
   ragErrors?: string[];
 }

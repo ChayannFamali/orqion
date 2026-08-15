@@ -1118,6 +1118,75 @@ export interface components {
             task_type?: string | null;
         };
         /**
+         * ChatResponse
+         * @description Ответ POST /api/chat (non-streaming: RAG + plain complete).
+         */
+        ChatResponse: {
+            /** Type */
+            type: string;
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Model */
+            model?: string | null;
+            usage?: components["schemas"]["ChatUsage"] | null;
+            /**
+             * Rag Degraded
+             * @default false
+             */
+            rag_degraded: boolean;
+            /**
+             * Rag Errors
+             * @default []
+             */
+            rag_errors: string[];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["ChatSourceEntry"][];
+            /** Code */
+            code?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Constraint */
+            constraint?: {
+                [key: string]: unknown;
+            } | null;
+            /** Hint */
+            hint?: string | null;
+        };
+        /** ChatSourceEntry */
+        ChatSourceEntry: {
+            /** Chunk Id */
+            chunk_id: string;
+            /** Document Id */
+            document_id: string;
+            /** Structural Path */
+            structural_path: string;
+            /** Score */
+            score: number;
+            /** Original Rank */
+            original_rank: number;
+        };
+        /** ChatUsage */
+        ChatUsage: {
+            /**
+             * Tokens In
+             * @default 0
+             */
+            tokens_in: number;
+            /**
+             * Tokens Out
+             * @default 0
+             */
+            tokens_out: number;
+        };
+        /**
          * CleanupResponse
          * @description Результат очистки retired-версий.
          */
@@ -2357,7 +2426,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ChatResponse"];
                 };
             };
             /** @description Validation Error */

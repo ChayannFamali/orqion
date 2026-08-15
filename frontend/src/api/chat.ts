@@ -1,5 +1,5 @@
 import { parseError } from "./client";
-import type { ChatCompletionResult, ChatRequest, SSEEvent } from "./types";
+import type { ChatRequest, ChatResponse, SSEEvent } from "./types";
 
 /**
  * Парсит одно SSE-событие из строки data-блока.
@@ -89,7 +89,7 @@ export async function* streamChat(
 export async function completeChat(
   body: ChatRequest,
   signal?: AbortSignal,
-): Promise<ChatCompletionResult> {
+): Promise<ChatResponse> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -102,5 +102,5 @@ export async function completeChat(
     throw await parseError(res);
   }
 
-  return (await res.json()) as ChatCompletionResult;
+  return (await res.json()) as ChatResponse;
 }

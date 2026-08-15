@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { completeChat, streamChat } from "../api/chat";
-import type { ChatMessage, ChatCompletionResult, SSEEvent, SourceEntry } from "../api/types";
+import type { ChatMessage, ChatResponse, ChatSourceEntry, SSEEvent } from "../api/types";
 
 interface UseChatResult {
   /** Накопленный стрим-контент ассистента */
@@ -10,7 +10,7 @@ interface UseChatResult {
   /** Ошибка последнего запроса */
   error: { code: string; message: string } | null;
   /** Источники последнего RAG-ответа */
-  sources: SourceEntry[] | null;
+  sources: ChatSourceEntry[] | null;
   /** Признак деградации RAG последнего ответа */
   ragDegraded: boolean;
   /** Отправить сообщение (стриминг или RAG non-streaming) */
@@ -22,7 +22,7 @@ interface UseChatResult {
     onDone?: (
       fullContent: string,
       error: { code: string; message: string } | null,
-      sources?: SourceEntry[] | null,
+      sources?: ChatSourceEntry[] | null,
     ) => void;
   }) => void;
   /** Прервать стрим */
@@ -33,7 +33,7 @@ export function useChat(): UseChatResult {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [sources, setSources] = useState<SourceEntry[] | null>(null);
+  const [sources, setSources] = useState<ChatSourceEntry[] | null>(null);
   const [ragDegraded, setRagDegraded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -77,7 +77,7 @@ export function useChat(): UseChatResult {
         // RAG-ветка: non-streaming, JSON-ответ с sources
         (async () => {
           try {
-            const result: ChatCompletionResult = await completeChat(
+            const result: ChatResponse = await completeChat(
               {
                 messages,
                 model_alias: modelAlias ?? null,

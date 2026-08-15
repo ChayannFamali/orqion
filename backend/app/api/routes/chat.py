@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.api.schemas.chat import ChatRequest
+from app.api.schemas.chat import ChatRequest, ChatResponse, ChatSourceEntry, ChatUsage
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.chat.service import (
@@ -77,13 +77,13 @@ def _build_usage_record(
     )
 
 
-@router.post("", response_model=None)
+@router.post("", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
     request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
-) -> StreamingResponse | dict[str, object]:
+) -> StreamingResponse | ChatResponse:
     """Обработка чат-запроса. Стриминг или обычный режим.
 
     Полный конвейер §7.1:
@@ -234,25 +234,25 @@ async def chat(
             error=rag_state.degraded,
         )
 
-        result: dict[str, object] = {
-            "type": "complete",
-            "content": rag_state.answer or "",
-            "usage": {"tokens_in": tokens_in, "tokens_out": tokens_out},
-            "model": model.alias,
-            "conversation_id": conv_id,
-            "rag_degraded": rag_state.degraded,
-            "rag_errors": rag_state.errors if rag_state.degraded else [],
-            "sources": [
-                {
-                    "chunk_id": s.chunk_id,
-                    "document_id": s.document_id,
-                    "structural_path": s.structural_path,
-                    "score": s.score,
-                    "original_rank": s.original_rank,
-                }
+        result = ChatResponse(
+            type="complete",
+            content=rag_state.answer or "",
+            usage=ChatUsage(tokens_in=tokens_in, tokens_out=tokens_out),
+            model=model.alias,
+            conversation_id=conv_id,
+            rag_degraded=rag_state.degraded,
+            rag_errors=rag_state.errors if rag_state.degraded else [],
+            sources=[
+                ChatSourceEntry(
+                    chunk_id=s.chunk_id,
+                    document_id=s.document_id,
+                    structural_path=s.structural_path,
+                    score=s.score,
+                    original_rank=s.original_rank,
+                )
                 for s in rag_state.sources
             ],
-        }
+        )
         record_rag_query(status=status)
         rag_latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
         record_chat_request(
@@ -283,7 +283,7 @@ async def chat(
 
     # Non-streaming mode
     async with span(trace_ctx, "execute"):
-        result = await execute_complete(chat_ctx, model, provider, secret_key, fallbacks)
+        raw_result = await execute_complete(chat_ctx, model, provider, secret_key, fallbacks)
 
     # Фактическая модель — могла смениться на fallback
     actual_model = model
@@ -305,7 +305,7 @@ async def chat(
         error=chat_ctx.error_code is not None,
     )
 
-    result["conversation_id"] = conv_id
+    raw_result["conversation_id"] = conv_id
 
     latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
     status = "error" if chat_ctx.error_code else "ok"
@@ -313,7 +313,7 @@ async def chat(
         status=status, error_code=chat_ctx.error_code or "", duration_seconds=latency_s
     )
 
-    return result
+    return ChatResponse.model_validate(raw_result)
 
 
 async def _stream_with_save(

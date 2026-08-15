@@ -441,7 +441,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
               }
             }
           },
@@ -3040,6 +3042,172 @@
           "messages"
         ],
         "title": "ChatRequest"
+      },
+      "ChatResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rag_degraded": {
+            "type": "boolean",
+            "title": "Rag Degraded",
+            "default": false
+          },
+          "rag_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rag Errors",
+            "default": []
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ChatSourceEntry"
+            },
+            "type": "array",
+            "title": "Sources",
+            "default": []
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "constraint": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constraint"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ChatResponse",
+        "description": "Ответ POST /api/chat (non-streaming: RAG + plain complete)."
+      },
+      "ChatSourceEntry": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "structural_path": {
+            "type": "string",
+            "title": "Structural Path"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "original_rank": {
+            "type": "integer",
+            "title": "Original Rank"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "document_id",
+          "structural_path",
+          "score",
+          "original_rank"
+        ],
+        "title": "ChatSourceEntry"
+      },
+      "ChatUsage": {
+        "properties": {
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In",
+            "default": 0
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ChatUsage"
       },
       "CleanupResponse": {
         "properties": {

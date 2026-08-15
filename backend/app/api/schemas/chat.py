@@ -1,4 +1,4 @@
-"""Схемы запроса и событий для POST /api/chat."""
+"""Схемы запроса, ответа и событий для POST /api/chat."""
 
 from __future__ import annotations
 
@@ -20,3 +20,33 @@ class ChatRequest(BaseModel):
     corpus_data_class: str | None = None
     corpus_name: str | None = None
     task_type: str | None = None
+
+
+class ChatUsage(BaseModel):
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
+class ChatSourceEntry(BaseModel):
+    chunk_id: str
+    document_id: str
+    structural_path: str
+    score: float
+    original_rank: int
+
+
+class ChatResponse(BaseModel):
+    """Ответ POST /api/chat (non-streaming: RAG + plain complete)."""
+
+    type: str
+    content: str = ""
+    conversation_id: str | None = None
+    model: str | None = None
+    usage: ChatUsage | None = None
+    rag_degraded: bool = False
+    rag_errors: list[str] = []
+    sources: list[ChatSourceEntry] = []
+    code: str | None = None
+    reason: str | None = None
+    constraint: dict[str, object] | None = None
+    hint: str | None = None

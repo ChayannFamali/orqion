@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { SourceList } from "../components/SourceList";
-import type { SourceEntry } from "../api/types";
+import type { ChatSourceEntry } from "../api/types";
 
-function makeSource(overrides: Partial<SourceEntry> = {}): SourceEntry {
+function makeSource(overrides: Partial<ChatSourceEntry> = {}): ChatSourceEntry {
   return {
     chunk_id: "chunk-1",
     document_id: "doc-1",

@@ -359,7 +359,7 @@ async def test_chat_without_corpus_regular_flow(
     data = response.json()
     assert data["type"] == "complete"
     assert data["content"] == "Regular chat answer"
-    assert "rag_degraded" not in data
+    assert data["rag_degraded"] is False
 
 
 async def test_chat_with_corpus_rag_degraded(

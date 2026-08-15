@@ -3,7 +3,7 @@ import { RotateCcw, Pencil, Check, X } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { SourceList } from "./SourceList";
 import { Button } from "./ui/button";
-import type { MessageResponse, SourceEntry } from "../api/types";
+import type { ChatSourceEntry, MessageResponse } from "../api/types";
 import { cn } from "../lib/utils";
 
 interface ChatMessagesProps {
@@ -13,7 +13,7 @@ interface ChatMessagesProps {
   isStreaming: boolean;
   error: { code: string; message: string } | null;
   /** Источники последнего RAG-ответа (T-306) */
-  sources?: SourceEntry[] | null;
+  sources?: ChatSourceEntry[] | null;
   /** Признак деградации RAG последнего ответа */
   ragDegraded?: boolean;
   /** Ошибки RAG при деградации */
