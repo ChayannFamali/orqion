@@ -15,7 +15,7 @@ from app.errors import (
     RateLimitExceeded,
 )
 from app.policy.enforce import enforce
-from app.policy.models import Policy
+from app.policy.models import Budget, Policy
 from app.policy.presets import BUILTIN_ROLES
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
@@ -274,7 +274,7 @@ class TestEnforceRejects:
         policy = Policy(
             models=["local/*"],
             max_input_tokens=10_000_000,
-            budget={"tokens_month": 5000000, "cost_month": 10},
+            budget=Budget(tokens_month=5000000, cost_month=10),
         )
         action = FakeAction(
             model_alias="local/qwen3-8b",

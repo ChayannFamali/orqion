@@ -11,6 +11,20 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 WILDCARD = "*"
 
 
+class Budget(BaseModel):
+    """Месячный бюджет роли (TD-7). Соответствует arch.md §5.2.
+
+    extra="forbid" — отвергает неизвестные ключи (раньше dict[str, int]
+    принимал любой мусор). ge=0 — отвергает отрицательные лимиты.
+    None для обоих полей = нет лимита по этому измерению.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tokens_month: int | None = Field(default=None, ge=0)
+    cost_month: int | None = Field(default=None, ge=0)
+
+
 class Policy(BaseModel):
     """Декларативная политика роли. Соответствует arch.md §5.2."""
 
@@ -20,7 +34,7 @@ class Policy(BaseModel):
     max_input_tokens: int | None = Field(default=None)
     max_output_tokens: int | None = Field(default=None)
     reasoning: str = Field(default="off")
-    budget: dict[str, int] | None = Field(default=None)
+    budget: Budget | None = Field(default=None)
     rpm: int | None = Field(default=None)
     tpm: int | None = Field(default=None)
     corpora: list[str] = Field(default_factory=list)

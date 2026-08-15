@@ -18,11 +18,11 @@ import pytest
 from app.db.models import Model, Provider, Role, UsageDaily, User, Workspace
 from app.errors import BudgetExceeded
 from app.policy.enforce import enforce_budget
-from app.policy.models import Policy
+from app.policy.models import Budget, Policy
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def _make_policy(budget: dict[str, int] | None = None) -> Policy:
+def _make_policy(budget: Budget | None = None) -> Policy:
     return Policy(models=["*"], budget=budget)
 
 
@@ -118,7 +118,7 @@ async def test_budget_none_passes(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_budget_tokens_month_under_limit(db_session: AsyncSession) -> None:
     """tokens_month не превышен → пропускает."""
-    policy = _make_policy(budget={"tokens_month": 1_000_000})
+    policy = _make_policy(budget=Budget(tokens_month=1_000_000))
     await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=500)
 
 
@@ -128,7 +128,7 @@ async def test_budget_tokens_month_exceeded(db_session: AsyncSession) -> None:
     await _seed_world(db_session)
     await _seed_usage(db_session, "ws-1", "user-1", "model-1", 800_000, 200_000)
 
-    policy = _make_policy(budget={"tokens_month": 1_000_000})
+    policy = _make_policy(budget=Budget(tokens_month=1_000_000))
     with pytest.raises(BudgetExceeded) as exc_info:
         await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=10_000)
     assert exc_info.value.status_code == 429
@@ -146,7 +146,7 @@ async def test_budget_cost_month_exceeded(db_session: AsyncSession) -> None:
     await _seed_world(db_session)
     await _seed_usage(db_session, "ws-1", "user-1", "model-1", 0, 0, cost=8.0)
 
-    policy = _make_policy(budget={"cost_month": 10})
+    policy = _make_policy(budget=Budget(cost_month=10))
     with pytest.raises(BudgetExceeded) as exc_info:
         await enforce_budget(db_session, policy, "user-1", "ws-1", pending_cost=3.0)
     assert exc_info.value.status_code == 429
@@ -162,7 +162,7 @@ async def test_budget_tokens_month_exactly_at_limit(db_session: AsyncSession) ->
     await _seed_world(db_session)
     await _seed_usage(db_session, "ws-1", "user-1", "model-1", 900_000, 100_000)
 
-    policy = _make_policy(budget={"tokens_month": 1_000_000})
+    policy = _make_policy(budget=Budget(tokens_month=1_000_000))
     await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=0)
 
 
@@ -172,7 +172,7 @@ async def test_budget_ignores_other_users(db_session: AsyncSession) -> None:
     await _seed_world(db_session, user_id="other-user")
     await _seed_usage(db_session, "ws-1", "other-user", "model-1", 900_000, 100_000)
 
-    policy = _make_policy(budget={"tokens_month": 1_000_000})
+    policy = _make_policy(budget=Budget(tokens_month=1_000_000))
     await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=100_000)
 
 
@@ -182,5 +182,5 @@ async def test_budget_ignores_other_workspaces(db_session: AsyncSession) -> None
     await _seed_world(db_session, ws_id="other-ws")
     await _seed_usage(db_session, "other-ws", "user-1", "model-1", 900_000, 100_000)
 
-    policy = _make_policy(budget={"tokens_month": 1_000_000})
+    policy = _make_policy(budget=Budget(tokens_month=1_000_000))
     await enforce_budget(db_session, policy, "user-1", "ws-1", pending_tokens=100_000)

@@ -165,8 +165,8 @@ async def enforce_budget(
     if policy.budget is None:
         return
 
-    tokens_month_limit = policy.budget.get("tokens_month")
-    cost_month_limit = policy.budget.get("cost_month")
+    tokens_month_limit = policy.budget.tokens_month
+    cost_month_limit = policy.budget.cost_month
 
     if tokens_month_limit is None and cost_month_limit is None:
         return

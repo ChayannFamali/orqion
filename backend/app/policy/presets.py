@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.policy.models import Policy
+from app.policy.models import Budget, Policy
 
 BUILTIN_ROLES: dict[str, Policy] = {
     "support": Policy(
@@ -10,7 +10,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         max_input_tokens=16000,
         max_output_tokens=2000,
         reasoning="off",
-        budget={"tokens_month": 2_000_000, "cost_month": 0},
+        budget=Budget(tokens_month=2_000_000, cost_month=0),
         rpm=30,
         tpm=20000,
         corpora=["public"],
@@ -21,7 +21,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         max_input_tokens=64000,
         max_output_tokens=8000,
         reasoning="optional",
-        budget={"tokens_month": 5_000_000, "cost_month": 10},
+        budget=Budget(tokens_month=5_000_000, cost_month=10),
         rpm=60,
         tpm=60000,
         corpora=["public", "team"],
@@ -32,7 +32,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         max_input_tokens=200000,
         max_output_tokens=32000,
         reasoning="optional",
-        budget={"tokens_month": 20_000_000, "cost_month": 50},
+        budget=Budget(tokens_month=20_000_000, cost_month=50),
         rpm=120,
         tpm=200000,
         corpora=["public", "team", "private"],
@@ -43,7 +43,7 @@ BUILTIN_ROLES: dict[str, Policy] = {
         max_input_tokens=64000,
         max_output_tokens=8000,
         reasoning="optional",
-        budget={"tokens_month": 5_000_000, "cost_month": 10},
+        budget=Budget(tokens_month=5_000_000, cost_month=10),
         rpm=60,
         tpm=60000,
         corpora=["public", "team"],
