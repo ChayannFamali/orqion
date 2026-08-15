@@ -719,10 +719,10 @@ async def _seed_corpus_with_chunks(
             doc = Document(
                 workspace_id=workspace_id,
                 corpus_id=corpus.id,
-                blob_uri=f"sha256-{i:064d}",
+                blob_uri=f"{i:064d}",
                 filename=f"doc{i}.md",
                 mime="text/markdown",
-                sha256=f"sha256-{i:064d}",
+                sha256=f"{i:064d}",
                 source_type="upload",
                 status="indexed",
             )
@@ -894,10 +894,10 @@ async def test_chat_with_corpus_sources_reflect_truncation(
             doc = Document(
                 workspace_id=workspace_id,
                 corpus_id=corpus.id,
-                blob_uri=f"sha256-trunc-{i:061d}",
+                blob_uri=f"{i:064d}",
                 filename=f"trunc{i}.md",
                 mime="text/markdown",
-                sha256=f"sha256-trunc-{i:061d}",
+                sha256=f"{i:064d}",
                 source_type="upload",
                 status="indexed",
             )
