@@ -14,6 +14,7 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import UsageDaily, UsageEvent
+from app.usage.constants import NIL_ID
 
 logger = logging.getLogger("orqion.usage.aggregate")
 
@@ -71,8 +72,8 @@ async def aggregate_day(
         daily = UsageDaily(
             workspace_id=workspace_id,
             date=day_str,
-            user_id=row.user_id,
-            model_id=row.model_id,
+            user_id=row.user_id or NIL_ID,
+            model_id=row.model_id or NIL_ID,
             requests=row.requests,
             tokens_in=row.tokens_in,
             tokens_out=row.tokens_out,

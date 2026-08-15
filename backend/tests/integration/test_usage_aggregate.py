@@ -387,3 +387,98 @@ async def test_catch_up_all_current(
     count = await catch_up_missing_days(db_session, ws_id, today=date_cls(2026, 8, 10))
 
     assert count == 0  # последний агрегат = 2026-08-09, вчера = 2026-08-09
+
+
+@pytest.mark.asyncio
+async def test_aggregate_day_null_user_model_uses_sentinel(
+    db_session: AsyncSession,
+) -> None:
+    """BUG-008: events с user_id=None/model_id=None → sentinel UUID в usage_daily.
+
+    PostgreSQL PK implicit NOT NULL — NULL в PK columns недопустим.
+    aggregate_day подставляет NIL_ID вместо None.
+    """
+    from app.usage.constants import NIL_ID
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    day = datetime(2026, 8, 9, tzinfo=UTC)
+    # Событие без user_id и model_id (probe request, error до выбора модели)
+    await _seed_usage_event(db_session, ws_id, None, None, day, tokens_in=100)
+    await db_session.flush()
+
+    count = await aggregate_day(db_session, ws_id, day.date())
+    assert count == 1
+
+    daily = await _get_daily(db_session, ws_id, "2026-08-09")
+    assert len(daily) == 1
+    assert daily[0].user_id == NIL_ID
+    assert daily[0].model_id == NIL_ID
+    assert daily[0].requests == 1
+    assert daily[0].tokens_in == 100
+
+
+@pytest.mark.asyncio
+async def test_aggregate_day_mixed_null_and_real_ids(
+    db_session: AsyncSession,
+) -> None:
+    """BUG-008: mixed events — real user/model и anonymous → separate rows.
+
+    Sentinel-строка и real-строка не схлопываются (different PK).
+    """
+    from app.usage.constants import NIL_ID
+
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+
+    from app.auth.passwords import hash_password
+    from app.db.models import Model, Provider, Role, User
+    from app.policy.presets import BUILTIN_ROLES
+
+    role = Role(
+        workspace_id=ws_id,
+        name="developer",
+        is_builtin=True,
+        policy=BUILTIN_ROLES["developer"].model_dump(),
+    )
+    db_session.add(role)
+    await db_session.flush()
+
+    user = User(
+        workspace_id=ws_id, email="u@o.l", password_hash=hash_password("p"), role_id=role.id
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    provider = Provider(
+        workspace_id=ws_id, kind="openai", base_url="http://x", enabled=True, capabilities={}
+    )
+    db_session.add(provider)
+    await db_session.flush()
+
+    model = Model(
+        workspace_id=ws_id,
+        provider_id=provider.id,
+        alias="m1",
+        upstream_name="m1",
+        locality="local",
+    )
+    db_session.add(model)
+    await db_session.flush()
+
+    day = datetime(2026, 8, 9, tzinfo=UTC)
+    # Anonymous event (no user, no model)
+    await _seed_usage_event(db_session, ws_id, None, None, day, tokens_in=50)
+    # Real user + model event
+    await _seed_usage_event(db_session, ws_id, user.id, model.id, day, tokens_in=100)
+    await db_session.flush()
+
+    count = await aggregate_day(db_session, ws_id, day.date())
+    assert count == 2  # 2 группы: (NIL, NIL) и (user.id, model.id)
+
+    daily = await _get_daily(db_session, ws_id, "2026-08-09")
+    assert len(daily) == 2
+    combos = {(d.user_id, d.model_id) for d in daily}
+    assert (NIL_ID, NIL_ID) in combos
+    assert (user.id, model.id) in combos

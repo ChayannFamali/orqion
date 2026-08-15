@@ -359,16 +359,16 @@ class UsageDaily(Base, WorkspaceMixin):
     )
 
     date: Mapped[str] = mapped_column(String(10), nullable=False, primary_key=True, index=True)
-    user_id: Mapped[str | None] = mapped_column(
+    # BUG-008: sentinel UUID вместо NULL — PostgreSQL PK implicit NOT NULL.
+    # FK убран: sentinel не ссылается на реального user/model (T-406 retention).
+    user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("user.id"),
-        nullable=True,
+        nullable=False,
         primary_key=True,
     )
-    model_id: Mapped[str | None] = mapped_column(
+    model_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("model.id"),
-        nullable=True,
+        nullable=False,
         primary_key=True,
     )
     requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

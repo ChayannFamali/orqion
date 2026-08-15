@@ -35,6 +35,18 @@ const CHART_COLORS = [
 
 const BUDGET_WARNING_THRESHOLD = 0.8;
 
+const NIL_ID = "00000000-0000-0000-0000-000000000000";
+
+function userLabel(u: { user_id: string | null; user_email: string | null }): string {
+  if (u.user_id === NIL_ID) return "Без пользователя";
+  return u.user_email ?? "—";
+}
+
+function modelLabel(m: { model_id: string | null; model_alias: string | null }): string {
+  if (m.model_id === NIL_ID) return "Без модели";
+  return m.model_alias ?? m.model_id?.slice(0, 8) ?? "—";
+}
+
 type Tab = "overview" | "users";
 
 export function AnalyticsPage() {
@@ -175,7 +187,7 @@ function OverviewTab({
   }, [monthData, roles]);
 
   const modelChartData = byModel.slice(0, 8).map((m) => ({
-    name: m.model_alias ?? m.model_id?.slice(0, 8) ?? "—",
+    name: modelLabel(m),
     requests: m.requests,
     tokens: m.tokens_in + m.tokens_out,
     cost: m.cost,
@@ -401,7 +413,7 @@ function UsersTab({
                       onSelectUser(selectedUser === u.user_id ? null : u.user_id ?? null)
                     }
                   >
-                    <td className="px-2 py-1">{u.user_email ?? "—"}</td>
+                    <td className="px-2 py-1">{userLabel(u)}</td>
                     <td className="px-2 py-1 text-muted-foreground">{u.role_name ?? "—"}</td>
                     <td className="px-2 py-1 text-right font-mono">
                       {formatNumber(u.requests)}
@@ -441,8 +453,10 @@ function UsersTab({
               <tbody>
                 {budgetStatus.users.map((u) => (
                   <tr key={u.userId} className="border-b border-border">
-                    <td className="px-2 py-1">{u.email}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{u.roleName}</td>
+                    <td className="px-2 py-1">
+                      {userLabel({ user_id: u.userId, user_email: u.email })}
+                    </td>
+                    <td className="px-2 py-1 text-muted-foreground">{u.roleName ?? "—"}</td>
                     <td className="px-2 py-1 text-right font-mono">
                       {formatNumber(u.tokensLimit)}
                     </td>
@@ -475,7 +489,7 @@ function UsersTab({
 
       {selectedUser && selectedUserData && (
         <ChartCard
-          title={`Персональный срез: ${selectedUserData.user_email ?? "—"}`}
+          title={`Персональный срез: ${userLabel(selectedUserData)}`}
         >
           <div className="space-y-4">
             {/* Personal summary */}
@@ -698,7 +712,7 @@ function computeBudgetStatus(
   let totalWithoutBudget = 0;
 
   for (const u of byUser) {
-    if (!u.user_id) continue;
+    if (!u.user_id || u.user_id === NIL_ID) continue;
 
     const roleName = u.role_name ?? "";
     const roleBudget = roleBudgets.get(roleName);
@@ -738,6 +752,7 @@ function findBudgetForUser(
   byUser: UserBreakdown[],
   roles: RoleResponse[],
 ): { tokensLimit: number; costLimit: number | null } | null {
+  if (userId === NIL_ID) return null;
   const userData = byUser.find((u) => u.user_id === userId);
   if (!userData) return null;
 

@@ -391,4 +391,73 @@ describe("AnalyticsPage", () => {
     // Summary shows "0"
     expect(screen.getAllByText("0").length).toBeGreaterThan(0);
   });
+
+  it("renders 'Без пользователя' for sentinel user_id in Users tab", () => {
+    const NIL_ID = "00000000-0000-0000-0000-000000000000";
+    const data = makeAnalyticsData({
+      by_user: [
+        {
+          user_id: NIL_ID,
+          user_email: null,
+          role_name: null,
+          requests: 30,
+          tokens_in: 500,
+          tokens_out: 200,
+          cost: 0.3,
+          errors: 0,
+        },
+        {
+          user_id: "u1",
+          user_email: "alice@test.com",
+          role_name: "developer",
+          requests: 60,
+          tokens_in: 3000,
+          tokens_out: 1800,
+          cost: 0.9,
+          errors: 1,
+        },
+      ],
+    });
+    mockHooks(data, data, []);
+
+    render(<AnalyticsPage />);
+
+    fireEvent.click(screen.getByText("Пользователи"));
+
+    expect(screen.getByText("Без пользователя")).toBeInTheDocument();
+    expect(screen.getByText("alice@test.com")).toBeInTheDocument();
+  });
+
+  it("renders 'Без модели' for sentinel model_id in model breakdown", () => {
+    const NIL_ID = "00000000-0000-0000-0000-000000000000";
+    const data = makeAnalyticsData({
+      by_model: [
+        {
+          model_id: NIL_ID,
+          model_alias: null,
+          requests: 20,
+          tokens_in: 500,
+          tokens_out: 300,
+          cost: 0.2,
+          errors: 0,
+        },
+        {
+          model_id: "m1",
+          model_alias: "gpt-4",
+          requests: 80,
+          tokens_in: 4000,
+          tokens_out: 2400,
+          cost: 1.2,
+          errors: 1,
+        },
+      ],
+    });
+    mockHooks(data, data, []);
+
+    render(<AnalyticsPage />);
+
+    // Model breakdown chart is on Overview tab (default)
+    expect(screen.getByText("Разбивка по моделям (запросы)")).toBeInTheDocument();
+    expect(document.querySelector(".recharts-responsive-container")).toBeTruthy();
+  });
 });

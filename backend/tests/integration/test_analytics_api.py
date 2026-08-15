@@ -26,6 +26,7 @@ from app.db.models import (
     User,
 )
 from app.policy.presets import BUILTIN_ROLES
+from app.usage.constants import NIL_ID
 from fastapi import FastAPI
 
 
@@ -83,8 +84,8 @@ async def _seed_usage_daily(
         daily = UsageDaily(
             workspace_id=workspace_id,
             date=date_str,
-            user_id=user_id,
-            model_id=model_id,
+            user_id=user_id or NIL_ID,
+            model_id=model_id or NIL_ID,
             requests=requests,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
