@@ -52,10 +52,10 @@ def test_settings(tmp_path: Path) -> Settings:
 async def test_engine(test_settings: Settings) -> AsyncIterator[AsyncEngine]:
     """Создаёт таблицы, отдаёт движок, уничтожает после теста.
 
-    Использует create_engine из app.db.engine — обеспечивает PRAGMA foreign_keys=ON
-    для SQLite. Для drop_all — отдельный sync engine без event listener,
-    т.к. PRAGMA foreign_keys=ON препятствует DROP TABLE при наличии FK.
-    Для PostgreSQL — drop_all через sync engine с psycopg2.
+    SQLite: каждый тест получает новый файл в tmp_path — чистая БД.
+    PostgreSQL: все тесты используют одну БД (ORQION_DATABASE_URL).
+    Между тестами — TRUNCATE всех таблиц (быстрее и надёжнее drop_all/create_all,
+    не падает на FK dependencies). Перед TRUNCATE — CASCADE для сброса FK.
     """
     engine = create_engine(test_settings)
     async with engine.begin() as conn:
@@ -70,13 +70,15 @@ async def test_engine(test_settings: Settings) -> AsyncIterator[AsyncEngine]:
             Base.metadata.drop_all(conn)
         sync_eng.dispose()
     else:
-        # PostgreSQL: drop_all через sync engine
+        # PostgreSQL: TRUNCATE всех таблиц между тестами
         url = test_settings.database_url
         if "+asyncpg" in url:
             url = url.replace("+asyncpg", "+psycopg2")
         sync_eng = create_sync_engine(url)
-        with sync_eng.connect() as conn:
-            Base.metadata.drop_all(conn)
+        with sync_eng.begin() as conn:
+            table_names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+            if table_names:
+                conn.exec_driver_sql(f"TRUNCATE {table_names} CASCADE")
         sync_eng.dispose()
 
 

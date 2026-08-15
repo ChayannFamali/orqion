@@ -91,13 +91,15 @@ async def app_fixture(test_settings: Settings) -> AsyncIterator[FastAPI]:
             Base.metadata.drop_all(conn)
         sync_eng.dispose()
     else:
-        # PostgreSQL: drop_all через sync engine
+        # PostgreSQL: TRUNCATE всех таблиц между тестами
         url = test_settings.database_url
         if "+asyncpg" in url:
             url = url.replace("+asyncpg", "+psycopg2")
         sync_eng = create_sync_engine(url)
-        with sync_eng.connect() as conn:
-            Base.metadata.drop_all(conn)
+        with sync_eng.begin() as conn:
+            table_names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+            if table_names:
+                conn.exec_driver_sql(f"TRUNCATE {table_names} CASCADE")
         sync_eng.dispose()
 
 
