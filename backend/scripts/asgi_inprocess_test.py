@@ -28,6 +28,7 @@ async def main() -> None:
     settings = Settings()
     if not settings.secret_key:
         from pathlib import Path
+
         data_dir = Path(settings.blob_store_path).parent
         data_dir.mkdir(parents=True, exist_ok=True)
         settings.secret_key = get_or_create_secret_key(settings, data_dir)
@@ -45,7 +46,10 @@ async def main() -> None:
             # Login
             resp = await client.post(
                 "/api/auth/login",
-                json={"email": "admin@orqion.local", "password": os.environ.get("ORQION_ADMIN_PASSWORD", "")},
+                json={
+                    "email": "admin@orqion.local",
+                    "password": os.environ.get("ORQION_ADMIN_PASSWORD", ""),
+                },
             )
             if resp.status_code != 200:
                 # Try without password (session might already be set up)
@@ -71,7 +75,9 @@ async def main() -> None:
                         if r.status_code != 200:
                             errors += 1
                             if len(error_details) < 5:
-                                error_details.append(f"status={r.status_code} body={r.text[:200]!r}")
+                                error_details.append(
+                                    f"status={r.status_code} body={r.text[:200]!r}"
+                                )
                     except Exception as e:  # noqa: BLE001
                         errors += 1
                         if len(error_details) < 5:

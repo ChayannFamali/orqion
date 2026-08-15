@@ -110,6 +110,7 @@ async def chat_completions(request: dict[str, Any]) -> Any:
     stream = request.get("stream", False)
 
     if stream:
+
         async def _generate() -> AsyncIterator[str]:
             for token in ["This ", "is ", "a ", "mock ", "response ", "for ", "load ", "testing."]:
                 import json

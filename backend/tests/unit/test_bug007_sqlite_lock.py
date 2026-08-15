@@ -184,8 +184,12 @@ async def test_save_messages_retry_success_on_second_attempt(
     model = MagicMock()
 
     result = await save_messages(
-        fake_session, chat_ctx, model, "ws-1",
-        max_retries=2, base_backoff_ms=10,
+        fake_session,
+        chat_ctx,
+        model,
+        "ws-1",
+        max_retries=2,
+        base_backoff_ms=10,
     )
 
     assert call_count == 2
@@ -200,6 +204,7 @@ async def test_save_messages_retry_exhausted_raises_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """save_messages: OperationalError на всех попытках → DatabaseTemporarilyUnavailable."""
+
     async def _always_fails(
         session: Any, chat_ctx: Any, model: Any, ws_id: str, sources: Any
     ) -> tuple[str, str | None]:
@@ -218,8 +223,12 @@ async def test_save_messages_retry_exhausted_raises_503(
 
     with pytest.raises(DatabaseTemporarilyUnavailable):
         await save_messages(
-            fake_session, chat_ctx, model, "ws-1",
-            max_retries=2, base_backoff_ms=10,
+            fake_session,
+            chat_ctx,
+            model,
+            "ws-1",
+            max_retries=2,
+            base_backoff_ms=10,
         )
 
 

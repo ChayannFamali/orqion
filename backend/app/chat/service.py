@@ -444,9 +444,7 @@ async def save_messages(
     for attempt in range(max_retries):
         try:
             async with session.begin_nested():
-                return await _save_messages_impl(
-                    session, chat_ctx, model, workspace_id, sources
-                )
+                return await _save_messages_impl(session, chat_ctx, model, workspace_id, sources)
         except OperationalError:
             if attempt < max_retries - 1:
                 delay = base_backoff_ms * (2**attempt) / 1000
