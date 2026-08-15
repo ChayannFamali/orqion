@@ -23,9 +23,6 @@ async def main() -> None:
     total = int(sys.argv[2]) if len(sys.argv) > 2 else 100
 
     from app.config import Settings, get_or_create_secret_key
-    from app.db.engine import create_engine, create_session_factory
-    from app.db.workspace import ensure_default_workspace
-    from app.auth.bootstrap import ensure_initial_admin
     from app.main import create_app
 
     settings = Settings()
@@ -75,7 +72,7 @@ async def main() -> None:
                             errors += 1
                             if len(error_details) < 5:
                                 error_details.append(f"status={r.status_code} body={r.text[:200]!r}")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         errors += 1
                         if len(error_details) < 5:
                             error_details.append(f"exception: {type(e).__name__}: {e}")

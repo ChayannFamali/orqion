@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import FastAPI
@@ -109,7 +110,7 @@ async def chat_completions(request: dict[str, Any]) -> Any:
     stream = request.get("stream", False)
 
     if stream:
-        async def _generate():
+        async def _generate() -> AsyncIterator[str]:
             for token in ["This ", "is ", "a ", "mock ", "response ", "for ", "load ", "testing."]:
                 import json
 

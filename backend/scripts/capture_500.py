@@ -32,7 +32,7 @@ async def main() -> None:
         if cookie_file:
             # Загружаем cookies из файла (Netscape format от curl -c)
             cookies = httpx.Cookies()
-            with open(cookie_file) as f:
+            with open(cookie_file) as f:  # noqa: ASYNC230
                 for line in f:
                     if line.startswith("#") and not line.startswith("#HttpOnly_"):
                         continue
@@ -80,7 +80,7 @@ async def main() -> None:
                         error_bodies[key].append(idx)
                         if len(error_bodies[key]) <= 3:
                             print(f"  [req #{idx}] {key}: body={body_preview!r}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     errors += 1
                     key = f"exception:{type(e).__name__}"
                     error_bodies.setdefault(key, [])
