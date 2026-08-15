@@ -41,41 +41,40 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest backend/tests/unit -v
 
-  test-integration:
-    name: Integration Tests (${{ matrix.db }})
+  test-integration-sqlite:
+    name: Integration Tests (sqlite)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        db: [sqlite, postgresql]
-        include:
-          - db: sqlite
-          - db: postgresql
-            services:
-              postgres:
-                image: postgres:16
-                env:
-                  POSTGRES_PASSWORD: test
-                  POSTGRES_DB: orqion_test
-                ports:
-                  - 5432:5432
-                options: >-
-                  --health-cmd pg_isready
-                  --health-interval 10s
-                  --health-timeout 5s
-                  --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - if: matrix.db == 'sqlite'
-        run: pip install -e ".[dev]"
-      - if: matrix.db == 'postgresql'
-        run: pip install -e ".[dev,postgres]" && pip install psycopg2-binary==2.9.10
-      - if: matrix.db == 'sqlite'
-        run: echo "Using SQLite (default)"
-      - if: matrix.db == 'postgresql'
-        run: echo "ORQION_DATABASE_URL=postgresql://postgres:test@localhost:5432/orqion_test" >> $GITHUB_ENV
+      - run: pip install -e ".[dev]"
+      - run: pytest backend/tests/integration -v
+
+  test-integration-postgresql:
+    name: Integration Tests (postgresql)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: orqion_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,postgres]" && pip install psycopg2-binary==2.9.10
+      - run: echo "ORQION_DATABASE_URL=postgresql://postgres:test@localhost:5432/orqion_test" >> $GITHUB_ENV
       - run: pytest backend/tests/integration -v
 
   minimal:
