@@ -210,7 +210,14 @@ async def chat(
         generate_failed = rag_state.usage is None
         status = "error" if generate_failed else "ok"
 
-        conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
+        # RAG answer не накапливается в chat_ctx.accumulated_content (pipeline
+        # пишет в rag_state.answer), поэтому заполняем вручную для save_messages.
+        if rag_state.answer:
+            chat_ctx.accumulated_content = [rag_state.answer]
+
+        conv_id, msg_id = await save_messages(
+            session, chat_ctx, model, workspace_id, sources=rag_state.sources
+        )
 
         usage_record = UsageRecord(
             user_id=user.id,

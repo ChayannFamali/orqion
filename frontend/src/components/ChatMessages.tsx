@@ -119,6 +119,9 @@ export function ChatMessages({
             ) : msg.role === "assistant" ? (
               <>
                 <MarkdownRenderer content={msg.content} />
+                {msg.meta?.sources && Array.isArray(msg.meta.sources) && msg.meta.sources.length > 0 && (
+                  <SourceList sources={msg.meta.sources as ChatSourceEntry[]} />
+                )}
                 {idx === lastAssistantIdx && !isStreaming && onRegenerate && (
                   <button
                     onClick={onRegenerate}

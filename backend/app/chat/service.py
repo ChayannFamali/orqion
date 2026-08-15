@@ -35,6 +35,7 @@ from app.policy.models import WILDCARD, Policy
 from app.policy.rate_limiter import RateLimiter
 from app.providers.client import ProviderClient
 from app.providers.errors import normalize_error
+from app.rag.sources import SourceEntry
 from app.router.models import RouteContext
 from app.router.service import load_candidate_models, load_rules, select_model
 from app.trace.service import TraceContext, span
@@ -417,6 +418,7 @@ async def save_messages(
     chat_ctx: ChatContext,
     model: Model,
     workspace_id: str,
+    sources: list[SourceEntry] | None = None,
 ) -> tuple[str, str | None]:
     """Сохраняет user-сообщения и ответ модели.
 
@@ -424,6 +426,7 @@ async def save_messages(
     Если conversation_id None — создаёт новый диалог.
     Авто-заголовок: первый пользовательский message → title (обрезка 80 символов).
     assistant_message_id None, если нет содержимого (например, ошибка до стрима).
+    sources: RAG-источники, сохраняются в meta assistant-сообщения (TD-5).
     """
     conversation_id = chat_ctx.conversation_id
 
@@ -466,6 +469,18 @@ async def save_messages(
     full_content = "".join(chat_ctx.accumulated_content)
     assistant_message_id: str | None = None
     if full_content:
+        assistant_meta: dict[str, object] = {}
+        if sources:
+            assistant_meta["sources"] = [
+                {
+                    "chunk_id": s.chunk_id,
+                    "document_id": s.document_id,
+                    "structural_path": s.structural_path,
+                    "score": s.score,
+                    "original_rank": s.original_rank,
+                }
+                for s in sources
+            ]
         assistant_msg = Message(
             workspace_id=workspace_id,
             conversation_id=conversation_id,
@@ -474,7 +489,7 @@ async def save_messages(
             model_id=model.id,
             tokens_in=chat_ctx.tokens_in,
             tokens_out=chat_ctx.tokens_out,
-            meta={},
+            meta=assistant_meta,
         )
         session.add(assistant_msg)
         await session.flush()
