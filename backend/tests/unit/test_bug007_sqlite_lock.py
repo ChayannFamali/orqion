@@ -6,28 +6,37 @@
 3. save_messages: OperationalError → retry исчерпан → 503
 4. Streaming: save_messages → DatabaseTemporarilyUnavailable → SSE error event
 5. Non-streaming: save_messages → DatabaseTemporarilyUnavailable → HTTP 503
+6. Intermediate flush: create_trace деградирует → chat 200
+7. MissingGreenlet regression: SAVEPOINT не экспайрит ORM-объекты
 """
 
 from __future__ import annotations
 
-import asyncio
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
-from app.chat.service import ChatContext, save_messages, _save_messages_impl
+from app.chat.service import save_messages
 from app.config import Settings
 from app.crypto.service import encrypt_api_key
 from app.db.models import Model, Provider, Role, User
 from app.errors import DatabaseTemporarilyUnavailable
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
-from app.trace.service import create_trace, TraceContext
+from app.trace.service import TraceContext, create_trace
 from fastapi import FastAPI
 from sqlalchemy.exc import OperationalError
+
+
+def _make_operational_error() -> OperationalError:
+    """Создаёт OperationalError с правильным типом третьего аргумента."""
+    return OperationalError("INSERT", {}, Exception("database is locked"))
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -116,18 +125,21 @@ def _patch_provider_client(monkeypatch: pytest.MonkeyPatch, response: str) -> No
 
 
 @pytest.mark.asyncio
-async def test_create_trace_degrades_on_operational_error(db_session, monkeypatch):
+async def test_create_trace_degrades_on_operational_error(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """create_trace: OperationalError → деградирует, возвращает TraceContext
     с synthetic trace_id (uuid4)."""
     original_flush = db_session.flush
     call_count = 0
 
-    async def _failing_flush(*args, **kwargs):
+    async def _failing_flush(*args: Any, **kwargs: Any) -> None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise OperationalError("INSERT", {}, "database is locked")
-        return await original_flush(*args, **kwargs)
+            raise _make_operational_error()
+        result: None = await original_flush(*args, **kwargs)
+        return result
 
     monkeypatch.setattr(db_session, "flush", _failing_flush)
     monkeypatch.setattr(db_session, "rollback", AsyncMock())
@@ -144,25 +156,26 @@ async def test_create_trace_degrades_on_operational_error(db_session, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_save_messages_retry_success_on_second_attempt(monkeypatch):
+async def test_save_messages_retry_success_on_second_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """save_messages: OperationalError на первой попытке → retry → успех на второй."""
     call_count = 0
     expected_result = ("conv-1", "msg-1")
 
-    async def _flaky_impl(session, chat_ctx, model, ws_id, sources):
+    async def _flaky_impl(
+        session: Any, chat_ctx: Any, model: Any, ws_id: str, sources: Any
+    ) -> tuple[str, str | None]:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise OperationalError("INSERT", {}, "database is locked")
+            raise _make_operational_error()
         return expected_result
 
     monkeypatch.setattr("app.chat.service._save_messages_impl", _flaky_impl)
 
-    # Use a real-like session mock that supports begin_nested as async context manager
-    from contextlib import asynccontextmanager
-
     @asynccontextmanager
-    async def _begin_nested():
+    async def _begin_nested() -> AsyncIterator[None]:
         yield
 
     fake_session = AsyncMock()
@@ -183,17 +196,19 @@ async def test_save_messages_retry_success_on_second_attempt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_save_messages_retry_exhausted_raises_503(monkeypatch):
+async def test_save_messages_retry_exhausted_raises_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """save_messages: OperationalError на всех попытках → DatabaseTemporarilyUnavailable."""
-    async def _always_fails(session, chat_ctx, model, ws_id, sources):
-        raise OperationalError("INSERT", {}, "database is locked")
+    async def _always_fails(
+        session: Any, chat_ctx: Any, model: Any, ws_id: str, sources: Any
+    ) -> tuple[str, str | None]:
+        raise _make_operational_error()
 
     monkeypatch.setattr("app.chat.service._save_messages_impl", _always_fails)
 
-    from contextlib import asynccontextmanager
-
     @asynccontextmanager
-    async def _begin_nested():
+    async def _begin_nested() -> AsyncIterator[None]:
         yield
 
     fake_session = AsyncMock()
@@ -215,23 +230,27 @@ async def test_save_messages_retry_exhausted_raises_503(monkeypatch):
 async def test_streaming_save_error_sends_sse_error(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Streaming: save_messages → DatabaseTemporarilyUnavailable → SSE error event,
     не HTTP 503 (заголовки уже отправлены)."""
     await _login_as_admin(api_client, app_fixture)
     await _seed_provider_and_model(app_fixture)
 
-    # Patch ProviderClient.stream to yield a token
-    async def _stub_stream(self, messages, model, max_tokens=None, temperature=0.7):
+    async def _stub_stream(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[str]:
         yield "Hello"
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 
-    # Patch save_messages → DatabaseTemporarilyUnavailable
     from app.api.routes import chat as chat_module
 
-    async def _failing_save(*args, **kwargs):
+    async def _failing_save(*args: Any, **kwargs: Any) -> tuple[str, str | None]:
         raise DatabaseTemporarilyUnavailable()
 
     monkeypatch.setattr(chat_module, "save_messages", _failing_save)
@@ -248,9 +267,7 @@ async def test_streaming_save_error_sends_sse_error(
     assert response.status_code == 200  # SSE starts with 200
     body = response.text
 
-    # SSE tokens were sent
     assert '"type": "token"' in body
-    # SSE error event for save failure
     assert "db_temporarily_unavailable" in body
     assert '"type": "error"' in body
     assert "[DONE]" in body
@@ -263,8 +280,8 @@ async def test_streaming_save_error_sends_sse_error(
 async def test_non_streaming_save_error_returns_503(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Non-streaming: save_messages → DatabaseTemporarilyUnavailable → HTTP 503."""
     await _login_as_admin(api_client, app_fixture)
     await _seed_provider_and_model(app_fixture)
@@ -272,7 +289,7 @@ async def test_non_streaming_save_error_returns_503(
 
     from app.api.routes import chat as chat_module
 
-    async def _failing_save(*args, **kwargs):
+    async def _failing_save(*args: Any, **kwargs: Any) -> tuple[str, str | None]:
         raise DatabaseTemporarilyUnavailable()
 
     monkeypatch.setattr(chat_module, "save_messages", _failing_save)
@@ -298,28 +315,19 @@ async def test_non_streaming_save_error_returns_503(
 async def test_intermediate_flush_degrades_on_operational_error(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Промежуточный session.flush() в chat route — OperationalError → деградирует,
-    chat продолжается (200), trace потерян но не блокирует.
-
-    Патчит _save_messages_impl (промежуточный flush через begin_nested) —
-    но реальный путь: create_trace ловит OperationalError внутри себя (SAVEPOINT),
-    chat route продолжается. Проверяем через end-to-end: chat возвращает 200.
-    """
+    chat продолжается (200), trace потерян но не блокирует."""
     await _login_as_admin(api_client, app_fixture)
     await _seed_provider_and_model(app_fixture)
     _patch_provider_client(monkeypatch, "Mock response")
 
-    # Patch create_trace to always raise OperationalError — it should catch
-    # internally and return synthetic TraceContext, chat should succeed
     from app.api.routes import chat as chat_module
-    from sqlalchemy.exc import OperationalError
-    from app.trace.service import TraceContext
-    import uuid
 
-    async def _degrading_create_trace(session, workspace_id, user_id=None):
-        # Simulate create_trace catching OperationalError and degrading
+    async def _degrading_create_trace(
+        session: Any, workspace_id: str, user_id: str | None = None
+    ) -> TraceContext:
         return TraceContext(
             trace_id=str(uuid.uuid4()),
             workspace_id=workspace_id,
@@ -337,7 +345,6 @@ async def test_intermediate_flush_degrades_on_operational_error(
         },
     )
 
-    # Chat should still succeed — create_trace degrades gracefully
     assert response.status_code == 200
 
 
@@ -345,18 +352,15 @@ async def test_intermediate_flush_degrades_on_operational_error(
 
 
 @pytest.mark.asyncio
-async def test_create_trace_savepoint_does_not_expire_user(db_session, monkeypatch):
+async def test_create_trace_savepoint_does_not_expire_user(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Regression: session.rollback() after OperationalError expires all ORM
     objects → subsequent user.role_id triggers MissingGreenlet. SAVEPOINT
     (begin_nested) rollback does NOT expire objects outside the savepoint.
-
-    This test verifies that after create_trace catches OperationalError,
-    a User object loaded before create_trace is still accessible without
-    triggering a lazy-load (MissingGreenlet).
     """
-    from app.db.models import Role, User, Workspace
+    from app.db.models import Role, Workspace
 
-    # Create workspace, role, user in the session
     ws = Workspace(name="test-ws")
     db_session.add(ws)
     await db_session.flush()
@@ -374,30 +378,26 @@ async def test_create_trace_savepoint_does_not_expire_user(db_session, monkeypat
     db_session.add(user)
     await db_session.flush()
     user_id = user.id
-    # Access user.email to confirm it's loaded
     assert user.email == "test@orqion.local"
 
-    # Now call create_trace — it will fail with OperationalError
     original_flush = db_session.flush
     call_count = 0
 
-    async def _failing_flush(*args, **kwargs):
+    async def _failing_flush(*args: Any, **kwargs: Any) -> None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise OperationalError("INSERT", {}, "database is locked")
-        return await original_flush(*args, **kwargs)
+            raise _make_operational_error()
+        result: None = await original_flush(*args, **kwargs)
+        return result
 
     monkeypatch.setattr(db_session, "flush", _failing_flush)
 
     trace_ctx = await create_trace(db_session, ws.id, user_id=user_id)
 
-    # create_trace degraded
     assert trace_ctx is not None
     assert len(trace_ctx.trace_id) == 36
 
     # CRITICAL: user object must still be accessible without MissingGreenlet.
-    # If session.rollback() was used instead of begin_nested(), this would
-    # raise sqlalchemy.exc.MissingGreenlet on .email access.
     assert user.email == "test@orqion.local"
     assert user.id == user_id
