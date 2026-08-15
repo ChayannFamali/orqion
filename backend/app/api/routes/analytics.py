@@ -65,16 +65,32 @@ async def get_analytics(
     session: AsyncSession = Depends(get_session),
     start: str | None = Query(None, description="Начало периода (ISO date)"),
     end: str | None = Query(None, description="Конец периода (ISO date)"),
+    model_limit: int | None = Query(None, description="Лимит строк в by_model", ge=1, le=100),
+    model_sort: str = Query(
+        "requests", description="Сортировка by_model: requests|cost|tokens|errors"
+    ),
+    user_limit: int | None = Query(None, description="Лимит строк в by_user", ge=1, le=100),
+    user_sort: str = Query(
+        "requests", description="Сортировка by_user: requests|cost|tokens|errors"
+    ),
 ) -> AnalyticsResponse:
-    """Полный ответ аналитики: summary + by_day + by_model + by_user."""
+    """Полный ответ аналитики: summary + by_day + by_model + by_user.
+
+    model_limit/model_sort и user_limit/user_sort — server-side top-N
+    и сортировка для by_model/by_user (TD-11).
+    """
     await _check_access(session, user)
     workspace_id = request.app.state.workspace_id
     date_range = _parse_range(start, end)
 
     summary_dict = await get_summary(session, workspace_id, date_range)
     by_day_list = await get_by_day(session, workspace_id, date_range)
-    by_model_list = await get_by_model(session, workspace_id, date_range)
-    by_user_list = await get_by_user(session, workspace_id, date_range)
+    by_model_list = await get_by_model(
+        session, workspace_id, date_range, limit=model_limit, sort_by=model_sort
+    )
+    by_user_list = await get_by_user(
+        session, workspace_id, date_range, limit=user_limit, sort_by=user_sort
+    )
 
     return AnalyticsResponse(
         summary=AnalyticsSummary(**summary_dict),

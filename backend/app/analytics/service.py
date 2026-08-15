@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Model, Role, UsageDaily, User
@@ -31,7 +31,11 @@ async def get_summary(
     workspace_id: str,
     date_range: DateRange,
 ) -> dict[str, Any]:
-    """Сводка за период: totals по всем дням."""
+    """Сводка за период: totals по всем дням.
+
+    avg_latency_ms — взвешенное среднее по requests (TD-11):
+    SUM(avg_latency_ms * requests) / SUM(requests), не невзвешенное AVG.
+    """
     result = await session.execute(
         select(
             func.coalesce(func.sum(UsageDaily.requests), 0).label("total_requests"),
@@ -39,7 +43,10 @@ async def get_summary(
             func.coalesce(func.sum(UsageDaily.tokens_out), 0).label("total_tokens_out"),
             func.coalesce(func.sum(UsageDaily.cost), 0.0).label("total_cost"),
             func.coalesce(func.sum(UsageDaily.errors), 0).label("total_errors"),
-            func.avg(UsageDaily.avg_latency_ms).label("avg_latency_ms"),
+            (
+                func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
+                / func.nullif(func.sum(UsageDaily.requests), 0)
+            ).label("avg_latency_ms"),
         ).where(
             UsageDaily.workspace_id == workspace_id,
             UsageDaily.date >= date_range.start,
@@ -63,7 +70,7 @@ async def get_by_day(
     workspace_id: str,
     date_range: DateRange,
 ) -> list[dict[str, Any]]:
-    """Разбивка по дням."""
+    """Разбивка по дням. avg_latency_ms — взвешенное по requests (TD-11)."""
     result = await session.execute(
         select(
             UsageDaily.date,
@@ -72,7 +79,10 @@ async def get_by_day(
             func.sum(UsageDaily.tokens_out).label("tokens_out"),
             func.sum(UsageDaily.cost).label("cost"),
             func.sum(UsageDaily.errors).label("errors"),
-            func.avg(UsageDaily.avg_latency_ms).label("avg_latency_ms"),
+            (
+                func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
+                / func.nullif(func.sum(UsageDaily.requests), 0)
+            ).label("avg_latency_ms"),
         )
         .where(
             UsageDaily.workspace_id == workspace_id,
@@ -97,13 +107,24 @@ async def get_by_day(
     ]
 
 
+_SORT_COLUMNS: dict[str, ColumnElement[Any]] = {
+    "requests": func.sum(UsageDaily.requests),
+    "cost": func.sum(UsageDaily.cost),
+    "tokens": func.sum(UsageDaily.tokens_in + UsageDaily.tokens_out),
+    "errors": func.sum(UsageDaily.errors),
+}
+
+
 async def get_by_model(
     session: AsyncSession,
     workspace_id: str,
     date_range: DateRange,
+    limit: int | None = None,
+    sort_by: str = "requests",
 ) -> list[dict[str, Any]]:
-    """Разбивка по моделям."""
-    result = await session.execute(
+    """Разбивка по моделям. sort_by: requests|cost|tokens|errors (TD-11)."""
+    order_col = _SORT_COLUMNS.get(sort_by, func.sum(UsageDaily.requests))
+    query = (
         select(
             UsageDaily.model_id,
             Model.alias.label("model_alias"),
@@ -120,8 +141,11 @@ async def get_by_model(
             UsageDaily.date <= date_range.end,
         )
         .group_by(UsageDaily.model_id, Model.alias)
-        .order_by(func.sum(UsageDaily.requests).desc())
+        .order_by(order_col.desc())
     )
+    if limit is not None:
+        query = query.limit(limit)
+    result = await session.execute(query)
     rows = result.all()
     return [
         {
@@ -141,9 +165,15 @@ async def get_by_user(
     session: AsyncSession,
     workspace_id: str,
     date_range: DateRange,
+    limit: int | None = None,
+    sort_by: str = "requests",
 ) -> list[dict[str, Any]]:
-    """Разбивка по пользователям с текущей ролью (JOIN user → role)."""
-    result = await session.execute(
+    """Разбивка по пользователям с текущей ролью (JOIN user → role).
+
+    sort_by: requests|cost|tokens|errors (TD-11).
+    """
+    order_col = _SORT_COLUMNS.get(sort_by, func.sum(UsageDaily.requests))
+    query = (
         select(
             UsageDaily.user_id,
             User.email.label("user_email"),
@@ -162,8 +192,11 @@ async def get_by_user(
             UsageDaily.date <= date_range.end,
         )
         .group_by(UsageDaily.user_id, User.email, Role.name)
-        .order_by(func.sum(UsageDaily.requests).desc())
+        .order_by(order_col.desc())
     )
+    if limit is not None:
+        query = query.limit(limit)
+    result = await session.execute(query)
     rows = result.all()
     return [
         {

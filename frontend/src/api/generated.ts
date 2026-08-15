@@ -148,6 +148,9 @@ export interface paths {
         /**
          * Get Analytics
          * @description Полный ответ аналитики: summary + by_day + by_model + by_user.
+         *
+         *     model_limit/model_sort и user_limit/user_sort — server-side top-N
+         *     и сортировка для by_model/by_user (TD-11).
          */
         get: operations["get_analytics_api_analytics_get"];
         put?: never;
@@ -2324,6 +2327,14 @@ export interface operations {
                 start?: string | null;
                 /** @description Конец периода (ISO date) */
                 end?: string | null;
+                /** @description Лимит строк в by_model */
+                model_limit?: number | null;
+                /** @description Сортировка by_model: requests|cost|tokens|errors */
+                model_sort?: string;
+                /** @description Лимит строк в by_user */
+                user_limit?: number | null;
+                /** @description Сортировка by_user: requests|cost|tokens|errors */
+                user_sort?: string;
             };
             header?: never;
             path?: never;

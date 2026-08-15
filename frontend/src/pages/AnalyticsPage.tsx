@@ -67,11 +67,19 @@ export function AnalyticsPage() {
   const { data: weekData, isLoading: weekLoading, error: weekError } = useAnalytics({
     start: fmt(sevenDaysAgo),
     end: fmt(yesterday),
+    model_limit: 8,
+    model_sort: "requests",
+    user_limit: 10,
+    user_sort: "cost",
   });
 
   const { data: monthData, isLoading: monthLoading, error: monthError } = useAnalytics({
     start: fmt(monthStart),
     end: fmt(today),
+    model_limit: 8,
+    model_sort: "requests",
+    user_limit: 10,
+    user_sort: "cost",
   });
 
   const { data: rolesData } = useRoles();
@@ -186,7 +194,7 @@ function OverviewTab({
     return computeBudgetStatus(monthData?.by_user ?? [], roles);
   }, [monthData, roles]);
 
-  const modelChartData = byModel.slice(0, 8).map((m) => ({
+  const modelChartData = byModel.map((m) => ({
     name: modelLabel(m),
     requests: m.requests,
     tokens: m.tokens_in + m.tokens_out,
@@ -360,7 +368,7 @@ function UsersTab({
 }) {
   const byUser = weekData?.by_user ?? [];
   const topUsers = useMemo(() => {
-    return [...byUser].sort((a, b) => b.cost - a.cost).slice(0, 10);
+    return byUser;
   }, [byUser]);
 
   const budgetStatus = useMemo(() => {

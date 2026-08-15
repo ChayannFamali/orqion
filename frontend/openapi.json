@@ -213,7 +213,7 @@
           "analytics"
         ],
         "summary": "Get Analytics",
-        "description": "Полный ответ аналитики: summary + by_day + by_model + by_user.",
+        "description": "Полный ответ аналитики: summary + by_day + by_model + by_user.\n\nmodel_limit/model_sort и user_limit/user_sort — server-side top-N\nи сортировка для by_model/by_user (TD-11).",
         "operationId": "get_analytics_api_analytics_get",
         "parameters": [
           {
@@ -251,6 +251,70 @@
               "title": "End"
             },
             "description": "Конец периода (ISO date)"
+          },
+          {
+            "name": "model_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Лимит строк в by_model",
+              "title": "Model Limit"
+            },
+            "description": "Лимит строк в by_model"
+          },
+          {
+            "name": "model_sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Сортировка by_model: requests|cost|tokens|errors",
+              "default": "requests",
+              "title": "Model Sort"
+            },
+            "description": "Сортировка by_model: requests|cost|tokens|errors"
+          },
+          {
+            "name": "user_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Лимит строк в by_user",
+              "title": "User Limit"
+            },
+            "description": "Лимит строк в by_user"
+          },
+          {
+            "name": "user_sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Сортировка by_user: requests|cost|tokens|errors",
+              "default": "requests",
+              "title": "User Sort"
+            },
+            "description": "Сортировка by_user: requests|cost|tokens|errors"
           }
         ],
         "responses": {

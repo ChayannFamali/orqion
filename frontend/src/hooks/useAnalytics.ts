@@ -1,12 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGetAnalytics } from "../api/analytics";
-import { queryKeys } from "../api/query-keys";
 
-export function useAnalytics(params?: { start?: string; end?: string }) {
+export function useAnalytics(params?: {
+  start?: string;
+  end?: string;
+  model_limit?: number;
+  model_sort?: string;
+  user_limit?: number;
+  user_sort?: string;
+}) {
   const start = params?.start ?? "default";
   const end = params?.end ?? "default";
+  const ml = params?.model_limit ?? "all";
+  const ms = params?.model_sort ?? "requests";
+  const ul = params?.user_limit ?? "all";
+  const us = params?.user_sort ?? "requests";
   return useQuery({
-    queryKey: queryKeys.analytics.range(start, end),
+    queryKey: ["analytics", start, end, ml, ms, ul, us],
     queryFn: () => apiGetAnalytics(params),
   });
 }
