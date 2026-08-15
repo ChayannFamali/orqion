@@ -14,6 +14,11 @@ pip-licenses не находит trove classifiers или metadata License field
 
 # (имя_пакета, лицензия, источник, дата_проверки)
 ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
+    "aioitertools": (
+        "MIT",
+        "https://github.com/omnilib/aioitertools/blob/main/LICENSE",
+        "2026-08-15",
+    ),
     "alembic": ("MIT", "https://github.com/sqlalchemy/alembic/blob/main/LICENSE", "2026-08-15"),
     "annotated-doc": ("MIT", "PyPI metadata License-Expression", "2026-08-15"),
     "anyio": ("MIT", "https://github.com/agronholm/anyio/blob/master/LICENSE", "2026-08-15"),
@@ -167,6 +172,7 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/pygments/pygments/blob/master/LICENSE",
         "2026-08-15",
     ),
+    "pip": ("MIT", "https://github.com/pypa/pip/blob/main/LICENSE.txt", "2026-08-15"),
     "pyparsing": (
         "MIT",
         "https://github.com/pyparsing/pyparsing/blob/master/LICENSE",
