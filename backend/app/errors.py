@@ -68,6 +68,12 @@ class ProviderUnavailable(OrqionError):
     status_code = 503
 
 
+class DatabaseTemporarilyUnavailable(OrqionError):
+    error_code = "db_temporarily_unavailable"
+    reason = "База данных временно недоступна"
+    status_code = 503
+
+
 class NotFound(OrqionError):
     error_code = "not_found"
     reason = "Объект не найден"

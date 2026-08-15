@@ -38,9 +38,11 @@ def create_engine(settings: Settings) -> AsyncEngine:
     if url.startswith("sqlite"):
 
         @event.listens_for(engine.sync_engine, "connect")
-        def _enable_foreign_keys(dbapi_conn: Any, _: Any) -> None:
+        def _set_sqlite_pragmas(dbapi_conn: Any, _: Any) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=1000")
             cursor.close()
 
     return engine

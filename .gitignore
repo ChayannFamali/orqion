@@ -9,6 +9,8 @@ node_modules/
 dist/
 build/
 *.db
+*.db-wal
+*.db-shm
 .secret_key
 .env
 .env.*
@@ -16,3 +18,4 @@ build/
 .DS_Store
 docs/*
 !docs/migration_postgres.md
+.pgdata/

@@ -164,9 +164,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    import os
+
+    debug = os.environ.get("ORQION_DEBUG", "").lower() in ("1", "true", "yes")
     app = FastAPI(
         title="orqion",
         lifespan=lifespan,
+        debug=debug,
     )
 
     from app.api.exception_handlers import register_exception_handlers

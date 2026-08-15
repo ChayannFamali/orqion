@@ -7,6 +7,7 @@ ADR-14: trace + span для каждого запроса.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import AsyncGenerator
 
@@ -28,7 +29,7 @@ from app.chat.service import (
 from app.config import Settings
 from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
-from app.errors import DataClassViolation, NoRouteAvailable
+from app.errors import DataClassViolation, DatabaseTemporarilyUnavailable, NoRouteAvailable, OrqionError
 from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
@@ -36,6 +37,8 @@ from app.rag.pipeline import RagContext, RagState, run_pipeline
 from app.rag.service import resolve_corpus
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
+
+from sqlalchemy.exc import OperationalError
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
 
@@ -166,9 +169,21 @@ async def chat(
             raise
         chat_ctx.trace_id = trace_ctx.trace_id
 
-    # Коммитим trace + prepare данные до возврата StreamingResponse,
-    # иначе SQLite блокируется при записи в _stream_with_save
-    await session.commit()
+    # Флашим trace + prepare данные до возврата StreamingResponse,
+    # иначе SQLite блокируется при записи в _stream_with_save.
+    # OperationalError (database is locked) — деградирует: trace потерян,
+    # но chat продолжается (S-14: трассировка не блокирует чат).
+    # Использует begin_nested (SAVEPOINT) чтобы при rollback не экспайрить
+    # ORM-объекты в сессии (user, model, provider).
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except OperationalError:
+        import logging
+
+        logging.getLogger("orqion.chat").warning(
+            "Failed to flush trace+prepare: degrading (database is locked)"
+        )
 
     # T-221: RAG-конвейер, если корпус задан
     if corpus is not None:
@@ -361,27 +376,36 @@ async def _stream_with_save(
         if chat_ctx.model_id is not None and chat_ctx.model_id != model.id:
             actual_model = _find_model(fallbacks, chat_ctx.model_id) or model
 
-        async with session_factory() as save_session:
-            conv_id, msg_id = await save_messages(
-                save_session, chat_ctx, actual_model, workspace_id
-            )
+        conv_id: str | None = None
+        msg_id: str | None = None
+        save_error: DatabaseTemporarilyUnavailable | None = None
 
-            usage_record = _build_usage_record(chat_ctx, actual_model, conv_id, msg_id)
-            await record_usage(save_session, workspace_id, usage_record)
+        try:
+            async with session_factory() as save_session:
+                conv_id, msg_id = await save_messages(
+                    save_session, chat_ctx, actual_model, workspace_id
+                )
 
-            await finalize_trace(
-                save_session,
-                trace_ctx,
-                conversation_id=conv_id,
-                message_id=msg_id,
-                error=chat_ctx.error_code is not None,
-            )
+                usage_record = _build_usage_record(chat_ctx, actual_model, conv_id, msg_id)
+                await record_usage(save_session, workspace_id, usage_record)
+
+                await finalize_trace(
+                    save_session,
+                    trace_ctx,
+                    conversation_id=conv_id,
+                    message_id=msg_id,
+                    error=chat_ctx.error_code is not None,
+                )
+        except DatabaseTemporarilyUnavailable as e:
+            save_error = e
+            yield f"data: {json.dumps({'type': 'error', 'code': e.error_code, 'message': e.reason, 'reason': e.reason, 'hint': e.hint})}\n\n"
+            yield "data: [DONE]\n\n"
 
         latency_s = (time.monotonic() - chat_ctx.started_at) if chat_ctx.started_at else 0.0
-        stream_status = "error" if chat_ctx.error_code else "ok"
+        stream_status = "error" if (chat_ctx.error_code or save_error) else "ok"
         record_chat_request(
             status=stream_status,
-            error_code=chat_ctx.error_code or "",
+            error_code=chat_ctx.error_code or (save_error.error_code if save_error else ""),
             duration_seconds=latency_s,
         )
 

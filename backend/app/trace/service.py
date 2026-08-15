@@ -7,14 +7,19 @@ payload JSON — тела шагов, отдельный срок хранени
 
 from __future__ import annotations
 
+import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Span, Trace
+
+_log = logging.getLogger("orqion.trace")
 
 
 @dataclass
@@ -50,19 +55,37 @@ async def create_trace(
     workspace_id: str,
     user_id: str | None = None,
 ) -> TraceContext:
-    """Создаёт trace в БД, возвращает контекст."""
-    trace = Trace(
-        workspace_id=workspace_id,
-        user_id=user_id,
-        status="ok",
-    )
-    session.add(trace)
-    await session.flush()
-    return TraceContext(
-        trace_id=trace.id,
-        workspace_id=workspace_id,
-        user_id=user_id,
-    )
+    """Создаёт trace в БД, возвращает контекст.
+
+    S-14: трассировка не должна блокировать чат. При OperationalError
+    (SQLite database is locked) — деградирует: возвращает TraceContext
+    с synthetic trace_id, chat продолжается без trace в БД.
+
+    Использует SAVEPOINT (begin_nested) чтобы при rollback не экспайрить
+    ORM-объекты в родительской сессии (user и т.д.) — иначе последующий
+    lazy-load падает с MissingGreenlet.
+    """
+    try:
+        async with session.begin_nested():
+            trace = Trace(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                status="ok",
+            )
+            session.add(trace)
+            await session.flush()
+            return TraceContext(
+                trace_id=trace.id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+    except OperationalError:
+        _log.warning("Failed to create trace: degrading (database is locked)")
+        return TraceContext(
+            trace_id=str(uuid.uuid4()),
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
 
 
 async def finalize_trace(
@@ -106,11 +129,7 @@ async def finalize_trace(
 
         await session.commit()
     except Exception:  # noqa: BLE001  трассировка не должна блокировать чат
-        import logging
-
-        logging.getLogger("orqion.trace").warning(
-            "Failed to finalize trace: trace_id=%s", ctx.trace_id
-        )
+        _log.warning("Failed to finalize trace: trace_id=%s", ctx.trace_id)
         await session.rollback()
 
 

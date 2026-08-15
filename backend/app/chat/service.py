@@ -15,8 +15,10 @@ S-13: обрыв соединения не теряет учёт; ошибка �
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import json
+import logging
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -24,12 +26,13 @@ from datetime import UTC, datetime
 
 import tiktoken
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import Conversation, Message, Model, Provider, User
 from app.detectors.service import run_detectors
-from app.errors import NotFound, OrqionError
+from app.errors import DatabaseTemporarilyUnavailable, NotFound, OrqionError
 from app.policy.enforce import enforce_all
 from app.policy.models import WILDCARD, Policy
 from app.policy.rate_limiter import RateLimiter
@@ -419,6 +422,8 @@ async def save_messages(
     model: Model,
     workspace_id: str,
     sources: list[SourceEntry] | None = None,
+    max_retries: int = 2,
+    base_backoff_ms: int = 50,
 ) -> tuple[str, str | None]:
     """Сохраняет user-сообщения и ответ модели.
 
@@ -427,7 +432,50 @@ async def save_messages(
     Авто-заголовок: первый пользовательский message → title (обрезка 80 символов).
     assistant_message_id None, если нет содержимого (например, ошибка до стрима).
     sources: RAG-источники, сохраняются в meta assistant-сообщения (TD-5).
+
+    BUG-007: retry при OperationalError (SQLite database is locked).
+    busy_timeout=1000ms + 2 попытки (50ms backoff) → worst-case 2.05s.
+    На исчерпании — raise DatabaseTemporarilyUnavailable(503) — не swallow
+    (save_messages это контент пользователя, catch+warn = молчаливая потеря
+    данных, BUG-010).
     """
+    _log = logging.getLogger("orqion.chat")
+
+    for attempt in range(max_retries):
+        try:
+            async with session.begin_nested():
+                return await _save_messages_impl(
+                    session, chat_ctx, model, workspace_id, sources
+                )
+        except OperationalError:
+            if attempt < max_retries - 1:
+                delay = base_backoff_ms * (2**attempt) / 1000
+                _log.warning(
+                    "save_messages: OperationalError, retry %d/%d after %.3fs",
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+            else:
+                _log.error(
+                    "save_messages: OperationalError, all %d retries exhausted",
+                    max_retries,
+                )
+
+    raise DatabaseTemporarilyUnavailable(
+        hint="Повторите запрос через несколько секунд",
+    )
+
+
+async def _save_messages_impl(
+    session: AsyncSession,
+    chat_ctx: ChatContext,
+    model: Model,
+    workspace_id: str,
+    sources: list[SourceEntry] | None = None,
+) -> tuple[str, str | None]:
+    """Внутренняя реализация save_messages — без retry, вызывается из save_messages."""
     conversation_id = chat_ctx.conversation_id
 
     if conversation_id is None:
@@ -503,5 +551,5 @@ async def save_messages(
     if conv_for_update is not None:
         conv_for_update.last_activity_at = datetime.now(UTC)
 
-    await session.commit()
+    await session.flush()
     return conversation_id, assistant_message_id
