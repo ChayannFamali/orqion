@@ -14,6 +14,7 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.schemas.chat import ChatRequest, ChatResponse, ChatSourceEntry, ChatUsage
@@ -29,7 +30,11 @@ from app.chat.service import (
 from app.config import Settings
 from app.db.models import Model, Provider, Role, User
 from app.db.session import get_session
-from app.errors import DataClassViolation, DatabaseTemporarilyUnavailable, NoRouteAvailable, OrqionError
+from app.errors import (
+    DatabaseTemporarilyUnavailable,
+    DataClassViolation,
+    NoRouteAvailable,
+)
 from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
@@ -37,8 +42,6 @@ from app.rag.pipeline import RagContext, RagState, run_pipeline
 from app.rag.service import resolve_corpus
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
-
-from sqlalchemy.exc import OperationalError
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
 
