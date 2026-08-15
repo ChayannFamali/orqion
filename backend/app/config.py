@@ -99,11 +99,26 @@ class Settings(BaseSettings):
 
         Если ORQION_SESSION_COOKIE_SECURE явно задана в окружении — используется она.
         Иначе: minimal → False (local, no TLS), standard/full → True (network, TLS).
+
+        Защитная сетка (TD-4): если БД — сетевой PostgreSQL (не SQLite) и
+        session_cookie_secure=False, это вероятная неправильная конфигурация
+        (production деплой за HTTPS с insecure cookie). WARN в лог, не блокируем.
         """
+        import logging
         import os
 
         if "ORQION_SESSION_COOKIE_SECURE" not in os.environ:
             self.session_cookie_secure = self.profile != "minimal"
+
+        if not self.session_cookie_secure and not self.database_url.startswith("sqlite"):
+            logging.getLogger("orqion.config").warning(
+                "session_cookie_secure=False with non-SQLite database (%s). "
+                "If this is a production deployment behind HTTPS, set "
+                "ORQION_PROFILE=standard or ORQION_SESSION_COOKIE_SECURE=true "
+                "to prevent session cookies from being sent over HTTP.",
+                self.database_url[:50],
+            )
+
         super().model_post_init(__context)
 
 

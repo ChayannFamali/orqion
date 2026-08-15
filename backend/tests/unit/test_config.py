@@ -117,3 +117,29 @@ def test_session_cookie_secure_explicit_override_false(monkeypatch: pytest.Monke
     settings = Settings()
     assert settings.profile == "standard"
     assert settings.session_cookie_secure is False
+
+
+def test_session_cookie_secure_warning_non_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """TD-4: non-SQLite DB + secure=False → warning в лог."""
+    monkeypatch.delenv("ORQION_SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("ORQION_PROFILE", raising=False)
+    monkeypatch.setenv("ORQION_DATABASE_URL", "postgresql://user:pass@host:5432/db")
+    with caplog.at_level("WARNING", logger="orqion.config"):
+        Settings()
+    assert any("session_cookie_secure=False" in r.message for r in caplog.records)
+
+
+def test_session_cookie_secure_no_warning_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """TD-4: SQLite + secure=False → нет warning (нормально для local dev)."""
+    monkeypatch.delenv("ORQION_SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("ORQION_PROFILE", raising=False)
+    monkeypatch.setenv("ORQION_DATABASE_URL", "sqlite:///./test.db")
+    with caplog.at_level("WARNING", logger="orqion.config"):
+        Settings()
+    assert not any("session_cookie_secure=False" in r.message for r in caplog.records)
