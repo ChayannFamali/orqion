@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import httpx
@@ -15,7 +16,7 @@ import httpx
 async def main() -> None:
     url = "http://localhost:8000"
     email = "admin@orqion.local"
-    password = "Ozws-NkswIvsvb5U5R6qxQ"
+    password = os.environ.get("ORQION_ADMIN_PASSWORD", "HsV-AFvlfADwZiJtOQqGHg")
     concurrent = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     total = int(sys.argv[2]) if len(sys.argv) > 2 else 200
 
