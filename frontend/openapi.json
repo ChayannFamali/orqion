@@ -5633,6 +5633,17 @@
             ],
             "title": "Role Name"
           },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
           "requests": {
             "type": "integer",
             "title": "Requests"
@@ -5659,6 +5670,7 @@
           "user_id",
           "user_email",
           "role_name",
+          "team_name",
           "requests",
           "tokens_in",
           "tokens_out",
@@ -5666,7 +5678,7 @@
           "errors"
         ],
         "title": "UserBreakdown",
-        "description": "Разбивка по пользователям с текущей ролью."
+        "description": "Разбивка по пользователям с текущей ролью и командой."
       },
       "UserDetailResponse": {
         "properties": {

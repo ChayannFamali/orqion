@@ -23,7 +23,7 @@ from app.auth.dependencies import current_user
 from app.db.models import User
 from app.db.session import get_session
 from app.errors import OrqionError
-from app.policy.models import WILDCARD
+from app.policy.models import WILDCARD, Policy
 from app.policy.resolve import resolve_policy
 
 router = APIRouter(
@@ -38,11 +38,15 @@ class AnalyticsForbidden(OrqionError):
     hint = "Требуется право view_analytics"
 
 
-async def _check_access(session: AsyncSession, user: User) -> None:
-    """Проверяет view_analytics через capabilities, не role.name (§5.2)."""
+async def _check_access(session: AsyncSession, user: User) -> Policy:
+    """Проверяет view_analytics через capabilities, не role.name (§5.2).
+
+    Возвращает Policy для проверки is_admin (capabilities=["*"]).
+    """
     policy = await resolve_policy(session, user)
     if WILDCARD not in policy.capabilities and "view_analytics" not in policy.capabilities:
         raise AnalyticsForbidden()
+    return policy
 
 
 def _parse_range(
@@ -83,13 +87,30 @@ async def get_analytics(
     workspace_id = request.app.state.workspace_id
     date_range = _parse_range(start, end)
 
-    summary_dict = await get_summary(session, workspace_id, date_range)
-    by_day_list = await get_by_day(session, workspace_id, date_range)
+    policy = await resolve_policy(session, user)
+    is_admin = WILDCARD in policy.capabilities
+    # Admin: team_filter=None → no filter (sees all).
+    # Non-admin with team: team_filter=user.team_id → filter by team.
+    # Non-admin without team: team_filter="" → matches nothing (sees empty).
+    team_filter = None if is_admin else (user.team_id or "")
+
+    summary_dict = await get_summary(session, workspace_id, date_range, team_filter=team_filter)
+    by_day_list = await get_by_day(session, workspace_id, date_range, team_filter=team_filter)
     by_model_list = await get_by_model(
-        session, workspace_id, date_range, limit=model_limit, sort_by=model_sort
+        session,
+        workspace_id,
+        date_range,
+        limit=model_limit,
+        sort_by=model_sort,
+        team_filter=team_filter,
     )
     by_user_list = await get_by_user(
-        session, workspace_id, date_range, limit=user_limit, sort_by=user_sort
+        session,
+        workspace_id,
+        date_range,
+        limit=user_limit,
+        sort_by=user_sort,
+        team_filter=team_filter,
     )
 
     return AnalyticsResponse(

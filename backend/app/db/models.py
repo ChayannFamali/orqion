@@ -38,11 +38,26 @@ class Role(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     policy: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class Team(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Команда/подразделение для team-scoped аналитики (T-402a).
+
+    Manager видит аналитику только по пользователям своей команды.
+    Team CRUD не входит в T-402a — управляется через admin user management.
+    """
+
+    __tablename__ = "team"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_team_workspace_name"),)
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Пользователь: email, password_hash (nullable для OIDC), role_id, is_active.
 
     auth_method: "local" (password), "oidc" (external IdP), "mixed" (оба способа).
     external_subject/external_issuer — для OIDC-сопоставления (T-404).
+    team_id — команда для manager-scoped аналитики (T-402a). Nullable: NULL = не в команде.
+    ondelete="SET NULL" — удаление команды не блокируется пользователями.
     """
 
     __tablename__ = "user"
@@ -60,6 +75,12 @@ class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     external_issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     refresh_token_enc: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    team_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("team.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):

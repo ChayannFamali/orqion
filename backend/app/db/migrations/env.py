@@ -1,8 +1,12 @@
-"""Alembic env: async-движок, metadata из app.db.models."""
+"""Alembic env: async-движок, metadata из app.db.models.
+
+ORQION_DATABASE_URL env var overrides alembic.ini sqlalchemy.url.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -43,12 +47,15 @@ async def run_migrations_online() -> None:
     section = config.get_section(config.config_ini_section, {})
     url = section.get("sqlalchemy.url", "")
 
+    # ORQION_DATABASE_URL overrides alembic.ini sqlalchemy.url
+    env_url = os.environ.get("ORQION_DATABASE_URL")
+    if env_url:
+        url = env_url
+
     if url.startswith("sqlite://") and "+aiosqlite" not in url:
         section["sqlalchemy.url"] = url.replace("sqlite://", "sqlite+aiosqlite://")
     elif url.startswith("postgresql://") and "+asyncpg" not in url:
-        section["sqlalchemy.url"] = url.replace(
-            "postgresql://", "postgresql+asyncpg://"
-        )
+        section["sqlalchemy.url"] = url.replace("postgresql://", "postgresql+asyncpg://")
 
     connectable = async_engine_from_config(
         section,

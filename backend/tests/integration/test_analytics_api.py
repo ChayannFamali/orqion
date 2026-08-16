@@ -22,6 +22,7 @@ from app.db.models import (
     Model,
     Provider,
     Role,
+    Team,
     UsageDaily,
     User,
 )
@@ -36,6 +37,7 @@ async def _login_with_role(
     role_name: str,
     policy: dict[str, Any] | None = None,
     email: str | None = None,
+    team_id: str | None = None,
 ) -> str:
     factory = app_fixture.state.db_session_factory
     workspace_id = app_fixture.state.workspace_id
@@ -56,6 +58,7 @@ async def _login_with_role(
             email=user_email,
             password_hash=hash_password("password-123"),
             role_id=role.id,
+            team_id=team_id,
         )
         session.add(user)
         await session.flush()
@@ -65,6 +68,44 @@ async def _login_with_role(
 
     api_client.cookies.set(COOKIE_NAME, session_id)
     return user.id
+
+
+async def _create_team(app_fixture: FastAPI, name: str = "Engineering") -> str:
+    """Create a team and return its ID."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        team = Team(
+            workspace_id=workspace_id,
+            name=name,
+        )
+        session.add(team)
+        await session.flush()
+        await session.commit()
+        return team.id
+
+
+async def _create_user_with_team(
+    app_fixture: FastAPI,
+    role_id: str,
+    email: str,
+    team_id: str | None = None,
+) -> str:
+    """Create a user with a given role and team, return user ID."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        user = User(
+            workspace_id=workspace_id,
+            email=email,
+            password_hash=hash_password("password-123"),
+            role_id=role_id,
+            team_id=team_id,
+        )
+        session.add(user)
+        await session.flush()
+        await session.commit()
+        return user.id
 
 
 async def _seed_usage_daily(
@@ -180,7 +221,8 @@ async def test_analytics_summary_with_data(
     app_fixture: FastAPI,
 ) -> None:
     """Summary содержит корректные totals."""
-    user_id = await _login_with_role(api_client, app_fixture, "manager")
+    team_id = await _create_team(app_fixture)
+    user_id = await _login_with_role(api_client, app_fixture, "manager", team_id=team_id)
     model_id = await _seed_provider_and_model(app_fixture)
     await _seed_usage_daily(
         app_fixture,
@@ -222,7 +264,8 @@ async def test_analytics_by_day(
     app_fixture: FastAPI,
 ) -> None:
     """by_day содержит разбивку по дням."""
-    user_id = await _login_with_role(api_client, app_fixture, "manager")
+    team_id = await _create_team(app_fixture)
+    user_id = await _login_with_role(api_client, app_fixture, "manager", team_id=team_id)
     await _seed_provider_and_model(app_fixture)
     await _seed_usage_daily(app_fixture, user_id=user_id, date_str="2026-08-08", requests=10)
     await _seed_usage_daily(app_fixture, user_id=user_id, date_str="2026-08-09", requests=5)
@@ -242,7 +285,8 @@ async def test_analytics_by_model(
     app_fixture: FastAPI,
 ) -> None:
     """by_model содержит разбивку по моделям."""
-    user_id = await _login_with_role(api_client, app_fixture, "manager")
+    team_id = await _create_team(app_fixture)
+    user_id = await _login_with_role(api_client, app_fixture, "manager", team_id=team_id)
     model_id = await _seed_provider_and_model(app_fixture)
     await _seed_usage_daily(
         app_fixture,
@@ -267,7 +311,8 @@ async def test_analytics_by_user_with_role(
     app_fixture: FastAPI,
 ) -> None:
     """by_user содержит текущую роль пользователя (JOIN user → role)."""
-    user_id = await _login_with_role(api_client, app_fixture, "manager")
+    team_id = await _create_team(app_fixture)
+    user_id = await _login_with_role(api_client, app_fixture, "manager", team_id=team_id)
     await _seed_provider_and_model(app_fixture)
     await _seed_usage_daily(
         app_fixture,
@@ -319,7 +364,10 @@ async def test_analytics_multiple_users_separate_rows(
     app_fixture: FastAPI,
 ) -> None:
     """2 пользователя → 2 строки в by_user."""
-    manager_id = await _login_with_role(api_client, app_fixture, "manager", email="m1@orqion.local")
+    team_id = await _create_team(app_fixture)
+    manager_id = await _login_with_role(
+        api_client, app_fixture, "manager", email="m1@orqion.local", team_id=team_id
+    )
     model_id = await _seed_provider_and_model(app_fixture)
     await _seed_usage_daily(
         app_fixture,
@@ -329,7 +377,7 @@ async def test_analytics_multiple_users_separate_rows(
         requests=10,
     )
 
-    # Второй пользователь в том же workspace
+    # Второй пользователь в том же workspace и team
     factory = app_fixture.state.db_session_factory
     workspace_id = app_fixture.state.workspace_id
     async with factory() as session:
@@ -347,6 +395,7 @@ async def test_analytics_multiple_users_separate_rows(
             email="dev1@orqion.local",
             password_hash=hash_password("p"),
             role_id=existing_role.id,
+            team_id=team_id,
         )
         session.add(user2)
         await session.flush()
@@ -365,3 +414,222 @@ async def test_analytics_multiple_users_separate_rows(
     body = response.json()
     by_user = body["by_user"]
     assert len(by_user) == 2
+
+
+# === T-402a: Team-scoped analytics for manager ===
+
+
+@pytest.mark.asyncio
+async def test_manager_sees_only_own_team(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Manager sees only users in their team, not other teams."""
+    team_a = await _create_team(app_fixture, "Engineering")
+    team_b = await _create_team(app_fixture, "Sales")
+
+    model_id = await _seed_provider_and_model(app_fixture)
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+
+    # Create manager in team_a
+    manager_id = await _login_with_role(
+        api_client, app_fixture, "manager", email="mgr@orqion.local", team_id=team_a
+    )
+    await _seed_usage_daily(app_fixture, user_id=manager_id, model_id=model_id, requests=10)
+
+    # Create a developer role first
+    async with factory() as session:
+        dev_role = Role(
+            workspace_id=workspace_id,
+            name="developer",
+            is_builtin=True,
+            policy=BUILTIN_ROLES["developer"].model_dump(),
+        )
+        session.add(dev_role)
+        await session.commit()
+        dev_role_id = dev_role.id
+
+    # Create developer in team_a (same team as manager)
+    dev_a_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_a@orqion.local", team_id=team_a
+    )
+    await _seed_usage_daily(app_fixture, user_id=dev_a_id, model_id=model_id, requests=20)
+
+    # Create developer in team_b (different team)
+    dev_b_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_b@orqion.local", team_id=team_b
+    )
+    await _seed_usage_daily(app_fixture, user_id=dev_b_id, model_id=model_id, requests=30)
+
+    response = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-09")
+    assert response.status_code == 200
+    body = response.json()
+
+    # Manager should see only team_a members (manager + dev_a = 2)
+    by_user = body["by_user"]
+    assert len(by_user) == 2
+    user_ids = {u["user_id"] for u in by_user}
+    assert manager_id in user_ids
+    assert dev_a_id in user_ids
+    assert dev_b_id not in user_ids
+
+    # Summary should reflect only team_a data (10 + 20 = 30 requests)
+    assert body["summary"]["total_requests"] == 30
+
+
+@pytest.mark.asyncio
+async def test_admin_sees_all_teams(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Admin sees all users across all teams."""
+    team_a = await _create_team(app_fixture, "Engineering")
+    team_b = await _create_team(app_fixture, "Sales")
+    model_id = await _seed_provider_and_model(app_fixture)
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+
+    # Login as admin
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    # Create users in both teams
+    async with factory() as session:
+        dev_role = Role(
+            workspace_id=workspace_id,
+            name="developer",
+            is_builtin=True,
+            policy=BUILTIN_ROLES["developer"].model_dump(),
+        )
+        session.add(dev_role)
+        await session.commit()
+        dev_role_id = dev_role.id
+
+    dev_a_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_a@orqion.local", team_id=team_a
+    )
+    dev_b_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_b@orqion.local", team_id=team_b
+    )
+
+    await _seed_usage_daily(app_fixture, user_id=dev_a_id, model_id=model_id, requests=10)
+    await _seed_usage_daily(app_fixture, user_id=dev_b_id, model_id=model_id, requests=20)
+
+    response = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-09")
+    assert response.status_code == 200
+    body = response.json()
+
+    # Admin should see both teams
+    by_user = body["by_user"]
+    user_ids = {u["user_id"] for u in by_user}
+    assert dev_a_id in user_ids
+    assert dev_b_id in user_ids
+    assert body["summary"]["total_requests"] == 30
+
+
+@pytest.mark.asyncio
+async def test_manager_without_team_sees_empty(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Manager without team_id sees empty analytics (0 results)."""
+    model_id = await _seed_provider_and_model(app_fixture)
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+
+    # Login as manager WITHOUT team_id (NULL)
+    manager_id = await _login_with_role(
+        api_client, app_fixture, "manager", email="mgr_noteam@orqion.local"
+    )
+    await _seed_usage_daily(app_fixture, user_id=manager_id, model_id=model_id, requests=10)
+
+    # Create another user with no team
+    async with factory() as session:
+        dev_role = Role(
+            workspace_id=workspace_id,
+            name="developer",
+            is_builtin=True,
+            policy=BUILTIN_ROLES["developer"].model_dump(),
+        )
+        session.add(dev_role)
+        await session.commit()
+        dev_role_id = dev_role.id
+
+    dev_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev@orqion.local", team_id=None
+    )
+
+    await _seed_usage_daily(app_fixture, user_id=dev_id, model_id=model_id, requests=20)
+
+    response = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-09")
+    assert response.status_code == 200
+    body = response.json()
+
+    # Manager with NULL team_id sees nothing (no team to filter by)
+    assert body["summary"]["total_requests"] == 0
+    assert body["by_user"] == []
+    assert body["by_model"] == []
+    assert body["by_day"] == []
+
+
+@pytest.mark.asyncio
+async def test_analytics_by_user_includes_team_name(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """by_user response includes team_name from JOIN User → Team."""
+    team_a = await _create_team(app_fixture, "Engineering")
+    model_id = await _seed_provider_and_model(app_fixture)
+
+    manager_id = await _login_with_role(
+        api_client, app_fixture, "manager", email="mgr@orqion.local", team_id=team_a
+    )
+    await _seed_usage_daily(app_fixture, user_id=manager_id, model_id=model_id, requests=10)
+
+    response = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-09")
+    body = response.json()
+    by_user = body["by_user"]
+    assert len(by_user) == 1
+    assert by_user[0]["team_name"] == "Engineering"
+
+
+@pytest.mark.asyncio
+async def test_admin_sees_team_name_in_by_user(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Admin sees team_name for all users, including NULL team_id users."""
+    team_a = await _create_team(app_fixture, "Engineering")
+    model_id = await _seed_provider_and_model(app_fixture)
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+
+    await _login_with_role(api_client, app_fixture, "admin")
+
+    async with factory() as session:
+        dev_role = Role(
+            workspace_id=workspace_id,
+            name="developer",
+            is_builtin=True,
+            policy=BUILTIN_ROLES["developer"].model_dump(),
+        )
+        session.add(dev_role)
+        await session.commit()
+        dev_role_id = dev_role.id
+
+    dev_a_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_a@orqion.local", team_id=team_a
+    )
+    dev_b_id = await _create_user_with_team(
+        app_fixture, dev_role_id, "dev_b@orqion.local", team_id=None
+    )
+
+    await _seed_usage_daily(app_fixture, user_id=dev_a_id, model_id=model_id, requests=10)
+    await _seed_usage_daily(app_fixture, user_id=dev_b_id, model_id=model_id, requests=20)
+
+    response = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-09")
+    body = response.json()
+    by_user = {u["user_id"]: u for u in body["by_user"]}
+
+    assert by_user[dev_a_id]["team_name"] == "Engineering"
+    assert by_user[dev_b_id]["team_name"] is None

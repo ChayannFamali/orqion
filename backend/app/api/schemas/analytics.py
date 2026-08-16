@@ -41,11 +41,12 @@ class ModelBreakdown(BaseModel):
 
 
 class UserBreakdown(BaseModel):
-    """Разбивка по пользователям с текущей ролью."""
+    """Разбивка по пользователям с текущей ролью и командой."""
 
     user_id: str | None
     user_email: str | None
     role_name: str | None
+    team_name: str | None
     requests: int
     tokens_in: int
     tokens_out: int

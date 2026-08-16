@@ -401,6 +401,7 @@ function UsersTab({
                 <tr className="border-b border-border">
                   <th className="px-2 py-1 text-left">Пользователь</th>
                   <th className="px-2 py-1 text-left">Роль</th>
+                  <th className="px-2 py-1 text-left">Команда</th>
                   <th className="px-2 py-1 text-right">Запросы</th>
                   <th className="px-2 py-1 text-right">Токены</th>
                   <th className="px-2 py-1 text-right">Расход</th>
@@ -423,6 +424,7 @@ function UsersTab({
                   >
                     <td className="px-2 py-1">{userLabel(u)}</td>
                     <td className="px-2 py-1 text-muted-foreground">{u.role_name ?? "—"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{u.team_name ?? "—"}</td>
                     <td className="px-2 py-1 text-right font-mono">
                       {formatNumber(u.requests)}
                     </td>

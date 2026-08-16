@@ -3,10 +3,11 @@
 arch.md §5.3: источник — usage_daily, не сырые события.
 Роль подтягивается через JOIN user → role, текущая на момент запроса.
 
-MVP-упрощение: manager видит весь workspace, как admin. Фильтрация по
-подразделению/команде не реализована — нет поля team/department на User.
-См. T-402a. Когда будет добавлено — фильтр по user.team_id должен быть
-на уровне SQL WHERE, не пост-обработкой.
+T-402a: team_filter — when not None, JOIN usage_daily → user and filter by
+user.team_id. Admin (capabilities=["*"]) passes team_filter=None → sees all.
+Manager passes team_filter=user.team_id → sees only their team.
+NULL team_id rows are excluded for manager (sentinel UUID from BUG-008
+naturally falls out — no matching user row).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Model, Role, UsageDaily, User
+from app.db.models import Model, Role, Team, UsageDaily, User
 
 
 @dataclass(frozen=True)
@@ -26,33 +27,47 @@ class DateRange:
     end: str  # ISO date "2026-08-09"
 
 
+def _team_filter_conditions(
+    workspace_id: str, date_range: DateRange, team_filter: str | None
+) -> list[Any]:
+    """Base WHERE conditions + optional team filter."""
+    conditions: list[Any] = [
+        UsageDaily.workspace_id == workspace_id,
+        UsageDaily.date >= date_range.start,
+        UsageDaily.date <= date_range.end,
+    ]
+    if team_filter is not None:
+        conditions.append(User.team_id == team_filter)
+    return conditions
+
+
 async def get_summary(
     session: AsyncSession,
     workspace_id: str,
     date_range: DateRange,
+    team_filter: str | None = None,
 ) -> dict[str, Any]:
     """Сводка за период: totals по всем дням.
 
     avg_latency_ms — взвешенное среднее по requests (TD-11):
     SUM(avg_latency_ms * requests) / SUM(requests), не невзвешенное AVG.
     """
-    result = await session.execute(
-        select(
-            func.coalesce(func.sum(UsageDaily.requests), 0).label("total_requests"),
-            func.coalesce(func.sum(UsageDaily.tokens_in), 0).label("total_tokens_in"),
-            func.coalesce(func.sum(UsageDaily.tokens_out), 0).label("total_tokens_out"),
-            func.coalesce(func.sum(UsageDaily.cost), 0.0).label("total_cost"),
-            func.coalesce(func.sum(UsageDaily.errors), 0).label("total_errors"),
-            (
-                func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
-                / func.nullif(func.sum(UsageDaily.requests), 0)
-            ).label("avg_latency_ms"),
-        ).where(
-            UsageDaily.workspace_id == workspace_id,
-            UsageDaily.date >= date_range.start,
-            UsageDaily.date <= date_range.end,
-        )
+    conditions = _team_filter_conditions(workspace_id, date_range, team_filter)
+    query = select(
+        func.coalesce(func.sum(UsageDaily.requests), 0).label("total_requests"),
+        func.coalesce(func.sum(UsageDaily.tokens_in), 0).label("total_tokens_in"),
+        func.coalesce(func.sum(UsageDaily.tokens_out), 0).label("total_tokens_out"),
+        func.coalesce(func.sum(UsageDaily.cost), 0.0).label("total_cost"),
+        func.coalesce(func.sum(UsageDaily.errors), 0).label("total_errors"),
+        (
+            func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
+            / func.nullif(func.sum(UsageDaily.requests), 0)
+        ).label("avg_latency_ms"),
     )
+    if team_filter is not None:
+        query = query.outerjoin(User, UsageDaily.user_id == User.id)
+    query = query.where(*conditions)
+    result = await session.execute(query)
     row = result.one()
     avg_lat = row.avg_latency_ms
     return {
@@ -69,29 +84,26 @@ async def get_by_day(
     session: AsyncSession,
     workspace_id: str,
     date_range: DateRange,
+    team_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """Разбивка по дням. avg_latency_ms — взвешенное по requests (TD-11)."""
-    result = await session.execute(
-        select(
-            UsageDaily.date,
-            func.sum(UsageDaily.requests).label("requests"),
-            func.sum(UsageDaily.tokens_in).label("tokens_in"),
-            func.sum(UsageDaily.tokens_out).label("tokens_out"),
-            func.sum(UsageDaily.cost).label("cost"),
-            func.sum(UsageDaily.errors).label("errors"),
-            (
-                func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
-                / func.nullif(func.sum(UsageDaily.requests), 0)
-            ).label("avg_latency_ms"),
-        )
-        .where(
-            UsageDaily.workspace_id == workspace_id,
-            UsageDaily.date >= date_range.start,
-            UsageDaily.date <= date_range.end,
-        )
-        .group_by(UsageDaily.date)
-        .order_by(UsageDaily.date)
+    conditions = _team_filter_conditions(workspace_id, date_range, team_filter)
+    query = select(
+        UsageDaily.date,
+        func.sum(UsageDaily.requests).label("requests"),
+        func.sum(UsageDaily.tokens_in).label("tokens_in"),
+        func.sum(UsageDaily.tokens_out).label("tokens_out"),
+        func.sum(UsageDaily.cost).label("cost"),
+        func.sum(UsageDaily.errors).label("errors"),
+        (
+            func.coalesce(func.sum(UsageDaily.avg_latency_ms * UsageDaily.requests), 0)
+            / func.nullif(func.sum(UsageDaily.requests), 0)
+        ).label("avg_latency_ms"),
     )
+    if team_filter is not None:
+        query = query.outerjoin(User, UsageDaily.user_id == User.id)
+    query = query.where(*conditions).group_by(UsageDaily.date).order_by(UsageDaily.date)
+    result = await session.execute(query)
     rows = result.all()
     return [
         {
@@ -121,25 +133,24 @@ async def get_by_model(
     date_range: DateRange,
     limit: int | None = None,
     sort_by: str = "requests",
+    team_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """Разбивка по моделям. sort_by: requests|cost|tokens|errors (TD-11)."""
     order_col = _SORT_COLUMNS.get(sort_by, func.sum(UsageDaily.requests))
+    conditions = _team_filter_conditions(workspace_id, date_range, team_filter)
+    query = select(
+        UsageDaily.model_id,
+        Model.alias.label("model_alias"),
+        func.sum(UsageDaily.requests).label("requests"),
+        func.sum(UsageDaily.tokens_in).label("tokens_in"),
+        func.sum(UsageDaily.tokens_out).label("tokens_out"),
+        func.sum(UsageDaily.cost).label("cost"),
+        func.sum(UsageDaily.errors).label("errors"),
+    ).outerjoin(Model, UsageDaily.model_id == Model.id)
+    if team_filter is not None:
+        query = query.outerjoin(User, UsageDaily.user_id == User.id)
     query = (
-        select(
-            UsageDaily.model_id,
-            Model.alias.label("model_alias"),
-            func.sum(UsageDaily.requests).label("requests"),
-            func.sum(UsageDaily.tokens_in).label("tokens_in"),
-            func.sum(UsageDaily.tokens_out).label("tokens_out"),
-            func.sum(UsageDaily.cost).label("cost"),
-            func.sum(UsageDaily.errors).label("errors"),
-        )
-        .outerjoin(Model, UsageDaily.model_id == Model.id)
-        .where(
-            UsageDaily.workspace_id == workspace_id,
-            UsageDaily.date >= date_range.start,
-            UsageDaily.date <= date_range.end,
-        )
+        query.where(*conditions)
         .group_by(UsageDaily.model_id, Model.alias)
         .order_by(order_col.desc())
     )
@@ -167,17 +178,21 @@ async def get_by_user(
     date_range: DateRange,
     limit: int | None = None,
     sort_by: str = "requests",
+    team_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """Разбивка по пользователям с текущей ролью (JOIN user → role).
 
     sort_by: requests|cost|tokens|errors (TD-11).
+    team_filter: when not None, filter by user.team_id (T-402a).
     """
     order_col = _SORT_COLUMNS.get(sort_by, func.sum(UsageDaily.requests))
+    conditions = _team_filter_conditions(workspace_id, date_range, team_filter)
     query = (
         select(
             UsageDaily.user_id,
             User.email.label("user_email"),
             Role.name.label("role_name"),
+            Team.name.label("team_name"),
             func.sum(UsageDaily.requests).label("requests"),
             func.sum(UsageDaily.tokens_in).label("tokens_in"),
             func.sum(UsageDaily.tokens_out).label("tokens_out"),
@@ -186,12 +201,11 @@ async def get_by_user(
         )
         .outerjoin(User, UsageDaily.user_id == User.id)
         .outerjoin(Role, User.role_id == Role.id)
-        .where(
-            UsageDaily.workspace_id == workspace_id,
-            UsageDaily.date >= date_range.start,
-            UsageDaily.date <= date_range.end,
-        )
-        .group_by(UsageDaily.user_id, User.email, Role.name)
+        .outerjoin(Team, User.team_id == Team.id)
+    )
+    query = (
+        query.where(*conditions)
+        .group_by(UsageDaily.user_id, User.email, Role.name, Team.name)
         .order_by(order_col.desc())
     )
     if limit is not None:
@@ -203,6 +217,7 @@ async def get_by_user(
             "user_id": row.user_id,
             "user_email": row.user_email,
             "role_name": row.role_name,
+            "team_name": row.team_name,
             "requests": int(row.requests or 0),
             "tokens_in": int(row.tokens_in or 0),
             "tokens_out": int(row.tokens_out or 0),

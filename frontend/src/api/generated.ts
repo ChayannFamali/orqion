@@ -2037,7 +2037,7 @@ export interface components {
         };
         /**
          * UserBreakdown
-         * @description Разбивка по пользователям с текущей ролью.
+         * @description Разбивка по пользователям с текущей ролью и командой.
          */
         UserBreakdown: {
             /** User Id */
@@ -2046,6 +2046,8 @@ export interface components {
             user_email: string | null;
             /** Role Name */
             role_name: string | null;
+            /** Team Name */
+            team_name: string | null;
             /** Requests */
             requests: number;
             /** Tokens In */
