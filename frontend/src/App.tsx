@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useCurrentUser } from "./hooks/useAuth";
 import { LoginPage } from "./pages/LoginPage";
 import { AppLayout } from "./components/AppLayout";
+import { ChangePasswordModal } from "./pages/UsersPage";
 
 export default function App() {
   const { data, isLoading, isError } = useCurrentUser();
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   if (isLoading) {
     return (
@@ -16,6 +19,14 @@ export default function App() {
 
   if (isError || !data) {
     return <LoginPage />;
+  }
+
+  if (data.must_change_password && !passwordChanged) {
+    return (
+      <ChangePasswordModal
+        onClose={() => setPasswordChanged(true)}
+      />
+    );
   }
 
   return (

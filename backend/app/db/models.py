@@ -81,6 +81,9 @@ class User(Base, IdMixin, TimestampMixin, WorkspaceMixin):
         nullable=True,
         index=True,
     )
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
 
 class Session(Base, IdMixin, TimestampMixin, WorkspaceMixin):

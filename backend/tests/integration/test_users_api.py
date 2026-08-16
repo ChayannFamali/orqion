@@ -594,3 +594,411 @@ async def test_me_without_impersonation(
     data = resp.json()
     assert data["is_impersonating"] is False
     assert data["impersonated_by_email"] is None
+
+
+# ---------------------------------------------------------------------------
+# TD-10: Create user via API + change password
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_user_success(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/users — admin creates user, gets password in response."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "newdev@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "newdev@orqion.local"
+    assert data["is_active"] is True
+    assert data["must_change_password"] is True
+    assert "password" in data
+    assert len(data["password"]) > 10
+    assert data["role_name"] == "admin"
+
+    # Password is not stored in plaintext
+    async with factory() as session:
+        result = await session.execute(select(User).where(User.email == "newdev@orqion.local"))
+        user = result.scalar_one()
+        assert user.password_hash != data["password"]
+        assert user.must_change_password is True
+
+
+@pytest.mark.asyncio
+async def test_create_user_audit_log(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/users — audit_log entry user.created without password."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "auditme@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    async with factory() as session:
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "user.created",
+            )
+        )
+        entries = result.scalars().all()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.object_type == "user"
+        assert entry.meta["email"] == "auditme@orqion.local"
+        assert "password" not in entry.meta
+        # Password must not leak into audit meta
+        assert data["password"] not in str(entry.meta)
+
+
+@pytest.mark.asyncio
+async def test_create_user_duplicate_email(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/users — duplicate email → 400."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    # First create succeeds
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "dup@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 200
+
+    # Second create with same email → 400
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "dup@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_non_admin_forbidden(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/users — non-admin → 404."""
+    await _login_as_role(api_client, app_fixture, "developer")
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "developer").limit(1)
+        )
+        dev_role = result.scalar_one()
+
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "nope@orqion.local", "role_id": dev_role.id},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_login_returns_must_change_password(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Login response includes must_change_password flag."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "mustchange@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 200
+    password = response.json()["password"]
+
+    # Logout admin
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+
+    # Login as new user
+    login_resp = await api_client.post(
+        "/api/auth/login",
+        json={"email": "mustchange@orqion.local", "password": password},
+    )
+    assert login_resp.status_code == 200
+    login_data = login_resp.json()
+    assert login_data["user"]["must_change_password"] is True
+
+
+@pytest.mark.asyncio
+async def test_change_password_success(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/auth/change-password — changes password, clears flag."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    # Create user
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "chgpass@orqion.local", "role_id": admin_role.id},
+    )
+    assert response.status_code == 200
+    old_password = response.json()["password"]
+
+    # Logout admin, login as new user
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+    await api_client.post(
+        "/api/auth/login",
+        json={"email": "chgpass@orqion.local", "password": old_password},
+    )
+
+    # Change password
+    new_password = "brand-new-secure-password-999"
+    change_resp = await api_client.post(
+        "/api/auth/change-password",
+        json={"old_password": old_password, "new_password": new_password},
+    )
+    assert change_resp.status_code == 200
+    assert change_resp.json()["status"] == "ok"
+
+    # Verify must_change_password is cleared
+    async with factory() as session:
+        result = await session.execute(select(User).where(User.email == "chgpass@orqion.local"))
+        user = result.scalar_one()
+        assert user.must_change_password is False
+
+    # Verify old password no longer works
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+    old_login = await api_client.post(
+        "/api/auth/login",
+        json={"email": "chgpass@orqion.local", "password": old_password},
+    )
+    assert old_login.status_code == 401
+
+    # Verify new password works
+    new_login = await api_client.post(
+        "/api/auth/login",
+        json={"email": "chgpass@orqion.local", "password": new_password},
+    )
+    assert new_login.status_code == 200
+    assert new_login.json()["user"]["must_change_password"] is False
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_old(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/auth/change-password — wrong old password → 400."""
+    await _login_as_admin(api_client, app_fixture)
+
+    change_resp = await api_client.post(
+        "/api/auth/change-password",
+        json={"old_password": "wrong-password", "new_password": "new-pass-123"},
+    )
+    assert change_resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_change_password_same_as_old(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """POST /api/auth/change-password — same password → 400."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    # Create user
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "samepass@orqion.local", "role_id": admin_role.id},
+    )
+    old_password = response.json()["password"]
+
+    # Logout admin, login as new user
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+    await api_client.post(
+        "/api/auth/login",
+        json={"email": "samepass@orqion.local", "password": old_password},
+    )
+
+    # Try same password
+    change_resp = await api_client.post(
+        "/api/auth/change-password",
+        json={"old_password": old_password, "new_password": old_password},
+    )
+    assert change_resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_change_password_invalidates_other_sessions(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Change password invalidates all other sessions except current."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    # Create user
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "multisess@orqion.local", "role_id": admin_role.id},
+    )
+    old_password = response.json()["password"]
+    user_id = response.json()["id"]
+
+    # Create two sessions for the new user (simulating login from two devices)
+    async with factory() as session:
+        await create_session(session, user_id, ws_id, Settings())
+        await create_session(session, user_id, ws_id, Settings())
+        await session.commit()
+
+    # Verify both sessions exist
+    async with factory() as session:
+        result = await session.execute(select(Session).where(Session.user_id == user_id))
+        all_sessions = result.scalars().all()
+        assert len(all_sessions) >= 2
+
+    # Login as new user (creates current session)
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+    await api_client.post(
+        "/api/auth/login",
+        json={"email": "multisess@orqion.local", "password": old_password},
+    )
+
+    # Change password — should invalidate all other sessions
+    new_password = "completely-new-password-456"
+    change_resp = await api_client.post(
+        "/api/auth/change-password",
+        json={"old_password": old_password, "new_password": new_password},
+    )
+    assert change_resp.status_code == 200
+
+    # Verify only current session remains
+    async with factory() as session:
+        result = await session.execute(select(Session).where(Session.user_id == user_id))
+        remaining = result.scalars().all()
+        assert len(remaining) == 1
+        current_cookie = api_client.cookies.get(COOKIE_NAME)
+        assert remaining[0].id == current_cookie
+
+
+@pytest.mark.asyncio
+async def test_change_password_audit_log(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Change password writes user.password_changed to audit_log."""
+    await _login_as_admin(api_client, app_fixture)
+    factory = app_fixture.state.db_session_factory
+    ws_id = app_fixture.state.workspace_id
+
+    async with factory() as session:
+        result = await session.execute(
+            select(Role).where(Role.workspace_id == ws_id, Role.name == "admin").limit(1)
+        )
+        admin_role = result.scalar_one()
+
+    # Create user
+    response = await api_client.post(
+        "/api/users",
+        json={"email": "auditpass@orqion.local", "role_id": admin_role.id},
+    )
+    old_password = response.json()["password"]
+    user_id = response.json()["id"]
+
+    # Logout admin, login as new user
+    await api_client.post("/api/auth/logout")
+    api_client.cookies.clear()
+    await api_client.post(
+        "/api/auth/login",
+        json={"email": "auditpass@orqion.local", "password": old_password},
+    )
+
+    # Change password
+    change_resp = await api_client.post(
+        "/api/auth/change-password",
+        json={"old_password": old_password, "new_password": "new-audit-pass-789"},
+    )
+    assert change_resp.status_code == 200
+
+    # Verify audit_log
+    async with factory() as session:
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.workspace_id == ws_id,
+                AuditLog.action == "user.password_changed",
+                AuditLog.object_id == user_id,
+            )
+        )
+        entries = result.scalars().all()
+        assert len(entries) == 1
+        assert entries[0].actor_user_id == user_id
+        # No password content in meta
+        assert "password" not in entries[0].meta

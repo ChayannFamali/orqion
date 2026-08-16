@@ -138,6 +138,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Смена пароля текущим пользователем (TD-10).
+         *
+         *     Проверяет старый пароль, устанавливает новый, сбрасывает must_change_password.
+         *     Инвалидирует все прочие сессии пользователя (кроме текущей) — защита от
+         *     сценария, когда недоверенный пароль был перехвачен и использован до смены.
+         *     audit_log: user.password_changed (факт, без содержимого пароля).
+         */
+        post: operations["change_password_api_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics": {
         parameters: {
             query?: never;
@@ -934,7 +959,15 @@ export interface paths {
         /** List Users */
         get: operations["list_users_api_users_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create User
+         * @description Создание пользователя (TD-10).
+         *
+         *     Генерирует случайный пароль, показывает его в ответе один раз.
+         *     must_change_password=True — требуется смена при первом входе.
+         *     audit_log: user.created (без пароля, только факт).
+         */
+        post: operations["create_user_api_users_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1084,6 +1117,18 @@ export interface components {
              * Status
              * @default building
              */
+            status: string;
+        };
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Old Password */
+            old_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** ChangePasswordResponse */
+        ChangePasswordResponse: {
+            /** Status */
             status: string;
         };
         /** ChatMessage */
@@ -2060,6 +2105,40 @@ export interface components {
             errors: number;
         };
         /**
+         * UserCreateRequest
+         * @description Создание пользователя (TD-10).
+         */
+        UserCreateRequest: {
+            /** Email */
+            email: string;
+            /** Role Id */
+            role_id: string;
+            /** Team Id */
+            team_id?: string | null;
+        };
+        /**
+         * UserCreateResponse
+         * @description Ответ при создании пользователя — password показывается один раз.
+         */
+        UserCreateResponse: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Role Id */
+            role_id: string;
+            /** Role Name */
+            role_name: string;
+            /** Team Id */
+            team_id?: string | null;
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Password */
+            password: string;
+        };
+        /**
          * UserDetailResponse
          * @description Детали пользователя.
          */
@@ -2076,6 +2155,15 @@ export interface components {
             role_name: string;
             /** Is Builtin Role */
             is_builtin_role: boolean;
+            /** Team Id */
+            team_id?: string | null;
+            /** Team Name */
+            team_name?: string | null;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
         };
         /**
          * UserListItem
@@ -2094,6 +2182,15 @@ export interface components {
             role_name: string;
             /** Is Builtin Role */
             is_builtin_role: boolean;
+            /** Team Id */
+            team_id?: string | null;
+            /** Team Name */
+            team_name?: string | null;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
         };
         /**
          * UserListResponse
@@ -2120,16 +2217,23 @@ export interface components {
             is_impersonating: boolean;
             /** Impersonated By Email */
             impersonated_by_email?: string | null;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
         };
         /**
          * UserUpdate
-         * @description Обновление пользователя. role_id и/или is_active.
+         * @description Обновление пользователя. role_id, is_active, team_id.
          */
         UserUpdate: {
             /** Role Id */
             role_id?: string | null;
             /** Is Active */
             is_active?: boolean | null;
+            /** Team Id */
+            team_id?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2309,6 +2413,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangePasswordResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3933,6 +4070,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserListResponse"];
+                };
+            };
+        };
+    };
+    create_user_api_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

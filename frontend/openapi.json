@@ -207,6 +207,48 @@
         }
       }
     },
+    "/api/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change Password",
+        "description": "Смена пароля текущим пользователем (TD-10).\n\nПроверяет старый пароль, устанавливает новый, сбрасывает must_change_password.\nИнвалидирует все прочие сессии пользователя (кроме текущей) — защита от\nсценария, когда недоверенный пароль был перехвачен и использован до смены.\naudit_log: user.password_changed (факт, без содержимого пароля).",
+        "operationId": "change_password_api_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangePasswordResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics": {
       "get": {
         "tags": [
@@ -2599,6 +2641,46 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create User",
+        "description": "Создание пользователя (TD-10).\n\nГенерирует случайный пароль, показывает его в ответе один раз.\nmust_change_password=True — требуется смена при первом входе.\naudit_log: user.created (без пароля, только факт).",
+        "operationId": "create_user_api_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/users/{user_id}": {
@@ -2996,6 +3078,37 @@
         ],
         "title": "BuildResponse",
         "description": "Ответ на запуск сборки индекса (202 Accepted)."
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "old_password": {
+            "type": "string",
+            "title": "Old Password"
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordRequest"
+      },
+      "ChangePasswordResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ChangePasswordResponse"
       },
       "ChatMessage": {
         "properties": {
@@ -5680,6 +5793,91 @@
         "title": "UserBreakdown",
         "description": "Разбивка по пользователям с текущей ролью и командой."
       },
+      "UserCreateRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "role_id"
+        ],
+        "title": "UserCreateRequest",
+        "description": "Создание пользователя (TD-10)."
+      },
+      "UserCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "role_id": {
+            "type": "string",
+            "title": "Role Id"
+          },
+          "role_name": {
+            "type": "string",
+            "title": "Role Name"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "is_active",
+          "role_id",
+          "role_name",
+          "must_change_password",
+          "password"
+        ],
+        "title": "UserCreateResponse",
+        "description": "Ответ при создании пользователя — password показывается один раз."
+      },
       "UserDetailResponse": {
         "properties": {
           "id": {
@@ -5705,6 +5903,33 @@
           "is_builtin_role": {
             "type": "boolean",
             "title": "Is Builtin Role"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           }
         },
         "type": "object",
@@ -5744,6 +5969,33 @@
           "is_builtin_role": {
             "type": "boolean",
             "title": "Is Builtin Role"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           }
         },
         "type": "object",
@@ -5811,6 +6063,11 @@
               }
             ],
             "title": "Impersonated By Email"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           }
         },
         "type": "object",
@@ -5845,11 +6102,22 @@
               }
             ],
             "title": "Is Active"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           }
         },
         "type": "object",
         "title": "UserUpdate",
-        "description": "Обновление пользователя. role_id и/или is_active."
+        "description": "Обновление пользователя. role_id, is_active, team_id."
       },
       "ValidationError": {
         "properties": {

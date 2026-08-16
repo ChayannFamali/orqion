@@ -16,6 +16,9 @@ function makeUser(overrides: Partial<UserListResponse["users"][0]> = {}) {
     role_id: "r1",
     role_name: "developer",
     is_builtin_role: true,
+    team_id: null,
+    team_name: null,
+    must_change_password: false,
     ...overrides,
   };
 }

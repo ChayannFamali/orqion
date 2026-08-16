@@ -71,6 +71,9 @@ export interface UserListItem {
   role_id: string;
   role_name: string;
   is_builtin_role: boolean;
+  team_id: string | null;
+  team_name: string | null;
+  must_change_password: boolean;
 }
 
 /** Список пользователей (T-311). */
@@ -86,12 +89,46 @@ export interface UserDetailResponse {
   role_id: string;
   role_name: string;
   is_builtin_role: boolean;
+  team_id: string | null;
+  team_name: string | null;
+  must_change_password: boolean;
 }
 
 /** Обновление пользователя (T-311). */
 export interface UserUpdate {
   role_id?: string;
   is_active?: boolean;
+  team_id?: string | null;
+}
+
+/** Создание пользователя (TD-10). Не из OpenAPI. */
+export interface UserCreateRequest {
+  email: string;
+  role_id: string;
+  team_id?: string | null;
+}
+
+/** Ответ при создании — password показывается один раз (TD-10). */
+export interface UserCreateResponse {
+  id: string;
+  email: string;
+  is_active: boolean;
+  role_id: string;
+  role_name: string;
+  team_id: string | null;
+  must_change_password: boolean;
+  password: string;
+}
+
+/** Смена пароля (TD-10). */
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+/** Ответ смены пароля (TD-10). */
+export interface ChangePasswordResponse {
+  status: string;
 }
 
 /** Корпус (T-312). */

@@ -17,7 +17,17 @@ class UserResponse(BaseModel):
     capabilities: list[str]
     is_impersonating: bool = False
     impersonated_by_email: str | None = None
+    must_change_password: bool = False
 
 
 class LoginResponse(BaseModel):
     user: UserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class ChangePasswordResponse(BaseModel):
+    status: str

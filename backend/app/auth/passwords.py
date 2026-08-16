@@ -1,6 +1,8 @@
-"""Хеширование паролей argon2id."""
+"""Хеширование паролей argon2id + генерация случайных паролей."""
 
 from __future__ import annotations
+
+import secrets
 
 from argon2 import PasswordHasher
 from argon2.exceptions import Argon2Error, VerifyMismatchError
@@ -12,6 +14,11 @@ _hasher = PasswordHasher(
     hash_len=32,
     salt_len=16,
 )
+
+
+def generate_random_password() -> str:
+    """Генерирует случайный пароль (~128 бит энтропии, ~22 символа ASCII)."""
+    return secrets.token_urlsafe(16)
 
 
 def hash_password(password: str) -> str:

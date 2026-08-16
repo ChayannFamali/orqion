@@ -1,8 +1,8 @@
-"""GET /api/users, GET /api/users/{id}, PATCH /api/users/{id}, POST /api/users/{id}/impersonate.
+"""GET /api/users, GET /api/users/{id}, PATCH /api/users/{id}, POST /api/users, POST /api/users/{id}/impersonate.
 
 Access control: только admin (через "*" в capabilities).
 Non-admin → 404 (прецедент T-308/T-310).
-audit_log: user.role_changed, user.status_changed.
+audit_log: user.created, user.role_changed, user.status_changed.
 Self-edit блок: любой PATCH на собственный id → 400.
 """
 
@@ -13,6 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.user import (
+    UserCreateRequest,
+    UserCreateResponse,
     UserDetailResponse,
     UserListItem,
     UserListResponse,
@@ -21,9 +23,10 @@ from app.api.schemas.user import (
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.auth.impersonate import impersonate
+from app.auth.passwords import generate_random_password, hash_password
 from app.auth.sessions import COOKIE_NAME
 from app.config import Settings
-from app.db.models import Role, User
+from app.db.models import Role, Team, User
 from app.db.session import get_session
 from app.errors import BadRequest, NotFound
 from app.policy.models import WILDCARD
@@ -44,19 +47,20 @@ async def _check_admin(session: AsyncSession, user: User) -> bool:
 
 async def _get_user_with_role(
     session: AsyncSession, workspace_id: str, user_id: str
-) -> tuple[User, Role] | None:
+) -> tuple[User, Role, Team | None] | None:
     result = await session.execute(
-        select(User, Role)
+        select(User, Role, Team)
         .join(Role, User.role_id == Role.id)
+        .outerjoin(Team, User.team_id == Team.id)
         .where(User.id == user_id, User.workspace_id == workspace_id)
     )
     row = result.first()
     if row is None:
         return None
-    return row[0], row[1]
+    return row[0], row[1], row[2]
 
 
-def _to_list_item(user: User, role: Role) -> UserListItem:
+def _to_list_item(user: User, role: Role, team: Team | None = None) -> UserListItem:
     return UserListItem(
         id=user.id,
         email=user.email,
@@ -64,10 +68,13 @@ def _to_list_item(user: User, role: Role) -> UserListItem:
         role_id=role.id,
         role_name=role.name,
         is_builtin_role=role.is_builtin,
+        team_id=user.team_id,
+        team_name=team.name if team else None,
+        must_change_password=user.must_change_password,
     )
 
 
-def _to_detail_response(user: User, role: Role) -> UserDetailResponse:
+def _to_detail_response(user: User, role: Role, team: Team | None = None) -> UserDetailResponse:
     return UserDetailResponse(
         id=user.id,
         email=user.email,
@@ -75,6 +82,103 @@ def _to_detail_response(user: User, role: Role) -> UserDetailResponse:
         role_id=role.id,
         role_name=role.name,
         is_builtin_role=role.is_builtin,
+        team_id=user.team_id,
+        team_name=team.name if team else None,
+        must_change_password=user.must_change_password,
+    )
+
+
+@router.post("", response_model=UserCreateResponse)
+async def create_user(
+    body: UserCreateRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> UserCreateResponse:
+    """Создание пользователя (TD-10).
+
+    Генерирует случайный пароль, показывает его в ответе один раз.
+    must_change_password=True — требуется смена при первом входе.
+    audit_log: user.created (без пароля, только факт).
+    """
+    if not await _check_admin(session, user):
+        raise NotFound(
+            constraint={"object": "users", "reason": "admin required"},
+            hint="Нет права на управление пользователями",
+        )
+
+    workspace_id = request.app.state.workspace_id
+
+    # Проверка уникальности email в workspace
+    existing = await session.execute(
+        select(User).where(User.workspace_id == workspace_id, User.email == body.email)
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise BadRequest(
+            "Пользователь с таким email уже существует",
+            hint="Email должен быть уникальным в workspace",
+        )
+
+    # Проверка роли
+    role_result = await session.execute(
+        select(Role).where(Role.id == body.role_id, Role.workspace_id == workspace_id)
+    )
+    role = role_result.scalar_one_or_none()
+    if role is None:
+        raise NotFound(
+            constraint={"object": "role", "id": body.role_id},
+            hint="Роль не найдена в workspace",
+        )
+
+    # Проверка team (если указан)
+    team: Team | None = None
+    if body.team_id is not None:
+        team_result = await session.execute(
+            select(Team).where(Team.id == body.team_id, Team.workspace_id == workspace_id)
+        )
+        team = team_result.scalar_one_or_none()
+        if team is None:
+            raise NotFound(
+                constraint={"object": "team", "id": body.team_id},
+                hint="Команда не найдена в workspace",
+            )
+
+    password = generate_random_password()
+    new_user = User(
+        workspace_id=workspace_id,
+        email=body.email,
+        password_hash=hash_password(password),
+        role_id=body.role_id,
+        is_active=True,
+        auth_method="local",
+        team_id=body.team_id,
+        must_change_password=True,
+    )
+    session.add(new_user)
+    await session.flush()
+
+    await write_audit(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user.id,
+        action="user.created",
+        object_type="user",
+        object_id=new_user.id,
+        meta={"email": body.email, "role_id": body.role_id, "team_id": body.team_id},
+    )
+
+    await session.commit()
+    await session.refresh(new_user)
+
+    return UserCreateResponse(
+        id=new_user.id,
+        email=new_user.email,
+        is_active=new_user.is_active,
+        role_id=role.id,
+        role_name=role.name,
+        team_id=body.team_id,
+        must_change_password=True,
+        password=password,
     )
 
 
@@ -92,13 +196,14 @@ async def list_users(
 
     workspace_id = request.app.state.workspace_id
     result = await session.execute(
-        select(User, Role)
+        select(User, Role, Team)
         .join(Role, User.role_id == Role.id)
+        .outerjoin(Team, User.team_id == Team.id)
         .where(User.workspace_id == workspace_id)
         .order_by(User.created_at.desc())
     )
     rows = result.all()
-    return UserListResponse(users=[_to_list_item(u, r) for u, r in rows])
+    return UserListResponse(users=[_to_list_item(u, r, t) for u, r, t in rows])
 
 
 @router.get("/{user_id}", response_model=UserDetailResponse)
@@ -115,13 +220,13 @@ async def get_user(
         )
 
     workspace_id = request.app.state.workspace_id
-    pair = await _get_user_with_role(session, workspace_id, user_id)
-    if pair is None:
+    triple = await _get_user_with_role(session, workspace_id, user_id)
+    if triple is None:
         raise NotFound(
             constraint={"object": "user", "id": user_id},
             hint="Пользователь не найден",
         )
-    return _to_detail_response(*pair)
+    return _to_detail_response(*triple)
 
 
 @router.patch("/{user_id}", response_model=UserDetailResponse)
@@ -146,13 +251,13 @@ async def update_user(
         )
 
     workspace_id = request.app.state.workspace_id
-    pair = await _get_user_with_role(session, workspace_id, user_id)
-    if pair is None:
+    triple = await _get_user_with_role(session, workspace_id, user_id)
+    if triple is None:
         raise NotFound(
             constraint={"object": "user", "id": user_id},
             hint="Пользователь не найден",
         )
-    target, target_role = pair
+    target, target_role, target_team = triple
 
     # Смена роли
     if body.role_id is not None and body.role_id != target.role_id:
@@ -204,10 +309,35 @@ async def update_user(
             },
         )
 
+    # Смена team_id
+    if body.team_id is not None and body.team_id != target.team_id:
+        if body.team_id != "":
+            team_result = await session.execute(
+                select(Team).where(Team.id == body.team_id, Team.workspace_id == workspace_id)
+            )
+            if team_result.scalar_one_or_none() is None:
+                raise NotFound(
+                    constraint={"object": "team", "id": body.team_id},
+                    hint="Команда не найдена в workspace",
+                )
+            target.team_id = body.team_id
+        else:
+            target.team_id = None
+
+        await write_audit(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="user.team_changed",
+            object_type="user",
+            object_id=target.id,
+            meta={"target_email": target.email, "new_team_id": body.team_id or None},
+        )
+
     await session.commit()
     await session.refresh(target)
 
-    return _to_detail_response(target, target_role)
+    return _to_detail_response(target, target_role, target_team)
 
 
 @router.post("/{user_id}/impersonate")

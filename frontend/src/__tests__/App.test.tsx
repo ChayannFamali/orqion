@@ -72,6 +72,7 @@ describe("App", () => {
       is_active: true,
       capabilities: ["chat"],
       is_impersonating: false,
+      must_change_password: false,
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

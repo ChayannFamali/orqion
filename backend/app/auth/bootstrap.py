@@ -9,13 +9,12 @@
 
 from __future__ import annotations
 
-import secrets
 import sys
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.passwords import hash_password
+from app.auth.passwords import generate_random_password, hash_password
 from app.db.models import Role, User
 from app.policy.presets import BUILTIN_ROLES
 
@@ -78,7 +77,7 @@ async def ensure_initial_admin(session: AsyncSession, workspace_id: str) -> bool
     )
     role = result.scalar_one()
 
-    password = secrets.token_urlsafe(16)
+    password = generate_random_password()
     user = User(
         workspace_id=workspace_id,
         email="admin@orqion.local",

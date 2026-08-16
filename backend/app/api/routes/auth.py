@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.auth import LoginRequest, LoginResponse, UserResponse
+from app.api.schemas.auth import (
+    ChangePasswordRequest,
+    ChangePasswordResponse,
+    LoginRequest,
+    LoginResponse,
+    UserResponse,
+)
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.auth.local_provider import LocalIdentityProvider
+from app.auth.passwords import hash_password, verify_password
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.sessions import (
     COOKIE_NAME,
@@ -18,7 +25,7 @@ from app.auth.sessions import (
     invalidate_session,
 )
 from app.config import Settings
-from app.db.models import User
+from app.db.models import Session, User
 from app.db.session import get_session
 from app.errors import BadRequest, OrqionError
 from app.policy.resolve import resolve_policy
@@ -93,6 +100,7 @@ async def login(
             email=user.email,
             is_active=user.is_active,
             capabilities=policy.capabilities,
+            must_change_password=user.must_change_password,
         )
     )
 
@@ -364,3 +372,64 @@ async def oidc_callback(
         secure=settings.session_cookie_secure,
     )
     return {"status": "ok", "email": user.email}
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> ChangePasswordResponse:
+    """Смена пароля текущим пользователем (TD-10).
+
+    Проверяет старый пароль, устанавливает новый, сбрасывает must_change_password.
+    Инвалидирует все прочие сессии пользователя (кроме текущей) — защита от
+    сценария, когда недоверенный пароль был перехвачен и использован до смены.
+    audit_log: user.password_changed (факт, без содержимого пароля).
+    """
+    if user.password_hash is None:
+        raise BadRequest(
+            "Учётная запись не имеет пароля (OIDC-only)",
+            hint="Используйте провайдер идентификации для смены пароля",
+        )
+
+    if not verify_password(user.password_hash, body.old_password):
+        raise BadRequest(
+            "Неверный текущий пароль",
+            hint="Проверьте текущий пароль и попробуйте снова",
+        )
+
+    if body.new_password == body.old_password:
+        raise BadRequest(
+            "Новый пароль не должен совпадать с текущим",
+            hint="Придумайте новый пароль",
+        )
+
+    workspace_id = request.app.state.workspace_id
+
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+
+    # Инвалидируем все прочие сессии пользователя, кроме текущей
+    current_session_id = request.cookies.get(COOKIE_NAME)
+    await session.execute(
+        delete(Session).where(
+            Session.user_id == user.id,
+            Session.id != current_session_id,
+        )
+    )
+
+    await write_audit(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user.id,
+        action="user.password_changed",
+        object_type="user",
+        object_id=user.id,
+        meta={},
+    )
+
+    await session.commit()
+
+    return ChangePasswordResponse(status="ok")

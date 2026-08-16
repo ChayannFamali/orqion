@@ -1,5 +1,11 @@
 import { apiFetch } from "./client";
-import type { LoginRequest, LoginResponse, UserResponse } from "./types";
+import type {
+  ChangePasswordRequest,
+  ChangePasswordResponse,
+  LoginRequest,
+  LoginResponse,
+  UserResponse,
+} from "./types";
 
 export async function apiLogin(body: LoginRequest): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/api/auth/login", {
@@ -14,6 +20,15 @@ export async function apiLogout(): Promise<void> {
 
 export async function apiGetMe(): Promise<UserResponse> {
   return apiFetch<UserResponse>("/api/auth/me");
+}
+
+export async function apiChangePassword(
+  body: ChangePasswordRequest,
+): Promise<ChangePasswordResponse> {
+  return apiFetch<ChangePasswordResponse>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function apiExitImpersonation(): Promise<{ status: string; reason?: string }> {
