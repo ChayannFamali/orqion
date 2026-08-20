@@ -72,6 +72,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/me/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Usage
+         * @description Личный расход пользователя в текущем месяце (T-424).
+         *
+         *     Не требует capability view_analytics — доступно любому
+         *     аутентифицированному пользователю. Жёстко ограничен по user_id и
+         *     workspace_id из auth-контекста, не из query params.
+         */
+        get: operations["my_usage_api_auth_me_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/exit-impersonation": {
         parameters: {
             query?: never;
@@ -1771,6 +1795,43 @@ export interface components {
             /** Enabled */
             enabled?: boolean | null;
         };
+        /**
+         * ModelUsageBreakdown
+         * @description Расход по конкретной модели за текущий месяц.
+         */
+        ModelUsageBreakdown: {
+            /** Model Id */
+            model_id: string;
+            /** Requests */
+            requests: number;
+            /** Tokens In */
+            tokens_in: number;
+            /** Tokens Out */
+            tokens_out: number;
+            /** Cost */
+            cost: number;
+        };
+        /**
+         * MyUsageResponse
+         * @description Личный расход пользователя в текущем месяце (T-424).
+         *
+         *     tokens_limit / cost_limit: None = unlimited по этому измерению.
+         *     Frontend проверяет limit === null per-field для отображения "Без лимита".
+         */
+        MyUsageResponse: {
+            /** Tokens Used */
+            tokens_used: number;
+            /** Tokens Limit */
+            tokens_limit: number | null;
+            /** Cost Used */
+            cost_used: number;
+            /** Cost Limit */
+            cost_limit: number | null;
+            /** Period */
+            period: string;
+            /** By Model */
+            by_model: components["schemas"]["ModelUsageBreakdown"][];
+        };
         /** ProviderCreate */
         ProviderCreate: {
             /** Kind */
@@ -2344,6 +2405,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    my_usage_api_auth_me_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyUsageResponse"];
                 };
             };
         };

@@ -1,4 +1,4 @@
-"""POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me, POST /api/auth/exit-impersonation."""
+"""POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me, GET /api/auth/me/usage, POST /api/auth/exit-impersonation."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from app.api.schemas.auth import (
     LoginResponse,
     UserResponse,
 )
+from app.api.schemas.me import ModelUsageBreakdown, MyUsageResponse
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.auth.local_provider import LocalIdentityProvider
@@ -151,6 +152,75 @@ async def me(
         capabilities=policy.capabilities,
         is_impersonating=is_impersonating,
         impersonated_by_email=impersonated_by_email,
+    )
+
+
+@router.get("/me/usage", response_model=MyUsageResponse)
+async def my_usage(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> MyUsageResponse:
+    """Личный расход пользователя в текущем месяце (T-424).
+
+    Не требует capability view_analytics — доступно любому
+    аутентифицированному пользователю. Жёстко ограничен по user_id и
+    workspace_id из auth-контекста, не из query params.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+
+    from app.db.models import UsageDaily
+
+    policy = await resolve_policy(session, user)
+    budget = policy.budget
+    tokens_limit = budget.tokens_month if budget is not None else None
+    cost_limit = budget.cost_month if budget is not None else None
+
+    workspace_id = request.app.state.workspace_id
+    today = datetime.now(tz=UTC).date()
+    month_start = today.replace(day=1).isoformat()
+    period = today.strftime("%Y-%m")
+
+    # Aggregate usage for current user, current month
+    result = await session.execute(
+        select(
+            UsageDaily.model_id,
+            func.coalesce(func.sum(UsageDaily.tokens_in), 0).label("tokens_in"),
+            func.coalesce(func.sum(UsageDaily.tokens_out), 0).label("tokens_out"),
+            func.coalesce(func.sum(UsageDaily.cost), 0.0).label("cost"),
+            func.coalesce(func.sum(UsageDaily.requests), 0).label("requests"),
+        )
+        .where(
+            UsageDaily.workspace_id == workspace_id,
+            UsageDaily.user_id == user.id,
+            UsageDaily.date >= month_start,
+        )
+        .group_by(UsageDaily.model_id)
+    )
+    rows = result.all()
+
+    tokens_used = sum(int(r.tokens_in) + int(r.tokens_out) for r in rows)
+    cost_used = sum(float(r.cost) for r in rows)
+    by_model = [
+        ModelUsageBreakdown(
+            model_id=r.model_id,
+            requests=int(r.requests),
+            tokens_in=int(r.tokens_in),
+            tokens_out=int(r.tokens_out),
+            cost=float(r.cost),
+        )
+        for r in rows
+    ]
+
+    return MyUsageResponse(
+        tokens_used=tokens_used,
+        tokens_limit=tokens_limit,
+        cost_used=round(cost_used, 4),
+        cost_limit=cost_limit,
+        period=period,
+        by_model=by_model,
     )
 
 

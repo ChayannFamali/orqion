@@ -97,6 +97,28 @@
         }
       }
     },
+    "/api/auth/me/usage": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "My Usage",
+        "description": "Личный расход пользователя в текущем месяце (T-424).\n\nНе требует capability view_analytics — доступно любому\nаутентифицированному пользователю. Жёстко ограничен по user_id и\nworkspace_id из auth-контекста, не из query params.",
+        "operationId": "my_usage_api_auth_me_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyUsageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/exit-impersonation": {
       "post": {
         "tags": [
@@ -4804,6 +4826,96 @@
         },
         "type": "object",
         "title": "ModelUpdate"
+      },
+      "ModelUsageBreakdown": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "requests": {
+            "type": "integer",
+            "title": "Requests"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "requests",
+          "tokens_in",
+          "tokens_out",
+          "cost"
+        ],
+        "title": "ModelUsageBreakdown",
+        "description": "Расход по конкретной модели за текущий месяц."
+      },
+      "MyUsageResponse": {
+        "properties": {
+          "tokens_used": {
+            "type": "integer",
+            "title": "Tokens Used"
+          },
+          "tokens_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Limit"
+          },
+          "cost_used": {
+            "type": "number",
+            "title": "Cost Used"
+          },
+          "cost_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Limit"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "by_model": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageBreakdown"
+            },
+            "type": "array",
+            "title": "By Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tokens_used",
+          "tokens_limit",
+          "cost_used",
+          "cost_limit",
+          "period",
+          "by_model"
+        ],
+        "title": "MyUsageResponse",
+        "description": "Личный расход пользователя в текущем месяце (T-424).\n\ntokens_limit / cost_limit: None = unlimited по этому измерению.\nFrontend проверяет limit === null per-field для отображения \"Без лимита\"."
       },
       "ProviderCreate": {
         "properties": {

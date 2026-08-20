@@ -2,6 +2,7 @@ import { Menu, Sun, Moon, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTheme } from "../hooks/useTheme";
 import { useLogout } from "../hooks/useAuth";
+import { UsageWidget } from "./UsageWidget";
 
 interface TopbarProps {
   email: string;
@@ -22,6 +23,7 @@ export function Topbar({ email, onToggleSidebar }: TopbarProps) {
         <Button variant="ghost" size="icon" onClick={toggle} aria-label="Переключить тему">
           {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
+        <UsageWidget />
         <span className="text-sm text-muted-foreground">{email}</span>
         <Button
           variant="ghost"

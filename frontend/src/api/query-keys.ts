@@ -12,6 +12,7 @@
 export const queryKeys = {
   auth: {
     me: ["auth", "me"] as const,
+    usage: ["auth", "me", "usage"] as const,
   },
   health: ["health"] as const,
   conversations: {
