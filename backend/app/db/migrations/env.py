@@ -10,12 +10,11 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from app.db import models  # noqa: F401 — регистрация таблиц в metadata
+from app.db.base import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from app.db.base import Base
-from app.db import models  # noqa: F401 — регистрация таблиц в metadata
 
 config = context.config
 
@@ -48,8 +47,10 @@ async def run_migrations_online() -> None:
     url = section.get("sqlalchemy.url", "")
 
     # ORQION_DATABASE_URL overrides alembic.ini sqlalchemy.url
+    # Но не переопределяет URL, заданный программно (тесты через set_main_option).
+    # Если URL отличается от дефолтного в alembic.ini — он задан явно, не трогаем.
     env_url = os.environ.get("ORQION_DATABASE_URL")
-    if env_url:
+    if env_url and url == "sqlite:///./orqion.db":
         url = env_url
 
     if url.startswith("sqlite://") and "+aiosqlite" not in url:
