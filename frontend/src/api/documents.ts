@@ -20,11 +20,19 @@ export async function apiUploadDocument(
   corpusId: string,
   file: File,
   onProgress?: (progress: UploadProgress) => void,
+  signal?: AbortSignal,
 ): Promise<DocumentResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
     formData.append("file", file);
+
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        xhr.abort();
+        reject({ error: "cancelled", reason: "Загрузка отменена", constraint: null, hint: null });
+      });
+    }
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {

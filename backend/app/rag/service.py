@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import _utcnow
@@ -98,7 +99,15 @@ async def upload_document(
         status="pending",
     )
     session.add(document)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # Race: параллельный INSERT выиграл (UniqueConstraint corpus_id+sha256)
+        await session.rollback()
+        raise DuplicateDocument(
+            constraint={"sha256": blob_ref.sha256},
+            hint="Документ уже загружен (конкурентная загрузка)",
+        ) from exc
 
     return UploadResult(document=document, blob_ref=blob_ref)
 

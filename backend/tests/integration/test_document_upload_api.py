@@ -689,3 +689,67 @@ async def test_delete_document_keeps_blob_when_other_refs(
 
     # Теперь blob удалён — последний документ удалён
     assert not await blob_store.exists(blob_uri)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_upload_with_duplicate_content(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-423: 3 параллельных upload, 2 с одинаковым sha256 — ни один не 500.
+
+    file_a.py (content "AAA"), file_b.py (content "AAA"), file_c.py (content "BBB").
+    Ожидаемый результат:
+    - file_a.py: 201 (success)
+    - file_b.py: 409 (duplicate_document) — независимо от того, кто выиграл race
+    - file_c.py: 201 (success)
+    - Ни один запрос не возвращает 500
+    - В БД ровно 2 документа (один с "AAA", один с "BBB")
+    """
+    import asyncio
+
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture, name="concurrent-test")
+
+    content_a = b"AAA" * 100
+    content_b = b"AAA" * 100  # same sha256 as content_a
+    content_c = b"BBB" * 100
+
+    # Запускаем 3 параллельных upload
+    results = await asyncio.gather(
+        _upload_file(api_client, corpus_id, filename="file_a.py", content=content_a),
+        _upload_file(api_client, corpus_id, filename="file_b.py", content=content_b),
+        _upload_file(api_client, corpus_id, filename="file_c.py", content=content_c),
+        return_exceptions=True,
+    )
+
+    # Ни один не должен быть исключением (500)
+    responses: list[httpx.Response] = [r for r in results if isinstance(r, httpx.Response)]
+    assert len(responses) == 3, "Some uploads raised exceptions instead of HTTP responses"
+
+    status_codes = sorted(r.status_code for r in responses)
+    # Должно быть: 201, 201, 409
+    assert status_codes == [201, 201, 409], f"Unexpected status codes: {status_codes}"
+
+    # Ни один не должен быть 500
+    for r in responses:
+        assert r.status_code != 500, f"Server error on upload: {r.status_code}"
+
+    # Проверяем БД: ровно 2 документа
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        from app.db.models import Document
+        from sqlalchemy import select
+
+        docs_result = await session.execute(select(Document).where(Document.corpus_id == corpus_id))
+        docs = list(docs_result.scalars().all())
+        assert len(docs) == 2, f"Expected 2 documents, got {len(docs)}"
+
+        # Один с sha256 от "AAA", один от "BBB"
+        import hashlib
+
+        sha_a = hashlib.sha256(content_a).hexdigest()
+        sha_c = hashlib.sha256(content_c).hexdigest()
+        sha_values = {doc.sha256 for doc in docs}
+        assert sha_a in sha_values
+        assert sha_c in sha_values
