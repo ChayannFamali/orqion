@@ -63,6 +63,11 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/docling-project/docling/blob/main/LICENSE",
         "2026-08-15",
     ),
+    "dulwich": (
+        "Apache-2.0 OR GPL-2.0-or-later",
+        "https://github.com/jelmer/dulwich/blob/master/COPYING",
+        "2026-08-16",
+    ),
     "fastapi": ("MIT", "https://github.com/tiangolo/fastapi/blob/master/LICENSE", "2026-08-15"),
     "flask": ("BSD-3-Clause", "https://github.com/pallets/flask/blob/main/LICENSE", "2026-08-15"),
     "flask-cors": (

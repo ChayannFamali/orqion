@@ -46,6 +46,7 @@ async def upload_document(
     content: AsyncIterator[bytes],
     max_size_bytes: int,
     allowed_extensions: list[str],
+    source_type: str = "upload",
 ) -> UploadResult:
     """Загружает документ в корпус.
 
@@ -93,7 +94,7 @@ async def upload_document(
         filename=filename,
         mime=mime,
         sha256=blob_ref.sha256,
-        source_type="upload",
+        source_type=source_type,
         status="pending",
     )
     session.add(document)

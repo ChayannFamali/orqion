@@ -1,4 +1,4 @@
-"""CLI orqion: serve, migrate, createuser, reset-password."""
+"""CLI orqion: serve, migrate, createuser, reset-password, ingest-git."""
 
 from __future__ import annotations
 
@@ -36,6 +36,51 @@ def main() -> None:
         help="Новый пароль. Если не указан — генерируется и выводится в stdout.",
     )
 
+    git_parser = subparsers.add_parser(
+        "ingest-git",
+        help="Индексировать git-репозиторий",
+    )
+    git_parser.add_argument("url", help="URL git-репозитория или локальный путь")
+    git_parser.add_argument(
+        "--corpus",
+        default=None,
+        help="Имя корпуса. Если не указано — выводится из URL.",
+    )
+    git_parser.add_argument(
+        "--extensions",
+        default=None,
+        help="Список расширений через запятую (по умолчанию: .py,.ts,.go,...)",
+    )
+    git_parser.add_argument(
+        "--depth",
+        type=int,
+        default=1,
+        help="Глубина clone (default: 1 = shallow). 0 = полная история.",
+    )
+    git_parser.add_argument(
+        "--clone-timeout",
+        type=int,
+        default=120,
+        help="Таймаут clone в секундах (default: 120)",
+    )
+    git_parser.add_argument(
+        "--max-clone-size",
+        type=int,
+        default=500,
+        help="Максимальный размер клона в MB (default: 500)",
+    )
+    git_parser.add_argument(
+        "--max-file-size",
+        type=int,
+        default=50,
+        help="Максимальный размер одного файла в MB (default: 50)",
+    )
+    git_parser.add_argument(
+        "--build-index",
+        action="store_true",
+        help="Построить индекс после загрузки документов",
+    )
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -46,6 +91,19 @@ def main() -> None:
         asyncio.run(_run_createuser(args.email, args.role, args.password))
     elif args.command == "reset-password":
         asyncio.run(_run_reset_password(args.email, args.password))
+    elif args.command == "ingest-git":
+        asyncio.run(
+            _run_ingest_git(
+                url=args.url,
+                corpus_name=args.corpus,
+                extensions_str=args.extensions,
+                depth=args.depth,
+                clone_timeout=args.clone_timeout,
+                max_clone_size=args.max_clone_size,
+                max_file_size=args.max_file_size,
+                build_index=args.build_index,
+            )
+        )
 
 
 def _run_serve(host: str | None, port: int | None) -> None:
@@ -195,6 +253,128 @@ async def _run_reset_password(email: str, password: str | None) -> None:
         )
     else:
         print(f"Password reset for: {email}", file=sys.stdout, flush=True)
+
+    await engine.dispose()
+
+
+async def _run_ingest_git(
+    *,
+    url: str,
+    corpus_name: str | None,
+    extensions_str: str | None,
+    depth: int,
+    clone_timeout: int,
+    max_clone_size: int,
+    max_file_size: int,
+    build_index: bool,
+) -> None:
+    """Индексирует git-репозиторий: clone → upload_document → (опц.) build_index."""
+    import re
+
+    from sqlalchemy import select
+
+    from app.db.engine import create_engine, create_session_factory
+    from app.db.models import Corpus
+    from app.db.workspace import ensure_default_workspace
+    from app.rag.blob import LocalBlobStore
+    from app.rag.git_ingest import DEFAULT_EXTENSIONS, ingest_git_repository
+
+    settings = Settings()
+    engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
+    blob_store = LocalBlobStore(settings.blob_store_path)
+
+    # Имя корпуса из URL: https://github.com/user/repo → repo
+    if corpus_name is None:
+        name = url.rstrip("/").split("/")[-1]
+        name = re.sub(r"\.git$", "", name)
+        corpus_name = name or "git-import"
+
+    # Парсинг расширений
+    if extensions_str is not None:
+        extensions = [e.strip() for e in extensions_str.split(",") if e.strip()]
+    else:
+        extensions = list(DEFAULT_EXTENSIONS)
+
+    max_file_size_bytes = max_file_size * 1024 * 1024
+
+    print(f"Cloning: {url} (depth={depth})", flush=True)
+
+    async with session_factory() as session:
+        workspace_id = await ensure_default_workspace(session)
+
+        # Поиск или создание корпуса
+        corpus_result = await session.execute(
+            select(Corpus).where(
+                Corpus.workspace_id == workspace_id,
+                Corpus.name == corpus_name,
+            )
+        )
+        corpus = corpus_result.scalar_one_or_none()
+        if corpus is None:
+            corpus = Corpus(
+                workspace_id=workspace_id,
+                name=corpus_name,
+            )
+            session.add(corpus)
+            await session.flush()
+            print(f"Created corpus: {corpus_name} ({corpus.id})", flush=True)
+        else:
+            print(f"Using existing corpus: {corpus_name} ({corpus.id})", flush=True)
+
+        ingest_result = await ingest_git_repository(
+            session,
+            blob_store,
+            workspace_id=workspace_id,
+            corpus_id=corpus.id,
+            repo_url=url,
+            allowed_extensions=extensions,
+            max_file_size_bytes=max_file_size_bytes,
+            depth=depth,
+            clone_timeout_seconds=clone_timeout,
+            max_clone_size_mb=max_clone_size,
+        )
+
+        print(
+            f"\n=== orqion: git ingestion complete ===\n"
+            f"Repository: {url}\n"
+            f"Corpus: {corpus_name}\n"
+            f"Total files: {ingest_result.total_files}\n"
+            f"Ingested: {ingest_result.ingested}\n"
+            f"Skipped (duplicates): {ingest_result.skipped}\n"
+            f"Failed: {ingest_result.failed}\n"
+            + (
+                "Errors:\n" + "\n".join(f"  {e}" for e in ingest_result.errors) + "\n"
+                if ingest_result.errors
+                else ""
+            )
+            + "=== Done ===\n",
+            file=sys.stdout,
+            flush=True,
+        )
+
+        if build_index and ingest_result.ingested > 0:
+            from app.rag.embeddings import LocalEmbeddingBackend
+            from app.rag.index_builder import build_index_version
+            from app.rag.vector_store import SQLiteVectorStore
+
+            vector_store = SQLiteVectorStore(settings.vector_store_path)
+            embedding_backend = LocalEmbeddingBackend(settings.embeddings_model)
+            print("Building index...", flush=True)
+            build_result = await build_index_version(
+                session,
+                blob_store,
+                vector_store,
+                embedding_backend,
+                workspace_id=workspace_id,
+                corpus_id=corpus.id,
+            )
+            await vector_store.close()
+            print(
+                f"Index built: {build_result.chunks_created} chunks, "
+                f"{build_result.documents_processed} documents processed",
+                flush=True,
+            )
 
     await engine.dispose()
 
