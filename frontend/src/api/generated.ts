@@ -271,6 +271,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Config Endpoint */
+        get: operations["export_config_endpoint_api_config_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Config Endpoint */
+        post: operations["import_config_endpoint_api_config_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conversations": {
         parameters: {
             query?: never;
@@ -1266,6 +1300,27 @@ export interface components {
             /** Deleted Count */
             deleted_count: number;
         };
+        /**
+         * ConfigExportResponse
+         * @description Ответ: YAML-конфигурация.
+         */
+        ConfigExportResponse: {
+            /** Yaml */
+            yaml: string;
+        };
+        /**
+         * ConfigImportRequest
+         * @description Запрос: импорт YAML-конфигурации.
+         */
+        ConfigImportRequest: {
+            /** Yaml */
+            yaml: string;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
         /** ConversationCreate */
         ConversationCreate: {
             /** Title */
@@ -1612,6 +1667,39 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImportResultResponse
+         * @description Результат импорта.
+         */
+        ImportResultResponse: {
+            /**
+             * Roles Created
+             * @default 0
+             */
+            roles_created: number;
+            /**
+             * Roles Updated
+             * @default 0
+             */
+            roles_updated: number;
+            /**
+             * Roles Unchanged
+             * @default 0
+             */
+            roles_unchanged: number;
+            /**
+             * Routing Rules Replaced
+             * @default false
+             */
+            routing_rules_replaced: boolean;
+            /**
+             * Routing Rules Count
+             * @default 0
+             */
+            routing_rules_count: number;
+            /** Warnings */
+            warnings?: string[];
         };
         /**
          * IndexVersionListResponse
@@ -2658,6 +2746,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_config_endpoint_api_config_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigExportResponse"];
+                };
+            };
+        };
+    };
+    import_config_endpoint_api_config_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResultResponse"];
                 };
             };
             /** @description Validation Error */

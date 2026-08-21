@@ -1,4 +1,4 @@
-"""CLI orqion: serve, migrate, createuser, reset-password, ingest-git."""
+"""CLI orqion: serve, migrate, createuser, reset-password, ingest-git, export-config, import-config."""
 
 from __future__ import annotations
 
@@ -81,6 +81,31 @@ def main() -> None:
         help="Построить индекс после загрузки документов",
     )
 
+    export_parser = subparsers.add_parser(
+        "export-config",
+        help="Экспорт ролей и routing rules в YAML",
+    )
+    export_parser.add_argument(
+        "--output",
+        default=None,
+        help="Файл для записи YAML. Если не указан — stdout.",
+    )
+
+    import_parser = subparsers.add_parser(
+        "import-config",
+        help="Импорт ролей и routing rules из YAML",
+    )
+    import_parser.add_argument(
+        "--input",
+        default=None,
+        help="Файл YAML для импорта. Если не указан — stdin.",
+    )
+    import_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Показать изменения без записи в БД.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -104,6 +129,10 @@ def main() -> None:
                 build_index=args.build_index,
             )
         )
+    elif args.command == "export-config":
+        asyncio.run(_run_export_config(output_path=args.output))
+    elif args.command == "import-config":
+        asyncio.run(_run_import_config(input_path=args.input, dry_run=args.dry_run))
 
 
 def _run_serve(host: str | None, port: int | None) -> None:
@@ -375,6 +404,88 @@ async def _run_ingest_git(
                 f"{build_result.documents_processed} documents processed",
                 flush=True,
             )
+
+    await engine.dispose()
+
+
+async def _run_export_config(*, output_path: str | None) -> None:
+    """Экспортирует роли и routing rules в YAML."""
+    from app.config_io.service import export_config
+    from app.db.engine import create_engine, create_session_factory
+    from app.db.workspace import ensure_default_workspace
+
+    settings = Settings()
+    engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async with session_factory() as session:
+        workspace_id = await ensure_default_workspace(session)
+        yaml_content = await export_config(session, workspace_id)
+
+    if output_path is not None:
+        from pathlib import Path
+
+        Path(output_path).write_text(yaml_content, encoding="utf-8")
+        print(f"Config exported to: {output_path}", file=sys.stdout, flush=True)
+    else:
+        print(yaml_content, end="", file=sys.stdout, flush=True)
+
+    await engine.dispose()
+
+
+async def _run_import_config(*, input_path: str | None, dry_run: bool) -> None:
+    """Импортирует роли и routing rules из YAML."""
+    from app.config_io.service import import_config
+    from app.db.engine import create_engine, create_session_factory
+    from app.db.workspace import ensure_default_workspace
+    from app.errors import OrqionError
+
+    if input_path is not None:
+        from pathlib import Path
+
+        yaml_content = Path(input_path).read_text(encoding="utf-8")
+    else:
+        yaml_content = sys.stdin.read()
+
+    settings = Settings()
+    engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    try:
+        async with session_factory() as session:
+            workspace_id = await ensure_default_workspace(session)
+            result = await import_config(
+                session,
+                workspace_id,
+                yaml_content,
+                dry_run=dry_run,
+            )
+            if not dry_run:
+                await session.commit()
+
+        prefix = "[DRY RUN] " if dry_run else ""
+        print(
+            f"\n=== orqion: config import {prefix}===\n"
+            f"Roles created: {result.roles_created}\n"
+            f"Roles updated: {result.roles_updated}\n"
+            f"Roles unchanged: {result.roles_unchanged}\n"
+            f"Routing rules replaced: {result.routing_rules_replaced}\n"
+            f"Routing rules count: {result.routing_rules_count}\n"
+            + (
+                "Warnings:\n" + "\n".join(f"  - {w}" for w in result.warnings) + "\n"
+                if result.warnings
+                else ""
+            )
+            + "=== Done ===\n",
+            file=sys.stdout,
+            flush=True,
+        )
+    except OrqionError as exc:
+        print(f"Error: {exc.reason}", file=sys.stderr, flush=True)
+        if exc.hint:
+            print(f"Hint: {exc.hint}", file=sys.stderr, flush=True)
+        await engine.dispose()
+        sys.exit(1)
 
     await engine.dispose()
 

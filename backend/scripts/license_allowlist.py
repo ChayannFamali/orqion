@@ -183,6 +183,11 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/pyparsing/pyparsing/blob/master/LICENSE",
         "2026-08-15",
     ),
+    "pyyaml": (
+        "MIT",
+        "https://github.com/yaml/pyyaml/blob/main/LICENSE",
+        "2026-08-22",
+    ),
     "pytest": ("MIT", "https://github.com/pytest-dev/pytest/blob/main/LICENSE", "2026-08-15"),
     "pytest-asyncio": (
         "MIT",

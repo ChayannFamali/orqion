@@ -588,6 +588,68 @@
         }
       }
     },
+    "/api/config/export": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Export Config Endpoint",
+        "operationId": "export_config_endpoint_api_config_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigExportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/import": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Import Config Endpoint",
+        "operationId": "import_config_endpoint_api_config_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations": {
       "get": {
         "tags": [
@@ -3422,6 +3484,39 @@
         "title": "CleanupResponse",
         "description": "Результат очистки retired-версий."
       },
+      "ConfigExportResponse": {
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "title": "Yaml"
+          }
+        },
+        "type": "object",
+        "required": [
+          "yaml"
+        ],
+        "title": "ConfigExportResponse",
+        "description": "Ответ: YAML-конфигурация."
+      },
+      "ConfigImportRequest": {
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "title": "Yaml"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "yaml"
+        ],
+        "title": "ConfigImportRequest",
+        "description": "Запрос: импорт YAML-конфигурации."
+      },
       "ConversationCreate": {
         "properties": {
           "title": {
@@ -4286,6 +4381,45 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImportResultResponse": {
+        "properties": {
+          "roles_created": {
+            "type": "integer",
+            "title": "Roles Created",
+            "default": 0
+          },
+          "roles_updated": {
+            "type": "integer",
+            "title": "Roles Updated",
+            "default": 0
+          },
+          "roles_unchanged": {
+            "type": "integer",
+            "title": "Roles Unchanged",
+            "default": 0
+          },
+          "routing_rules_replaced": {
+            "type": "boolean",
+            "title": "Routing Rules Replaced",
+            "default": false
+          },
+          "routing_rules_count": {
+            "type": "integer",
+            "title": "Routing Rules Count",
+            "default": 0
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "title": "ImportResultResponse",
+        "description": "Результат импорта."
       },
       "IndexVersionListResponse": {
         "properties": {
