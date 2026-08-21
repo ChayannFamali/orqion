@@ -267,6 +267,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit-log/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Audit Log
+         * @description Экспорт журнала аудита в CSV или JSON (T-428).
+         *
+         *     Сортировка: ts ASC, id ASC (хронологическая, стабильная для offset-пагинации).
+         *     Лимит: до 10 000 строк за запрос. Headers: X-Export-Total, X-Export-Count.
+         */
+        get: operations["export_audit_log_api_audit_log_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -2765,6 +2788,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditActionsResponse"];
+                };
+            };
+        };
+    };
+    export_audit_log_api_audit_log_export_get: {
+        parameters: {
+            query?: {
+                format?: string;
+                action?: string | null;
+                actor_user_id?: string | null;
+                start?: string | null;
+                end?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
