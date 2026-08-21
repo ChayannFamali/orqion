@@ -50,6 +50,28 @@ def _make_test_settings(db_path: str, data_dir: str) -> Settings:
     )
 
 
+async def _setup_db_alembic(
+    settings: Settings,
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession], str]:
+    """Создаёт схему через Alembic upgrade head (не create_all).
+
+    Включает SQLite-only таблицы из миграции 0013 (fts_chunks, vec_chunk_map).
+    """
+    import asyncio
+
+    from app.db.migrate import run_migrations_sync
+
+    await asyncio.to_thread(run_migrations_sync, settings.database_url)
+
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    async with factory() as session:
+        ws_id = await ensure_default_workspace(session)
+        await ensure_builtin_roles(session, ws_id)
+        await session.commit()
+    return engine, factory, ws_id
+
+
 async def _setup_db(
     settings: Settings,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession], str]:
@@ -719,3 +741,129 @@ async def test_backup_restore_roundtrip(tmp_path: Path) -> None:
     assert len(hits_sparse) >= 1
     await store_b.close()
     await engine_b2.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Приёмочный тест: Alembic-created DB (блокер T-426)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_backup_restore_alembic_created_db(tmp_path: Path) -> None:
+    """Backup→restore на БД, созданной через Alembic upgrade head (не create_all).
+
+    БЛОКЕР T-426: create_all() пропускает SQLite-only таблицы из миграции 0013
+    (fts_chunks, vec_chunk_map). VACUUM INTO копирует БД as-is — если source
+    создан через Alembic, backup должен содержать 0013-таблицы, и restore
+    должен их перенести.
+
+    Проверки:
+    - 0013-таблицы (fts_chunks, vec_chunk_map) присутствуют в восстановленной БД
+    - search_dense/search_sparse работают на восстановленном vec.db
+    - PRAGMA integrity_check OK
+    """
+    # --- Instance A: schema through Alembic ---
+    dir_a = str(tmp_path / "a")
+    data_dir_a = os.path.join(dir_a, "data")
+    os.makedirs(data_dir_a, exist_ok=True)
+    vec_path_a = os.path.join(data_dir_a, "vec.db")
+    settings_a = _make_test_settings(
+        str(Path(dir_a) / "orqion.db"),
+        data_dir_a,
+    )
+    engine_a, factory_a, ws_a = await _setup_db_alembic(settings_a)
+
+    # Verify 0013 tables exist in source DB
+    db_path_a = str(Path(dir_a) / "orqion.db")
+    conn = sqlite3.connect(db_path_a)
+    tables = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        ).fetchall()
+    ]
+    conn.close()
+    assert "fts_chunks" in tables, "fts_chunks missing from Alembic-created DB"
+    assert "vec_chunk_map" in tables, "vec_chunk_map missing from Alembic-created DB"
+
+    # Add corpus + document
+    async with factory_a() as session:
+        corpus = Corpus(workspace_id=ws_a, name="alembic-test-corpus")
+        session.add(corpus)
+        await session.flush()
+        doc = Document(
+            workspace_id=ws_a,
+            corpus_id=corpus.id,
+            blob_uri="abcdef1234567890",
+            filename="test.txt",
+            mime="text/plain",
+            sha256="abcdef1234567890",
+            source_type="upload",
+            status="indexed",
+        )
+        session.add(doc)
+        await session.commit()
+
+    # Create vec.db with real embeddings
+    store_a = SQLiteVectorStore(vec_path_a)
+    chunks = [
+        _make_chunk(0, "hello world from alembic", _make_unit_vec(EMBEDDING_DIM, 0)),
+        _make_chunk(1, "foo bar baz alembic", _make_unit_vec(EMBEDDING_DIM, 1)),
+    ]
+    await store_a.upsert("index-v1", chunks)
+    # Verify search works before backup
+    hits_before = await store_a.search_dense("index-v1", _make_unit_vec(EMBEDDING_DIM, 0), k=2)
+    assert len(hits_before) == 2
+    sparse_before = await store_a.search_sparse("index-v1", "alembic", k=2)
+    assert len(sparse_before) >= 1
+    await store_a.close()
+    await engine_a.dispose()
+
+    # Backup
+    from scripts.backup import backup
+
+    archive_path = str(tmp_path / "alembic-backup.tar.gz")
+    result_backup = backup(settings_a, output_path=archive_path)
+    assert result_backup.vec_method == "vacuum_into"
+
+    # --- Instance B: fresh, schema through Alembic ---
+    dir_b = str(tmp_path / "b")
+    data_dir_b = os.path.join(dir_b, "data")
+    os.makedirs(data_dir_b, exist_ok=True)
+    settings_b = _make_test_settings(
+        str(Path(dir_b) / "orqion.db"),
+        data_dir_b,
+    )
+    engine_b, _, _ = await _setup_db_alembic(settings_b)
+    await engine_b.dispose()
+
+    # Restore
+    from scripts.restore import restore
+
+    result_restore = await restore(settings_b, archive_path, force=False, dry_run=False)
+    assert result_restore.restored is True
+
+    # Verify 0013 tables exist in restored DB
+    db_path_b = str(Path(dir_b) / "orqion.db")
+    conn = sqlite3.connect(db_path_b)
+    tables_b = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        ).fetchall()
+    ]
+    # integrity check
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    conn.close()
+    assert integrity == "ok"
+    assert "fts_chunks" in tables_b, "fts_chunks missing from restored DB"
+    assert "vec_chunk_map" in tables_b, "vec_chunk_map missing from restored DB"
+
+    # Verify vector store search works after restore
+    vec_path_b = os.path.join(data_dir_b, "vec.db")
+    store_b = SQLiteVectorStore(vec_path_b)
+    hits_dense = await store_b.search_dense("index-v1", _make_unit_vec(EMBEDDING_DIM, 0), k=2)
+    assert len(hits_dense) == 2
+    hits_sparse = await store_b.search_sparse("index-v1", "alembic", k=2)
+    assert len(hits_sparse) >= 1
+    await store_b.close()
