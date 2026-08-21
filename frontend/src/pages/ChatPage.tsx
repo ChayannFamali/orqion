@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Download } from "lucide-react";
 import { useConversations, useConversation, useUpdateConversation } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
 import { useChat } from "../hooks/useChat";
@@ -7,6 +8,7 @@ import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
 import { ModelSelector } from "../components/ModelSelector";
 import type { ChatMessage, MessageResponse } from "../api/types";
+import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
 
 export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -60,6 +62,13 @@ export function ChatPage() {
   const handleAbort = useCallback(() => {
     chat.abort();
   }, [chat]);
+
+  const handleExport = useCallback(() => {
+    if (!conversation.data) return;
+    const markdown = conversationToMarkdown(conversation.data, window.location.origin);
+    const filename = sanitizeFilename(conversation.data.title);
+    downloadMarkdown(filename, markdown);
+  }, [conversation.data]);
 
   const handleRegenerate = useCallback(() => {
     // Убираем последний ответ ассистента, отправляем заново
@@ -159,6 +168,15 @@ export function ChatPage() {
             onChange={setSelectedModel}
             disabled={chat.isStreaming}
           />
+          {activeId && conversation.data && (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Экспорт в Markdown"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Messages */}
