@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""
+    # T-433: общий алиас «utility-модели» (query rewrite + title generation).
+    # Если пуст — fallback на rag_reformulation_model_alias (обратная совместимость).
+    utility_model_alias: str = ""
+    # T-433: генерация заголовка диалога utility-моделью. По умолчанию выключена,
+    # как rag_query_reformulation_enabled — отдельный тумблер для отдельной фичи.
+    title_generation_enabled: bool = False
 
     # OIDC (T-404b). По умолчанию отключён — локальный вход работает без env.
     oidc_enabled: bool = False

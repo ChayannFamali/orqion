@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
@@ -123,6 +124,9 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
 
     app.state.blob_store = LocalBlobStore(settings.blob_store_path)
 
+    # T-433: fire-and-forget background tasks (title generation).
+    app.state.background_tasks = set()
+
     from app.rag.vector_store import SQLiteVectorStore
 
     app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
@@ -168,6 +172,13 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
         app.state.embedding_backend = embedding_backend
 
     yield app
+
+    # T-433: отменяем фоновые задачи (title generation) до dispose —
+    # иначе SQLite-сессия остаётся locked.
+    for task in app.state.background_tasks:
+        task.cancel()
+    await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
+    app.state.background_tasks.clear()
 
     await app.state.vector_store.close()
     await engine.dispose()

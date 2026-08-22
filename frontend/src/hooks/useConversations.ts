@@ -13,6 +13,14 @@ export function useConversations() {
     queryKey: queryKeys.conversations.all,
     queryFn: () => apiListConversations(),
     staleTime: 10_000,
+    // T-433: refetch каждые 5s если есть диалоги без заголовка (пустой title)
+    // — fire-and-forget генерация заголовка обновит title в фоне. Прецедент:
+    // useDocuments.ts refetchInterval для pending/indexing статусов (T-313).
+    refetchInterval: (query) => {
+      const convs = query.state.data?.conversations ?? [];
+      const hasUntitled = convs.some((c: { title: string }) => c.title === "");
+      return hasUntitled ? 5000 : false;
+    },
   });
 }
 

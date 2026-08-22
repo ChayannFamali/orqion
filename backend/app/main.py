@@ -81,6 +81,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
 
+    # T-433: fire-and-forget background tasks (title generation).
+    # Task-референс сохраняется здесь, чтобы Python не собрать GC до завершения.
+    app.state.background_tasks = set[asyncio.Task[None]]()
+
     # Embedding backend для RAG-конвейера (T-221, T-430)
     from app.rag.embedding_resolver import resolve_embedding_backend
 

@@ -259,6 +259,29 @@ async def chat(
             error=rag_state.degraded,
         )
 
+        # T-433: генерация заголовка диалога fire-and-forget — только для
+        # нового диалога (chat_ctx.conversation_id is None → save_messages
+        # создал новый). Не блокирует ответ, своя сессия, своя задача.
+        if chat_ctx.conversation_id is None and rag_state.answer:
+            from app.rag.title_generation import generate_title_background
+
+            first_user_msg = next(
+                (m for m in chat_ctx.messages if m["role"] == "user"),
+                None,
+            )
+            if first_user_msg:
+                generate_title_background(
+                    session_factory=request.app.state.db_session_factory,
+                    settings=request.app.state.settings,
+                    secret_key=secret_key,
+                    workspace_id=workspace_id,
+                    conversation_id=conv_id,
+                    first_user_message=first_user_msg["content"],
+                    first_assistant_message=rag_state.answer,
+                    user_id=user.id,
+                    background_tasks=request.app.state.background_tasks,
+                )
+
         result = ChatResponse(
             type="complete",
             content=rag_state.answer or "",
