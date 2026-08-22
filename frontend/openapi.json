@@ -422,6 +422,130 @@
         }
       }
     },
+    "/api/analytics/export": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Export Analytics",
+        "description": "Экспорт аналитики в CSV (T-434).\n\nПаттерн — T-428 (audit export): Content-Disposition: attachment,\nте же фильтры/сортировка, что у GET /api/analytics. Access control:\nview_analytics → 403 (AnalyticsForbidden), не 404 (T-120).",
+        "operationId": "export_analytics_api_analytics_export_get",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Начало периода (ISO date)",
+              "title": "Start"
+            },
+            "description": "Начало периода (ISO date)"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Конец периода (ISO date)",
+              "title": "End"
+            },
+            "description": "Конец периода (ISO date)"
+          },
+          {
+            "name": "model_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Limit"
+            }
+          },
+          {
+            "name": "model_sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "requests",
+              "title": "Model Sort"
+            }
+          },
+          {
+            "name": "user_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Limit"
+            }
+          },
+          {
+            "name": "user_sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "requests",
+              "title": "User Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit-log": {
       "get": {
         "tags": [

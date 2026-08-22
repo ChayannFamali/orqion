@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Loader2, TrendingDown, TrendingUp, Users, BarChart3 } from "lucide-react";
+import { Loader2, TrendingDown, TrendingUp, Users, BarChart3, Download } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -104,7 +104,24 @@ export function AnalyticsPage() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-lg font-semibold">Аналитика потребления</h2>
-        <div className="flex gap-1 rounded-md border border-border p-0.5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const params = new URLSearchParams({
+                start: fmt(sevenDaysAgo),
+                end: fmt(yesterday),
+                model_sort: "requests",
+                user_sort: "cost",
+              });
+              window.open(`/api/analytics/export?${params}`, "_blank");
+            }}
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            title="Экспорт аналитики в CSV"
+          >
+            <Download className="h-4 w-4" />
+            Экспорт CSV
+          </button>
+          <div className="flex gap-1 rounded-md border border-border p-0.5">
           <TabButton
             active={activeTab === "overview"}
             onClick={() => {
@@ -120,6 +137,7 @@ export function AnalyticsPage() {
             icon={<Users className="h-4 w-4" />}
             label="Пользователи"
           />
+          </div>
         </div>
       </div>
 

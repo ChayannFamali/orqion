@@ -6,9 +6,11 @@ arch.md §5.3: источник — usage_daily. Доступ по праву vi
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import DateRange, get_by_day, get_by_model, get_by_user, get_summary
@@ -118,4 +120,151 @@ async def get_analytics(
         by_day=[DailyBreakdown(**d) for d in by_day_list],
         by_model=[ModelBreakdown(**m) for m in by_model_list],
         by_user=[UserBreakdown(**u) for u in by_user_list],
+    )
+
+
+@router.get("/export")
+async def export_analytics(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    start: str | None = Query(None, description="Начало периода (ISO date)"),
+    end: str | None = Query(None, description="Конец периода (ISO date)"),
+    model_limit: int | None = Query(None, ge=1, le=100),
+    model_sort: str = Query("requests"),
+    user_limit: int | None = Query(None, ge=1, le=100),
+    user_sort: str = Query("requests"),
+) -> Response:
+    """Экспорт аналитики в CSV (T-434).
+
+    Паттерн — T-428 (audit export): Content-Disposition: attachment,
+    те же фильтры/сортировка, что у GET /api/analytics. Access control:
+    view_analytics → 403 (AnalyticsForbidden), не 404 (T-120).
+    """
+    await _check_access(session, user)
+    workspace_id = request.app.state.workspace_id
+    date_range = _parse_range(start, end)
+
+    policy = await resolve_policy(session, user)
+    is_admin = WILDCARD in policy.capabilities
+    team_filter = None if is_admin else (user.team_id or "")
+
+    summary_dict = await get_summary(session, workspace_id, date_range, team_filter=team_filter)
+    by_day_list = await get_by_day(session, workspace_id, date_range, team_filter=team_filter)
+    by_model_list = await get_by_model(
+        session,
+        workspace_id,
+        date_range,
+        limit=model_limit,
+        sort_by=model_sort,
+        team_filter=team_filter,
+    )
+    by_user_list = await get_by_user(
+        session,
+        workspace_id,
+        date_range,
+        limit=user_limit,
+        sort_by=user_sort,
+        team_filter=team_filter,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "section",
+            "date",
+            "model_alias",
+            "user_email",
+            "role_name",
+            "team_name",
+            "requests",
+            "tokens_in",
+            "tokens_out",
+            "cost",
+            "errors",
+            "avg_latency_ms",
+        ]
+    )
+
+    # Summary row
+    writer.writerow(
+        [
+            "summary",
+            "",
+            "",
+            "",
+            "",
+            "",
+            summary_dict["total_requests"],
+            summary_dict["total_tokens_in"],
+            summary_dict["total_tokens_out"],
+            summary_dict["total_cost"],
+            summary_dict["total_errors"],
+            summary_dict.get("avg_latency_ms", ""),
+        ]
+    )
+
+    for d in by_day_list:
+        writer.writerow(
+            [
+                "daily",
+                d["date"],
+                "",
+                "",
+                "",
+                "",
+                d["requests"],
+                d["tokens_in"],
+                d["tokens_out"],
+                d["cost"],
+                d["errors"],
+                d.get("avg_latency_ms", ""),
+            ]
+        )
+
+    for m in by_model_list:
+        writer.writerow(
+            [
+                "model",
+                "",
+                m.get("model_alias", ""),
+                "",
+                "",
+                "",
+                m["requests"],
+                m["tokens_in"],
+                m["tokens_out"],
+                m["cost"],
+                m["errors"],
+                "",
+            ]
+        )
+
+    for u in by_user_list:
+        writer.writerow(
+            [
+                "user",
+                "",
+                "",
+                u.get("user_email", ""),
+                u.get("role_name", ""),
+                u.get("team_name", ""),
+                u["requests"],
+                u["tokens_in"],
+                u["tokens_out"],
+                u["cost"],
+                u["errors"],
+                "",
+            ]
+        )
+
+    content = output.getvalue()
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="analytics.csv"',
+            "X-Export-Sections": "summary,daily,model,user",
+        },
     )

@@ -633,3 +633,83 @@ async def test_admin_sees_team_name_in_by_user(
 
     assert by_user[dev_a_id]["team_name"] == "Engineering"
     assert by_user[dev_b_id]["team_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_export_csv_matches_analytics_data(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-434: CSV export содержит те же данные, что GET /api/analytics.
+
+    Паттерн — T-428: сравнение экспорта с JSON-эндпоинтом на той же выборке.
+    """
+    team_id = await _create_team(app_fixture)
+    user_id = await _login_with_role(api_client, app_fixture, "manager", team_id=team_id)
+    model_id = await _seed_provider_and_model(app_fixture)
+    await _seed_usage_daily(
+        app_fixture,
+        user_id=user_id,
+        model_id=model_id,
+        date_str="2026-08-08",
+        requests=10,
+        tokens_in=1000,
+        tokens_out=500,
+        cost=0.005,
+        errors=1,
+    )
+
+    # GET /api/analytics — JSON
+    json_resp = await api_client.get("/api/analytics?start=2026-08-08&end=2026-08-08")
+    assert json_resp.status_code == 200
+    json_body = json_resp.json()
+
+    # GET /api/analytics/export — CSV
+    csv_resp = await api_client.get("/api/analytics/export?start=2026-08-08&end=2026-08-08")
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"] == "text/csv; charset=utf-8"
+    assert "attachment" in csv_resp.headers["content-disposition"]
+
+    # Парсим CSV
+    import csv as csv_mod
+    import io as io_mod
+
+    reader = csv_mod.DictReader(io_mod.StringIO(csv_resp.text))
+    rows = list(reader)
+
+    # Summary row
+    summary_rows = [r for r in rows if r["section"] == "summary"]
+    assert len(summary_rows) == 1
+    assert int(summary_rows[0]["requests"]) == json_body["summary"]["total_requests"]
+    assert int(summary_rows[0]["tokens_in"]) == json_body["summary"]["total_tokens_in"]
+    assert int(summary_rows[0]["tokens_out"]) == json_body["summary"]["total_tokens_out"]
+    assert abs(float(summary_rows[0]["cost"]) - json_body["summary"]["total_cost"]) < 0.0001
+
+    # Daily rows
+    daily_rows = [r for r in rows if r["section"] == "daily"]
+    assert len(daily_rows) == len(json_body["by_day"])
+    assert daily_rows[0]["date"] == json_body["by_day"][0]["date"]
+    assert int(daily_rows[0]["requests"]) == json_body["by_day"][0]["requests"]
+
+    # Model rows
+    model_rows = [r for r in rows if r["section"] == "model"]
+    assert len(model_rows) == len(json_body["by_model"])
+    assert int(model_rows[0]["requests"]) == json_body["by_model"][0]["requests"]
+
+    # User rows
+    user_rows = [r for r in rows if r["section"] == "user"]
+    assert len(user_rows) == len(json_body["by_user"])
+    assert int(user_rows[0]["requests"]) == json_body["by_user"][0]["requests"]
+
+
+@pytest.mark.asyncio
+async def test_export_csv_forbidden_without_view_analytics(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-434: export без view_analytics → 403 (не 404, T-120)."""
+    await _login_with_role(api_client, app_fixture, "developer")
+
+    response = await api_client.get("/api/analytics/export")
+    assert response.status_code == 403
+    assert response.json()["error"] == "analytics_forbidden"

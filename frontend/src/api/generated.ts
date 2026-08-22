@@ -233,6 +233,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Analytics
+         * @description Экспорт аналитики в CSV (T-434).
+         *
+         *     Паттерн — T-428 (audit export): Content-Disposition: attachment,
+         *     те же фильтры/сортировка, что у GET /api/analytics. Access control:
+         *     view_analytics → 403 (AnalyticsForbidden), не 404 (T-120).
+         */
+        get: operations["export_analytics_api_analytics_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-log": {
         parameters: {
             query?: never;
@@ -2725,6 +2749,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_analytics_api_analytics_export_get: {
+        parameters: {
+            query?: {
+                /** @description Начало периода (ISO date) */
+                start?: string | null;
+                /** @description Конец периода (ISO date) */
+                end?: string | null;
+                model_limit?: number | null;
+                model_sort?: string;
+                user_limit?: number | null;
+                user_sort?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
