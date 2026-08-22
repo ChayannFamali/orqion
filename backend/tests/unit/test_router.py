@@ -1,4 +1,4 @@
-"""Тесты маршрутизации: упорядоченное сужение, fallback, data_class, no route.
+"""Тесты маршрутизации: упорядоченное сужение, fallback, data_class, no route, выбор (BUG-012).
 
 S-12: первое совпадение задаёт множество, последующие только сужают.
 fallback применяется при недоступности провайдера, не при отказе по правам.
@@ -374,7 +374,10 @@ class TestRuleMatching:
         ]
         ctx = _make_ctx(models, model_alias="local/qwen3-8b")
         decision = select_model(rules, ctx)
-        assert decision.reason == "glob-match"
+        # правило сработало (rule_index), но BUG-012: выбор прошёл сужение —
+        # reason явно говорит «user selection», а не reason правила
+        assert decision.rule_index == 0
+        assert decision.reason == "user selection (local/qwen3-8b)"
 
     def test_when_model_alias_no_match(self) -> None:
         """when_model_alias не совпадает → правило пропускается."""
@@ -391,7 +394,10 @@ class TestRuleMatching:
         ]
         ctx = _make_ctx(models, model_alias="local/qwen3-8b")
         decision = select_model(rules, ctx)
-        assert decision.reason == "default"
+        # правило для external/* пропущено: сработал default (rule_index=99);
+        # выбор присутствует в множестве — reason «user selection» (BUG-012)
+        assert decision.rule_index == 99
+        assert decision.reason == "user selection (local/qwen3-8b)"
 
     def test_when_task_matches(self) -> None:
         models = [_make_model("local/qwen3-8b")]
@@ -431,3 +437,105 @@ class TestRuleMatching:
         ctx2 = _make_ctx(models, role="developer", task_type="code")
         decision2 = select_model(rules, ctx2)
         assert decision2.reason == "developer+code"
+
+
+class TestUserSelection:
+    """BUG-012: явный выбор — primary внутри суженного множества, не расширяя его."""
+
+    def test_selected_alias_becomes_primary(self) -> None:
+        """Выбор переставляет приоритет: primary — выбранная, не первый кандидат."""
+        models = [_make_model("local/qwen3-8b"), _make_model("local/qwen3-14b")]
+        rules = [
+            RouteRule(order=99, is_default=True, is_terminal=True, reason="default"),
+        ]
+        ctx = _make_ctx(models, model_alias="local/qwen3-14b")
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-14b"
+        assert decision.reason == "user selection (local/qwen3-14b)"
+
+    def test_selection_within_narrowed_set_wins(self) -> None:
+        """Правило сужает до local/*; выбор внутри множества — побеждает."""
+        models = [
+            _make_model("local/qwen3-8b"),
+            _make_model("local/qwen3-14b"),
+            _make_model("external/gpt-4", locality="external"),
+        ]
+        rules = [
+            RouteRule(
+                order=0,
+                is_terminal=True,
+                when_role="developer",
+                to=["local/*"],
+                reason="local only",
+            ),
+        ]
+        ctx = _make_ctx(models, role="developer", model_alias="local/qwen3-14b")
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-14b"
+        assert decision.reason == "user selection (local/qwen3-14b)"
+
+    def test_selection_filtered_out_rules_win(self) -> None:
+        """Правило исключило выбранную модель из множества — побеждают правила."""
+        models = [
+            _make_model("local/qwen3-8b"),
+            _make_model("external/gpt-4", locality="external"),
+        ]
+        rules = [
+            RouteRule(
+                order=0,
+                is_terminal=True,
+                when_role="developer",
+                to=["local/*"],
+                reason="local only",
+            ),
+        ]
+        ctx = _make_ctx(models, role="developer", model_alias="external/gpt-4")
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-8b"
+        assert decision.reason == "local only"
+
+    def test_selection_cannot_bypass_data_class(self) -> None:
+        """К3: external-выбор отфильтрован до проверки выбора — побеждает local."""
+        models = [
+            _make_model("local/qwen3-8b"),
+            _make_model("external/gpt-4", locality="external"),
+        ]
+        rules = [
+            RouteRule(order=99, is_default=True, is_terminal=True, reason="default"),
+        ]
+        ctx = _make_ctx(models, model_alias="external/gpt-4", corpus_data_class="К3")
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-8b"
+        assert decision.model.locality == "local"
+        assert decision.reason == "default"
+
+    def test_no_alias_behavior_unchanged(self) -> None:
+        """Без выбора — первая модель множества, reason от правила."""
+        models = [_make_model("local/qwen3-8b"), _make_model("local/qwen3-14b")]
+        rules = [
+            RouteRule(order=99, is_default=True, is_terminal=True, reason="default"),
+        ]
+        ctx = _make_ctx(models)
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-8b"
+        assert decision.reason == "default"
+
+    def test_fallback_chain_still_rule_driven(self) -> None:
+        """Выбор стал primary; fallback — из правила, сама выборка исключена."""
+        models = [
+            _make_model("local/qwen3-8b"),
+            _make_model("local/qwen3-14b"),
+            _make_model("local/qwen3-4b"),
+        ]
+        rules = [
+            RouteRule(
+                order=0,
+                is_terminal=True,
+                fallback=["local/qwen3-8b", "local/qwen3-14b"],
+                reason="primary+fallback",
+            ),
+        ]
+        ctx = _make_ctx(models, model_alias="local/qwen3-14b")
+        decision = select_model(rules, ctx)
+        assert decision.model.alias == "local/qwen3-14b"
+        assert [m.alias for m in decision.fallbacks] == ["local/qwen3-8b"]

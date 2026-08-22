@@ -3,6 +3,8 @@
 arch.md §7.2: первое совпадение задаёт множество, последующие только сужают.
 fallback применяется при недоступности провайдера, не при отказе по правам.
 Фильтр по классу данных применяется до fallback и к нему тоже (S-12, грабли).
+BUG-012: явный выбор пользователя становится primary внутри уже суженного
+множества — выбор переставляет приоритет, не расширяя множество.
 """
 
 from __future__ import annotations
@@ -62,7 +64,11 @@ def select_model(
     2. Проходить правила по порядку. Каждое совпадение сужает множество.
     3. terminal=True — прекратить после срабатывания.
     4. Если ни одно правило не сработало — использовать исходное множество.
-    5. Первая модель из итогового множества — основная, остальные — fallbacks.
+    5. BUG-012: model_alias из контекста становится основным, если присутствует
+       в итоговом множестве (проверка после всех сужений — выбор не обходит
+       ADR-12 и policy-видимость), reason — "user selection (alias)".
+       Иначе — первая модель множества.
+    6. Fallback-цепочка остаётся заданной правилами.
     """
     candidates = _filter_data_class(ctx.candidate_models, ctx.corpus_data_class)
 
@@ -99,7 +105,17 @@ def select_model(
             hint=hint,
         )
 
-    primary = candidates[0]
+    # BUG-012: явный выбор пользователя становится primary, если модель прошла
+    # все сужения (policy-видимость и data_class-фильтр применены выше) —
+    # выбор переставляет приоритет внутри разрешённого множества, не расширяя его.
+    chosen: Model | None = None
+    if ctx.model_alias is not None:
+        chosen = next((m for m in candidates if m.alias == ctx.model_alias), None)
+    if chosen is not None:
+        primary = chosen
+        matched_reason = f"user selection ({ctx.model_alias})"
+    else:
+        primary = candidates[0]
     fallback_models = _filter_data_class(
         _select_by_aliases(ctx.candidate_models, matched_fallback),
         ctx.corpus_data_class,

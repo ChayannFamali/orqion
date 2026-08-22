@@ -94,6 +94,7 @@ class RouteDecision:
 
     rule_index: индекс сработавшего правила (-1 = default).
     fallbacks: резервные модели, уже отфильтрованные по data_class.
+    reason: "default", reason правила или "user selection (alias)" (BUG-012).
     """
 
     model: Model

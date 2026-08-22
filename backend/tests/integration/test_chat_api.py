@@ -15,7 +15,7 @@ from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
 from app.crypto.service import encrypt_api_key
-from app.db.models import Model, Provider, Role, User
+from app.db.models import Model, Provider, Role, Span, Trace, User
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
 from fastapi import FastAPI
@@ -625,3 +625,65 @@ async def test_stream_abort_closes_upstream(
 
     assert upstream_state["closed"] is True, "upstream generator was not closed on disconnect"
     assert upstream_state["completed"] is False, "upstream completed despite client disconnect"
+
+
+@pytest.mark.asyncio
+async def test_selected_model_alias_becomes_primary(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG-012: выбранная в запросе модель становится primary, не candidates[0].
+
+    Регрессия: select_model игнорировал model_alias в итоге — ответ приходил
+    от первой модели множества, а выбор пользователя был только условием правил.
+    """
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture, "local/first", "first-upstream")
+    await _seed_provider_and_model(app_fixture, "local/second", "second-upstream")
+
+    call_log: list[str] = []
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        call_log.append(model)
+        return {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "model_alias": "local/second",
+            "stream": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model"] == "local/second"
+    assert call_log == ["second-upstream"]
+
+    # T-307: routing-спан явно говорит «user selection», не «default»
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        traces = (await session.execute(select(Trace))).scalars().all()
+        assert traces, "trace не записан"
+        spans = (
+            (await session.execute(select(Span).where(Span.trace_id == traces[-1].id)))
+            .scalars()
+            .all()
+        )
+        routing_spans = [s for s in spans if s.name == "routing"]
+        assert len(routing_spans) == 1
+        assert routing_spans[0].payload["model"] == "local/second"
+        assert routing_spans[0].payload["reason"] == "user selection (local/second)"
