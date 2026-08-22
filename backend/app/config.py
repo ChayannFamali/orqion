@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     # rag_reformulation_model_alias (T-218): alias → Model → Provider.
     embeddings_model_alias: str = ""
 
+    # T-431: порог (в минутах) для recovery осиротевших index_version в
+    # статусе "building" при старте. На single-process (ADR-1) любая строка
+    # в "building" при старте lifespan гарантированно осиротела — процесс,
+    # державший фоновую задачу T-214, умер. Порог — defensive margin на
+    # будущее (multi-worker §14.2 пока не поддерживается), не текущая
+    # необходимость: 5 минут достаточно для нормального build, достаточно
+    # коротко, чтобы не висеть в "building" после рестарта.
+    index_building_stale_minutes: int = 5
+
     secret_key: str | None = Field(default=None)
 
     session_cookie_secure: bool = False

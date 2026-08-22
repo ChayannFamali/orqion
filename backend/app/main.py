@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
@@ -88,6 +88,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.embedding_backend = await resolve_embedding_backend(
             settings, session, workspace_id, secret_key
         )
+
+    # T-431: recovery осиротевших index_version в статусе "building".
+    await recover_stale_building_versions(session_factory, workspace_id, settings)
 
     # Ресурсы, требующие close() при остановке, регистрируются в AsyncExitStack.
     # blob_store (LocalBlobStore/S3BlobStore) не имеет close() — нет открытых
@@ -237,6 +240,61 @@ def _mount_static(app: FastAPI) -> None:
     dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
     if dist.exists():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="static")
+
+
+from datetime import UTC
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+async def recover_stale_building_versions(
+    session_factory: Callable[[], AsyncSession],
+    workspace_id: str,
+    settings: Settings,
+) -> None:
+    """T-431: перевод осиротевших index_version(status=building) в interrupted.
+
+    На single-process (ADR-1) любая строка в "building" при старте
+    гарантированно осиротела — процесс, державший фоновую задачу T-214,
+    умер (раз мы сейчас стартуем заново). Порог (5 минут по умолчанию) —
+    defensive margin на будущее (multi-worker §14.2 пока не поддерживается),
+    не текущая необходимость: на single-process все "building" старше порога
+    — но порог страхует от ложного срабатывания при быстром рестарте внутри
+    одного цикла build.
+
+    Активная версия корпуса (corpus.active_index_version_id) не затронута —
+    она имеет status="active", не "building".
+    """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.db.models import IndexVersion
+
+    stale_threshold = datetime.now(UTC) - timedelta(minutes=settings.index_building_stale_minutes)
+    async with session_factory() as session:
+        stmt = (
+            update(IndexVersion)
+            .where(
+                IndexVersion.workspace_id == workspace_id,
+                IndexVersion.status == "building",
+                IndexVersion.created_at < stale_threshold,
+            )
+            .values(status="interrupted")
+        )
+        result = await session.execute(stmt)
+        rowcount = result.rowcount if hasattr(result, "rowcount") else 0
+        if rowcount > 0:
+            import logging
+
+            logging.getLogger("orqion.lifespan").info(
+                "Recovered %d stale index_version(s) in building state "
+                "(workspace=%s, threshold=%s minutes)",
+                rowcount,
+                workspace_id,
+                settings.index_building_stale_minutes,
+            )
+        await session.commit()
 
 
 app = create_app()
