@@ -383,12 +383,20 @@ async def _run_ingest_git(
         )
 
         if build_index and ingest_result.ingested > 0:
-            from app.rag.embeddings import LocalEmbeddingBackend
+            from pathlib import Path
+
+            from app.config import get_or_create_secret_key
+            from app.rag.embedding_resolver import resolve_embedding_backend
             from app.rag.index_builder import build_index_version
             from app.rag.vector_store import SQLiteVectorStore
 
+            data_dir = Path(settings.blob_store_path).parent
+            secret_key = get_or_create_secret_key(settings, data_dir)
+
             vector_store = SQLiteVectorStore(settings.vector_store_path)
-            embedding_backend = LocalEmbeddingBackend(settings.embeddings_model)
+            embedding_backend = await resolve_embedding_backend(
+                settings, session, workspace_id, secret_key
+            )
             print("Building index...", flush=True)
             build_result = await build_index_version(
                 session,

@@ -43,7 +43,11 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
 
     embeddings_model: str = "BAAI/bge-m3"
-    embeddings_backend: str = "local"
+    embeddings_backend: str = "local"  # local | provider
+    # T-430: алиас зарегистрированной модели для ProviderEmbeddingBackend.
+    # Используется только при embeddings_backend=provider. Прецедент —
+    # rag_reformulation_model_alias (T-218): alias → Model → Provider.
+    embeddings_model_alias: str = ""
 
     secret_key: str | None = Field(default=None)
 

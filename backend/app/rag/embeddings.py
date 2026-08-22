@@ -116,8 +116,11 @@ class LocalEmbeddingBackend:
         try:
             from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-not-found]
         except ImportError as e:
-            raise ImportError(
-                "FlagEmbedding не установлен. Установите orqion[full]: pip install orqion[full]"
+            raise RuntimeError(
+                "embeddings_backend=local, но FlagEmbedding не установлен. "
+                "Установите orqion[full] (pip install -e .[full]) "
+                "или настройте ORQION_EMBEDDINGS_BACKEND=provider "
+                "с ORQION_EMBEDDINGS_MODEL_ALIAS (алиас модели с поддержкой /v1/embeddings)."
             ) from e
 
         if self._device is None:

@@ -81,10 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
 
-    # Embedding backend для RAG-конвейера (T-221)
-    from app.rag.embeddings import LocalEmbeddingBackend
+    # Embedding backend для RAG-конвейера (T-221, T-430)
+    from app.rag.embedding_resolver import resolve_embedding_backend
 
-    app.state.embedding_backend = LocalEmbeddingBackend(settings.embeddings_model)
+    async with session_factory() as session:
+        app.state.embedding_backend = await resolve_embedding_backend(
+            settings, session, workspace_id, secret_key
+        )
 
     # Ресурсы, требующие close() при остановке, регистрируются в AsyncExitStack.
     # blob_store (LocalBlobStore/S3BlobStore) не имеет close() — нет открытых

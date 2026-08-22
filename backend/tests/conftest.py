@@ -12,7 +12,13 @@ if _backend not in sys.path:
 
 # re-export фикстур для автопоиска pytest
 from tests.fixtures.blob import blob_store, blob_store_factory  # noqa: F401
-from tests.fixtures.client import api_client, app_fixture  # noqa: F401
+from tests.fixtures.client import (  # noqa: F401
+    api_client,
+    app_fixture,
+    app_provider_fixture,
+    provider_api_client,
+    provider_settings,
+)
 from tests.fixtures.database import db_session, test_engine, test_settings  # noqa: F401
 from tests.fixtures.factories import make_workspace  # noqa: F401
 from tests.fixtures.provider import stub_provider  # noqa: F401

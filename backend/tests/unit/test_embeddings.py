@@ -286,11 +286,16 @@ def test_local_backend_default_model() -> None:
 
 
 def test_local_backend_import_error_without_flag() -> None:
-    """LocalEmbeddingBackend: ImportError если FlagEmbedding не установлен."""
+    """LocalEmbeddingBackend: RuntimeError (§7.3) если FlagEmbedding не установлен.
+
+    T-430: сообщение в формате §7.3 — причина + способ действия, не сырой
+    ImportError со стектрейсом. Проверка осталась ленивой (при первом
+    _get_model, не при конструировании) — T-013.
+    """
     backend = LocalEmbeddingBackend(device="cpu")
 
     with (
         patch("builtins.__import__", side_effect=ImportError("no FlagEmbedding")),
-        pytest.raises(ImportError, match="FlagEmbedding не установлен"),
+        pytest.raises(RuntimeError, match="FlagEmbedding не установлен"),
     ):
         backend._get_model()
