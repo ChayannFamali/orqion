@@ -35,12 +35,21 @@ export function ChatMessages({
   onRegenerate,
   onEdit,
 }: ChatMessagesProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
 
+  // Скроллим только свой контейнер: scrollIntoView прокручивает всех
+  // предков с overflow (включая overflow-hidden AppLayout) — это обрезало
+  // шапку чата и кнопку «Новый диалог» (BUG: клиппинг панели чата)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+    const el = containerRef.current;
+    if (!el) return;
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages.length, streamingContent, isStreaming]);
 
   const lastAssistantIdx = (() => {
@@ -69,7 +78,7 @@ export function ChatMessages({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-6">
       <div className="mx-auto max-w-3xl space-y-4">
         {messages.map((msg, idx) => (
           <div
@@ -161,7 +170,6 @@ export function ChatMessages({
           </div>
         )}
 
-        <div ref={bottomRef} />
       </div>
     </div>
   );

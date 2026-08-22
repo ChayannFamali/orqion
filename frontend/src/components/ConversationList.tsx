@@ -13,7 +13,9 @@ export function ConversationList({
   onSelect,
 }: ConversationListProps) {
   return (
-    <div className="flex h-full flex-col">
+    // min-h-0 + flex-1 вместо h-full: список занимает остаток aside без
+    // переполнения, иначе предок со scroll прокручивается и обрезает шапку
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <p className="p-3 text-sm text-muted-foreground">Нет диалогов</p>

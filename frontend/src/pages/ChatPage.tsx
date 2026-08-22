@@ -128,7 +128,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full">
       {/* Conversations panel (within content area, not AppLayout sidebar) */}
-      <aside className="w-60 shrink-0 border-r border-border bg-background">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-background">
         <div className="border-b border-border p-3">
           <button
             onClick={handleNew}
