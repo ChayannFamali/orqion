@@ -4935,6 +4935,17 @@
             "type": "string",
             "title": "Locality"
           },
+          "provider_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Kind"
+          },
           "max_input_tokens": {
             "anyOf": [
               {

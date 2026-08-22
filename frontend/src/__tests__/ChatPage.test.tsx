@@ -133,10 +133,33 @@ describe("ChatPage", () => {
     });
   });
 
-  it("renders new conversation button", async () => {
+  it("new conversation button opens modal with required model selection", async () => {
     renderChatPage();
     await waitFor(() => {
       expect(screen.getAllByText("Новый диалог").length).toBeGreaterThan(0);
+    });
+    const user = userEvent.setup();
+    // Кнопка в панели диалогов — первая в DOM
+    const buttons = screen.getAllByText("Новый диалог");
+    await user.click(buttons[0]);
+    await waitFor(() => {
+      expect(screen.getByText("Выберите модель — выбор обязателен")).toBeInTheDocument();
+      expect(screen.getByText("Создать диалог")).toBeDisabled();
+    });
+    await user.click(screen.getByText("qwen-7b"));
+    const create = screen.getByText("Создать диалог");
+    expect(create).toBeEnabled();
+    await user.click(create);
+    await waitFor(() => {
+      expect(screen.queryByText("Выберите модель — выбор обязателен")).not.toBeInTheDocument();
+    });
+  });
+
+  it("model selector defaults to first available model", async () => {
+    renderChatPage();
+    await waitFor(() => {
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      expect(select.value).toBe("qwen-7b");
     });
   });
 

@@ -50,19 +50,23 @@ async def list_available_models(
     """
     workspace_id = request.app.state.workspace_id
 
+    # ORDER BY alias — тот же порядок, что у кандидатов маршрутизации:
+    # первый элемент списка = неявный дефолт UI совпадает с candidates[0]
     result = await session.execute(
-        select(Model)
+        select(Model, Provider.kind)
         .join(Provider, Model.provider_id == Provider.id)
         .where(
             Model.workspace_id == workspace_id,
             Model.enabled.is_(True),
             Provider.enabled.is_(True),
         )
+        .order_by(Model.alias)
     )
-    all_models = list(result.scalars().all())
+    all_models = [(m, kind) for m, kind in result.all()]
 
     policy = await resolve_policy(session, user)
-    filtered = _filter_by_policy(all_models, policy.models)
+    filtered = _filter_by_policy([m for m, _ in all_models], policy.models)
+    kind_by_id = {m.id: kind for m, kind in all_models}
 
     return [
         ModelResponse(
@@ -70,6 +74,7 @@ async def list_available_models(
             alias=m.alias,
             upstream_name=m.upstream_name,
             locality=m.locality,
+            provider_kind=kind_by_id[m.id],
             max_input_tokens=m.max_input_tokens,
             max_output_tokens=m.max_output_tokens,
             supports_reasoning=m.supports_reasoning,

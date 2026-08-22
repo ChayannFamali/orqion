@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { useConversations, useConversation, useUpdateConversation } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
@@ -7,6 +7,7 @@ import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
 import { ModelSelector } from "../components/ModelSelector";
+import { NewChatModal } from "../components/NewChatModal";
 import type { ChatMessage, MessageResponse } from "../api/types";
 import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
 
@@ -14,12 +15,21 @@ export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
   const models = useEnabledModels();
   const updateConv = useUpdateConversation();
   const chat = useChat();
+
+  // Явный дефолт вместо null: селектор всегда показывает модель, которая
+  // ответит; запрос уходит с model_alias, а не с неявным candidates[0]
+  useEffect(() => {
+    if (selectedModel === null && models.data && models.data.length > 0) {
+      setSelectedModel(models.data[0].alias);
+    }
+  }, [models.data, selectedModel]);
 
   const displayedMessages: MessageResponse[] = conversation.data?.messages ?? [];
 
@@ -29,8 +39,14 @@ export function ChatPage() {
   }, []);
 
   const handleNew = useCallback(() => {
+    setNewChatOpen(true);
+  }, []);
+
+  const handleCreateChat = useCallback((alias: string) => {
     setActiveId(null);
     setLocalMessages([]);
+    setSelectedModel(alias);
+    setNewChatOpen(false);
   }, []);
 
   const handleSend = useCallback(
@@ -201,6 +217,13 @@ export function ChatPage() {
           disabled={models.data?.length === 0}
         />
       </main>
+
+      <NewChatModal
+        open={newChatOpen}
+        models={models.data ?? []}
+        onCancel={() => setNewChatOpen(false)}
+        onCreate={handleCreateChat}
+      />
     </div>
   );
 }

@@ -1895,6 +1895,8 @@ export interface components {
             upstream_name: string;
             /** Locality */
             locality: string;
+            /** Provider Kind */
+            provider_kind?: string | null;
             /** Max Input Tokens */
             max_input_tokens: number | null;
             /** Max Output Tokens */

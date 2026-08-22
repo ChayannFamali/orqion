@@ -23,6 +23,7 @@ class ModelResponse(BaseModel):
     alias: str
     upstream_name: str
     locality: str
+    provider_kind: str | None = None
     max_input_tokens: int | None
     max_output_tokens: int | None
     supports_reasoning: bool
