@@ -72,9 +72,16 @@
   }
 
   input,
-  select,
   textarea {
     background-color: transparent;
+  }
+
+  /* BUG-016: select с transparent-фоном на Chromium (Windows) в тёмной теме
+     рисуется на белом нативном фоне с невидимым текстом до наведения —
+     прозрачность конфликтует с нативной отрисовкой контрола. Явный цвет
+     поверхности (совпадает с модалками и ui/input) решает во всех местах. */
+  select {
+    background-color: hsl(var(--background));
   }
 }
 
