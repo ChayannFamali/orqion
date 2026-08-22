@@ -20,3 +20,4 @@ docs/*
 !docs/migration_postgres.md
 .pgdata/
 .tmp-edge-profile
+data/blobs/
