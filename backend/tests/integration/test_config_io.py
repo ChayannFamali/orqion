@@ -6,6 +6,11 @@
 - валидация: policy, duplicate orders, bad schema_version, missing schema_version
 - dry_run, warnings (loose references), rollback on error
 - приёмочный roundtrip: export A → import B → export B' → YAML == YAML'
+
+Прямые БД-тесты используют фикстуру ``test_engine``: на общей PostgreSQL
+из ``ORQION_DATABASE_URL`` она делает TRUNCATE между тестами, иначе
+закоммиченные роли утекают в следующие тесты (на свежем SQLite-файле
+это не проявляется).
 """
 
 from __future__ import annotations
@@ -47,10 +52,9 @@ async def _setup_db(
 
 
 @pytest.mark.asyncio
-async def test_export_config_basic(test_settings: Settings) -> None:
+async def test_export_config_basic(test_engine: AsyncEngine) -> None:
     """Export создаёт валидный YAML с schema_version, roles, routing_rules."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     async with factory() as session:
         yaml_str = await export_config(session, ws_id)
@@ -68,14 +72,11 @@ async def test_export_config_basic(test_settings: Settings) -> None:
     rule_orders = [r["order"] for r in data["routing_rules"]]
     assert rule_orders == sorted(rule_orders)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_export_config_empty(test_settings: Settings) -> None:
+async def test_export_config_empty(test_engine: AsyncEngine) -> None:
     """Export на инстансе только с seed → YAML содержит builtin роли + default rules."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     async with factory() as session:
         yaml_str = await export_config(session, ws_id)
@@ -85,8 +86,6 @@ async def test_export_config_empty(test_settings: Settings) -> None:
     assert len(data["roles"]) == 5
     assert len(data["routing_rules"]) == 4
 
-    await engine.dispose()
-
 
 # ---------------------------------------------------------------------------
 # Import
@@ -94,10 +93,9 @@ async def test_export_config_empty(test_settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_import_config_clean(test_settings: Settings) -> None:
+async def test_import_config_clean(test_engine: AsyncEngine) -> None:
     """Импорт на чистый инстанс → роли и правила созданы."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -156,14 +154,11 @@ routing_rules:
         assert rules[0].order == 50
         assert rules[0].reason == "custom rule"
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_idempotent(test_settings: Settings) -> None:
+async def test_import_config_idempotent(test_engine: AsyncEngine) -> None:
     """Двойной импорт того же YAML → второй прогон: 0 created, 0 updated, all unchanged."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -212,14 +207,11 @@ routing_rules:
     assert result2.roles_unchanged == 1
     assert result2.routing_rules_replaced is False
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_builtin_upsert(test_settings: Settings) -> None:
+async def test_import_config_builtin_upsert(test_engine: AsyncEngine) -> None:
     """Builtin роли обновляются (policy), не дублируются."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     # Modify builtin "developer" policy in YAML
     yaml_content = """
@@ -263,14 +255,11 @@ routing_rules: []
         assert len(dev_roles) == 1  # not duplicated
         assert dev_roles[0].policy["max_input_tokens"] == 128000
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_custom_role_created(test_settings: Settings) -> None:
+async def test_import_config_custom_role_created(test_engine: AsyncEngine) -> None:
     """Custom роль создаётся."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -298,14 +287,11 @@ routing_rules: []
 
     assert result.roles_created == 1
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_routing_rules_sync(test_settings: Settings) -> None:
+async def test_import_config_routing_rules_sync(test_engine: AsyncEngine) -> None:
     """Existing routing rules заменяются на YAML."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -358,14 +344,11 @@ routing_rules:
         assert rules[0].reason == "replaced rule"
         assert rules[1].reason == "replaced default"
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_routing_rules_noop(test_settings: Settings) -> None:
+async def test_import_config_routing_rules_noop(test_engine: AsyncEngine) -> None:
     """Если existing == YAML → routing_rules_replaced=False."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     # Export existing, then re-import
     async with factory() as session:
@@ -377,14 +360,11 @@ async def test_import_config_routing_rules_noop(test_settings: Settings) -> None
 
     assert result.routing_rules_replaced is False
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_policy_validation(test_settings: Settings) -> None:
+async def test_import_config_policy_validation(test_engine: AsyncEngine) -> None:
     """Невалидный policy → abort, ничего не меняется."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -404,14 +384,11 @@ routing_rules: []
         with pytest.raises(BadRequest):
             await import_config(session, ws_id, yaml_content)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_duplicate_orders(test_settings: Settings) -> None:
+async def test_import_config_duplicate_orders(test_engine: AsyncEngine) -> None:
     """Duplicate `order` в YAML → abort."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -431,14 +408,11 @@ routing_rules:
         with pytest.raises(BadRequest):
             await import_config(session, ws_id, yaml_content)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_bad_schema_version(test_settings: Settings) -> None:
+async def test_import_config_bad_schema_version(test_engine: AsyncEngine) -> None:
     """schema_version=2 → reject."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 2
@@ -450,14 +424,11 @@ routing_rules: []
         with pytest.raises(BadRequest):
             await import_config(session, ws_id, yaml_content)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_missing_schema_version(test_settings: Settings) -> None:
+async def test_import_config_missing_schema_version(test_engine: AsyncEngine) -> None:
     """Нет schema_version → reject."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 roles: []
@@ -468,14 +439,11 @@ routing_rules: []
         with pytest.raises(BadRequest):
             await import_config(session, ws_id, yaml_content)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_dry_run(test_settings: Settings) -> None:
+async def test_import_config_dry_run(test_engine: AsyncEngine) -> None:
     """--dry-run → возвращает diff, не пишет в БД."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -521,14 +489,11 @@ routing_rules:
         )
         assert len(roles) == 0
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_warnings_role_not_found(test_settings: Settings) -> None:
+async def test_import_config_warnings_role_not_found(test_engine: AsyncEngine) -> None:
     """when_role ссылается на несуществующую роль → warning, правило создаётся."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
 schema_version: 1
@@ -548,14 +513,11 @@ routing_rules:
     assert len(result.warnings) >= 1
     assert any("nonexistent-role" in w for w in result.warnings)
 
-    await engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_import_config_rollback_on_error(test_settings: Settings) -> None:
+async def test_import_config_rollback_on_error(test_engine: AsyncEngine) -> None:
     """Ошибка в середине → rollback, partial changes не сохраняются."""
-    engine = create_engine(test_settings)
-    _, factory, ws_id = await _setup_db(engine)
+    _, factory, ws_id = await _setup_db(test_engine)
 
     # Valid role first, then invalid policy on second role
     yaml_content = """
@@ -604,8 +566,6 @@ routing_rules: []
         )
         assert len(roles) == 0
 
-    await engine.dispose()
-
 
 # ---------------------------------------------------------------------------
 # Приёмочный тест: roundtrip
@@ -613,13 +573,13 @@ routing_rules: []
 
 
 @pytest.mark.asyncio
-async def test_export_import_roundtrip_identical(test_settings: Settings) -> None:
+async def test_export_import_roundtrip_identical(test_engine: AsyncEngine) -> None:
     """Export с инстанса A → import на чистый инстанс B → export B' → YAML идентичен.
 
     Исключённые поля: id, workspace_id, created_at (instance-specific).
     """
     # --- Instance A: seed + custom role + custom routing rule ---
-    engine_a = create_engine(test_settings)
+    engine_a = test_engine
     _, factory_a, ws_id_a = await _setup_db(engine_a)
 
     # Add custom role and custom routing rule to instance A
@@ -738,7 +698,7 @@ async def test_export_import_roundtrip_identical(test_settings: Settings) -> Non
         assert db_rule.fallback_models == yaml_rule["fallback_models"]
         assert db_rule.reason == yaml_rule["reason"]
 
-    await engine_a.dispose()
+    # engine_a == фикстура test_engine — её освобождает сама фикстура.
     await engine_b.dispose()
 
 
