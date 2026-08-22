@@ -9,7 +9,7 @@ import pytest
 from app.crypto.service import encrypt_api_key
 from app.db.models import Provider
 from app.errors import ProviderUnavailable
-from app.providers.client import ProviderClient
+from app.providers.client import ProviderClient, normalize_base_url
 
 
 def _make_provider(
@@ -173,3 +173,44 @@ async def test_provider_without_api_key() -> None:
 
     models = await client.list_models()
     assert len(models) == 1
+
+
+def test_normalize_base_url() -> None:
+    """Каноническая форма: хвостовые слэши и /v1 убираются, глубокий путь сохраняется."""
+    assert normalize_base_url("http://stub:1234") == "http://stub:1234"
+    assert normalize_base_url("http://stub:1234/") == "http://stub:1234"
+    assert normalize_base_url("http://stub:1234/v1") == "http://stub:1234"
+    assert normalize_base_url("http://stub:1234/v1/") == "http://stub:1234"
+    assert normalize_base_url("http://stub:1234/proxy/v1/") == "http://stub:1234/proxy"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://stub:1234",
+        "http://stub:1234/",
+        "http://stub:1234/v1",
+        "http://stub:1234/v1/",
+    ],
+)
+@pytest.mark.asyncio
+async def test_base_url_variants_same_final_url(base_url: str) -> None:
+    """BUG-011: 4 варианта base_url → один корректный итоговый URL (точная строка)."""
+    provider = _make_provider(base_url=base_url)
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"data": [{"id": "m"}]})
+
+    transport = httpx.MockTransport(handler)
+    client = ProviderClient(provider, "test-secret")
+    client._client = lambda timeout=None: httpx.AsyncClient(  # type: ignore[method-assign]
+        transport=transport,
+        timeout=timeout or 30.0,
+        headers=client._headers(),
+    )
+
+    await client.list_models()
+    assert seen == ["http://stub:1234/v1/models"]

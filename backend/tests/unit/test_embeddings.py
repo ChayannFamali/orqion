@@ -144,6 +144,32 @@ async def test_provider_backend_embed_no_api_key() -> None:
     assert "Authorization" not in headers
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:1234",
+        "http://localhost:1234/",
+        "http://localhost:1234/v1",
+        "http://localhost:1234/v1/",
+    ],
+)
+@pytest.mark.asyncio
+async def test_provider_backend_base_url_variants(base_url: str) -> None:
+    """BUG-011: 4 варианта base_url → один корректный /v1/embeddings (точная строка)."""
+    backend = ProviderEmbeddingBackend(base_url=base_url, model="bge-m3")
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"data": [{"embedding": [1.0]}]}
+    mock_response.raise_for_status = MagicMock()
+
+    with patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_response
+        await backend.embed(["text"])
+
+    args, _kwargs = mock_post.call_args
+    assert args[0] == "http://localhost:1234/v1/embeddings"
+
+
 # ---------------------------------------------------------------------------
 # embed_batch
 # ---------------------------------------------------------------------------

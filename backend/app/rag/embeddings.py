@@ -18,6 +18,8 @@ from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
+from app.providers.client import normalize_base_url
+
 # ---------------------------------------------------------------------------
 # Контракты
 # ---------------------------------------------------------------------------
@@ -171,7 +173,7 @@ class ProviderEmbeddingBackend:
         api_key: str | None = None,
         timeout: float = 60.0,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = normalize_base_url(base_url)
         self._model = model
         self._api_key = api_key
         self._timeout = timeout

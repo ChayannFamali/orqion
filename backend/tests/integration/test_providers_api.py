@@ -71,7 +71,7 @@ async def test_create_provider_key_encrypted_not_returned(
     assert response.status_code == 201
     body = response.json()
     assert body["kind"] == "openai"
-    assert body["base_url"] == "http://localhost:1234/v1"
+    assert body["base_url"] == "http://localhost:1234"
     assert "api_key" not in body
     assert "api_key_enc" not in body
 
@@ -107,6 +107,34 @@ async def test_create_provider_without_key(
     body = response.json()
     assert body["kind"] == "ollama"
     assert "api_key" not in body
+
+
+@pytest.mark.asyncio
+async def test_base_url_normalized_on_save(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """BUG-011: base_url сохраняется в канонической форме (create и PATCH)."""
+    await _login_as_admin(api_client, app_fixture)
+
+    response = await api_client.post(
+        "/api/providers",
+        json={
+            "kind": "lmstudio",
+            "base_url": "http://localhost:1234/v1/",
+            "enabled": True,
+        },
+    )
+    assert response.status_code == 201
+    provider_id = response.json()["id"]
+    assert response.json()["base_url"] == "http://localhost:1234"
+
+    response = await api_client.patch(
+        f"/api/providers/{provider_id}",
+        json={"base_url": "http://localhost:1234/v1"},
+    )
+    assert response.status_code == 200
+    assert response.json()["base_url"] == "http://localhost:1234"
 
 
 @pytest.mark.asyncio

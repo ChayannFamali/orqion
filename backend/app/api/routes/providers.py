@@ -28,6 +28,7 @@ from app.db.session import get_session
 from app.errors import BadRequest, NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
+from app.providers.client import normalize_base_url
 
 router = APIRouter(
     prefix="/api/providers", tags=["providers"], dependencies=[Depends(current_user)]
@@ -89,7 +90,7 @@ async def create_provider(
     provider = Provider(
         workspace_id=request.app.state.workspace_id,
         kind=body.kind,
-        base_url=body.base_url,
+        base_url=normalize_base_url(body.base_url),
         api_key_enc=api_key_enc,
         enabled=body.enabled,
         capabilities={},
@@ -153,7 +154,7 @@ async def update_provider(
         )
 
     if body.base_url is not None:
-        provider.base_url = body.base_url
+        provider.base_url = normalize_base_url(body.base_url)
     if body.api_key is not None:
         secret_key = request.app.state.secret_key
         provider.api_key_enc = encrypt_api_key(body.api_key, secret_key)

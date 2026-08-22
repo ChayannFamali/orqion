@@ -21,6 +21,18 @@ DEFAULT_TIMEOUT = 30.0
 STREAM_TIMEOUT = 120.0
 
 
+def normalize_base_url(url: str) -> str:
+    """Каноническая форма base_url: без хвостовых слэшей и суффикса /v1.
+
+    Все потребители (ProviderClient, ProviderEmbeddingBackend) собирают
+    пути сами: f"{base}/v1/...". Хранение и приём в канонической форме
+    делает эквивалентными варианты "...:1234", "...:1234/", "...:1234/v1",
+    "...:1234/v1/" (BUG-011).
+    """
+    normalized = url.strip().rstrip("/")
+    return normalized.removesuffix("/v1")
+
+
 class ProviderClient:
     """OpenAI-совместимый клиент для одного провайдера."""
 
@@ -30,7 +42,7 @@ class ProviderClient:
         secret_key: str,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        self._base_url = provider.base_url.rstrip("/")
+        self._base_url = normalize_base_url(provider.base_url)
         self._secret_key = secret_key
         self._timeout = timeout
 
@@ -56,7 +68,7 @@ class ProviderClient:
 
         async def _call() -> list[dict[str, Any]]:
             async with self._client() as client:
-                response = await client.get(f"{self._base_url}/models")
+                response = await client.get(f"{self._base_url}/v1/models")
                 response.raise_for_status()
                 data: dict[str, Any] = response.json()
                 models: list[dict[str, Any]] = data.get("data", [])
@@ -84,7 +96,7 @@ class ProviderClient:
         async def _call() -> dict[str, Any]:
             async with self._client() as client:
                 response = await client.post(
-                    f"{self._base_url}/chat/completions",
+                    f"{self._base_url}/v1/chat/completions",
                     json=payload,
                 )
                 response.raise_for_status()
@@ -119,7 +131,7 @@ class ProviderClient:
                 self._client(STREAM_TIMEOUT) as client,
                 client.stream(
                     "POST",
-                    f"{self._base_url}/chat/completions",
+                    f"{self._base_url}/v1/chat/completions",
                     json=payload,
                 ) as response,
             ):
