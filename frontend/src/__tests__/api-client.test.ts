@@ -148,4 +148,77 @@ describe("apiFetch", () => {
 
     await expect(apiFetch("/api/models")).rejects.toThrow("Failed to fetch");
   });
+
+  it("T-432: retries once on 503 db_temporarily_unavailable", async () => {
+    const dbError = {
+      error: "db_temporarily_unavailable",
+      reason: "База данных временно недоступна",
+      constraint: null,
+      hint: "Повторите запрос через несколько секунд",
+    };
+    const errorResponse = new Response(JSON.stringify(dbError), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+    const okResponse = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(okResponse);
+    globalThis.fetch = fetchSpy;
+
+    const result = await apiFetch<{ ok: boolean }>("/api/conversations");
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("T-432: does not retry on other 503 errors", async () => {
+    const otherError = {
+      error: "provider_unavailable",
+      reason: "Провайдер недоступен",
+      constraint: null,
+      hint: null,
+    };
+    const errorResponse = new Response(JSON.stringify(otherError), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchSpy = vi.fn().mockResolvedValue(errorResponse);
+    globalThis.fetch = fetchSpy;
+
+    await expect(apiFetch("/api/models")).rejects.toEqual({
+      ...otherError,
+      constraint: null,
+      hint: null,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("T-432: does not retry when db_temporarily_unavailable persists on second attempt", async () => {
+    const dbError = {
+      error: "db_temporarily_unavailable",
+      reason: "База данных временно недоступна",
+      constraint: null,
+      hint: "Повторите запрос через несколько секунд",
+    };
+    const makeErrorResponse = () =>
+      new Response(JSON.stringify(dbError), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(makeErrorResponse())
+      .mockResolvedValueOnce(makeErrorResponse());
+    globalThis.fetch = fetchSpy;
+
+    await expect(apiFetch("/api/models")).rejects.toMatchObject({
+      error: "db_temporarily_unavailable",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
 });

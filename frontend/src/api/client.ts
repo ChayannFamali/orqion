@@ -32,6 +32,11 @@ export async function parseError(response: Response): Promise<ApiError> {
  * - Добавляет Content-Type: application/json для запросов с телом
  * - Парсит ошибки через parseError → ApiError
  * - Возвращает типизированный JSON-ответ
+ * - T-432: один автоматический retry для 503 db_temporarily_unavailable.
+ *   Retry безопасен для любых запросов, включая не-идемпотентные: сервер
+ *   возбуждает db_temporarily_unavailable только после SAVEPOINT-отката
+ *   (BUG-007a) — гарантия, что ничего не закоммичено. Retry применяется
+ *   исключительно к этому коду ошибки, не к остальным 503.
  *
  * Для не-JSON запросов (SSE, FormData) используйте fetch напрямую.
  */
@@ -41,7 +46,20 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(path, { ...init, headers, credentials: "include" });
+  const fetchInit: RequestInit = { ...init, headers, credentials: "include" };
+
+  let res = await fetch(path, fetchInit);
+
+  // T-432: retry для db_temporarily_unavailable — короткая задержка, один раз.
+  if (res.status === 503) {
+    const error = await parseError(res);
+    if (error.error === "db_temporarily_unavailable") {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      res = await fetch(path, fetchInit);
+    } else {
+      throw error;
+    }
+  }
 
   if (!res.ok) {
     throw await parseError(res);
