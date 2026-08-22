@@ -143,7 +143,11 @@ async def load_candidate_models(
     session: AsyncSession,
     workspace_id: str,
 ) -> list[Model]:
-    """Загружает все включённые модели с включёнными провайдерами."""
+    """Загружает все включённые модели с включёнными провайдерами.
+
+    ORDER BY alias: порядок кандидатов детерминирован (алиас уникален в
+    workspace) — дефолтный primary не зависит от БД и плана запроса.
+    """
     result = await session.execute(
         select(Model)
         .join(Provider, Model.provider_id == Provider.id)
@@ -152,5 +156,6 @@ async def load_candidate_models(
             Model.enabled.is_(True),
             Provider.enabled.is_(True),
         )
+        .order_by(Model.alias)
     )
     return list(result.scalars().all())

@@ -91,6 +91,20 @@ async def test_load_candidate_models_excludes_disabled(
 
 
 @pytest.mark.asyncio
+async def test_load_candidate_models_deterministic_order(
+    db_session: AsyncSession,
+) -> None:
+    """Порядок кандидатов — по alias, независимо от порядка вставки."""
+    ws_id = await ensure_default_workspace(db_session)
+    await db_session.flush()
+    await _seed_provider_and_models(db_session, ws_id)
+
+    candidates = await load_candidate_models(db_session, ws_id)
+    aliases = [m.alias for m in candidates]
+    assert aliases == sorted(aliases)
+
+
+@pytest.mark.asyncio
 async def test_load_candidate_models_excludes_disabled_provider(
     db_session: AsyncSession,
 ) -> None:
@@ -145,7 +159,9 @@ async def test_default_rules_k3_routes_to_local(db_session: AsyncSession) -> Non
     )
     decision = select_model(rules, ctx)
     assert decision.model.locality == "local"
-    assert decision.model.alias == "local/qwen3-8b"
+    # дефолтный primary — первый по alias (ORDER BY, детерминировано):
+    # "local/qwen3-14b" < "local/qwen3-8b" лексикографически
+    assert decision.model.alias == "local/qwen3-14b"
 
 
 @pytest.mark.asyncio
