@@ -234,57 +234,65 @@ function OverviewTab({
 
       {/* Daily requests chart */}
       <ChartCard title="Расход по дням (запросы и токены)">
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={byDay.map((d) => ({
-            date: d.date,
-            requests: d.requests,
-            tokens: d.tokens_in + d.tokens_out,
-          }))}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 11 }}
-              className="text-muted-foreground"
-            />
-            <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--background)",
-                border: "1px solid var(--border)",
-                borderRadius: "6px",
-                fontSize: "12px",
-              }}
-            />
-            <Bar dataKey="requests" fill="#3b82f6" name="Запросы" />
-            <Bar dataKey="tokens" fill="#10b981" name="Токены" />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Two-column: Models + Roles */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Разбивка по моделям (запросы)">
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={modelChartData} layout="vertical">
+        {byDay.length > 0 ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={byDay.map((d) => ({
+              date: d.date,
+              requests: d.requests,
+              tokens: d.tokens_in + d.tokens_out,
+            }))}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis type="number" tick={{ fontSize: 11 }} />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={100}
+              <XAxis
+                dataKey="date"
                 tick={{ fontSize: 11 }}
+                className="text-muted-foreground"
               />
+              <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "var(--background)",
-                  border: "1px solid var(--border)",
+                  backgroundColor: "hsl(var(--background))",
+                  border: "1px solid hsl(var(--border))",
                   borderRadius: "6px",
                   fontSize: "12px",
                 }}
               />
               <Bar dataKey="requests" fill="#3b82f6" name="Запросы" />
+              <Bar dataKey="tokens" fill="#10b981" name="Токены" />
             </BarChart>
           </ResponsiveContainer>
+        ) : (
+          <EmptyChart className="h-[280px]" />
+        )}
+      </ChartCard>
+
+      {/* Two-column: Models + Roles */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCard title="Разбивка по моделям (запросы)">
+          {modelChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={modelChartData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={100}
+                  tick={{ fontSize: 11 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--background))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Bar dataKey="requests" fill="#3b82f6" name="Запросы" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyChart className="h-[250px]" />
+          )}
         </ChartCard>
 
         <ChartCard title="Разбивка по ролям (расход)">
@@ -309,8 +317,8 @@ function OverviewTab({
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "var(--background)",
-                    border: "1px solid var(--border)",
+                    backgroundColor: "hsl(var(--background))",
+                    border: "1px solid hsl(var(--border))",
                     borderRadius: "6px",
                     fontSize: "12px",
                   }}
@@ -554,8 +562,8 @@ function UsersTab({
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "var(--background)",
-                        border: "1px solid var(--border)",
+                        backgroundColor: "hsl(var(--background))",
+                        border: "1px solid hsl(var(--border))",
                         borderRadius: "6px",
                         fontSize: "12px",
                       }}
@@ -592,8 +600,8 @@ function UsersTab({
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "var(--background)",
-                      border: "1px solid var(--border)",
+                      backgroundColor: "hsl(var(--background))",
+                      border: "1px solid hsl(var(--border))",
                       borderRadius: "6px",
                       fontSize: "12px",
                     }}
@@ -635,9 +643,11 @@ function ChartCard({
   );
 }
 
-function EmptyChart() {
+function EmptyChart({ className = "h-32" }: { className?: string }) {
   return (
-    <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+    <div
+      className={`flex items-center justify-center text-sm text-muted-foreground ${className}`}
+    >
       Нет данных
     </div>
   );

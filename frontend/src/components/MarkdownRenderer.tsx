@@ -39,7 +39,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   return (
     <div
       className={cn(
-        "prose prose-sm max-w-none break-words",
+        "prose prose-sm dark:prose-invert max-w-none break-words",
         "prose-pre:bg-muted prose-pre:rounded-md prose-pre:p-3",
         "prose-code:bg-muted prose-code:rounded prose-code:px-1 prose-code:py-0.5",
         "prose-code:before:content-none prose-code:after:content-none",
@@ -83,7 +83,8 @@ const CodeBlock = memo(function CodeBlock({
         const { codeToHtml } = await import("shiki");
         const highlighted = await codeToHtml(code, {
           lang,
-          theme: "github-light",
+          themes: { light: "github-light", dark: "github-dark" },
+          defaultColor: false,
         });
         if (!cancelled) {
           codeCache.set(code, highlighted);
