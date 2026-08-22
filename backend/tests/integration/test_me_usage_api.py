@@ -274,3 +274,99 @@ async def test_me_usage_no_auth(
     """Без аутентификации → 401."""
     resp = await api_client.get("/api/auth/me/usage")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_near_limit_true_at_80_percent(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-435: расход ровно 80% (граница) → near_limit=True.
+
+    Знак сравнения: >= (на границе уже предупреждаем).
+    """
+    # Custom budget: tokens_month=1000 (not developer preset 2M)
+    custom_policy = BUILTIN_ROLES["developer"].model_dump()
+    custom_policy["budget"] = {"tokens_month": 1000, "cost_month": 10}
+    user_id = await _login_with_role(api_client, app_fixture, "developer", policy=custom_policy)
+    # 800 tokens used = 80% of 1000
+    await _seed_usage_daily(
+        app_fixture,
+        user_id=user_id,
+        tokens_in=400,
+        tokens_out=400,  # total 800
+        cost=0.01,
+    )
+    resp = await api_client.get("/api/auth/me/usage")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["near_limit"] is True
+    assert data["tokens_used"] == 800
+    assert data["tokens_limit"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_near_limit_false_below_threshold(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-435: расход 79% → near_limit=False."""
+    # Custom budget: tokens_month=1000
+    custom_policy = BUILTIN_ROLES["developer"].model_dump()
+    custom_policy["budget"] = {"tokens_month": 1000, "cost_month": 10}
+    user_id = await _login_with_role(api_client, app_fixture, "developer", policy=custom_policy)
+    # 790 tokens = 79% of 1000
+    await _seed_usage_daily(
+        app_fixture,
+        user_id=user_id,
+        tokens_in=395,
+        tokens_out=395,  # total 790 = 79%
+        cost=0.01,
+    )
+    resp = await api_client.get("/api/auth/me/usage")
+    data = resp.json()
+    assert data["near_limit"] is False
+
+
+@pytest.mark.asyncio
+async def test_near_limit_true_above_threshold(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-435: расход 81% → near_limit=True."""
+    custom_policy = BUILTIN_ROLES["developer"].model_dump()
+    custom_policy["budget"] = {"tokens_month": 1000, "cost_month": 10}
+    user_id = await _login_with_role(api_client, app_fixture, "developer", policy=custom_policy)
+    # 810 tokens = 81% of 1000
+    await _seed_usage_daily(
+        app_fixture,
+        user_id=user_id,
+        tokens_in=405,
+        tokens_out=405,  # total 810 = 81%
+        cost=0.01,
+    )
+    resp = await api_client.get("/api/auth/me/usage")
+    data = resp.json()
+    assert data["near_limit"] is True
+
+
+@pytest.mark.asyncio
+async def test_near_limit_false_unlimited_budget(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """T-435: budget=None (unlimited) → near_limit всегда False."""
+    # admin has budget=None
+    user_id = await _login_with_role(api_client, app_fixture, "admin")
+    await _seed_usage_daily(
+        app_fixture,
+        user_id=user_id,
+        tokens_in=999_999,
+        tokens_out=999_999,
+        cost=999.0,
+    )
+    resp = await api_client.get("/api/auth/me/usage")
+    data = resp.json()
+    assert data["near_limit"] is False
+    assert data["tokens_limit"] is None
+    assert data["cost_limit"] is None

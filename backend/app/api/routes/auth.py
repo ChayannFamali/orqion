@@ -155,6 +155,26 @@ async def me(
     )
 
 
+def _compute_near_limit(
+    tokens_used: int,
+    tokens_limit: int | None,
+    cost_used: float,
+    cost_limit: int | None,
+    settings: Settings,
+) -> bool:
+    """T-435: near_limit=True когда использовано >= порога хотя бы по одному измерению.
+
+    budget=None (unlimited) → всегда False. Порог — settings.budget_near_limit_threshold
+    (0.8 = 80%). Знак сравнения: >= (на границе 80% уже предупреждаем).
+    """
+    threshold = settings.budget_near_limit_threshold
+    tokens_over = (
+        tokens_limit is not None and tokens_limit > 0 and tokens_used / tokens_limit >= threshold
+    )
+    cost_over = cost_limit is not None and cost_limit > 0 and cost_used / cost_limit >= threshold
+    return tokens_over or cost_over
+
+
 @router.get("/me/usage", response_model=MyUsageResponse)
 async def my_usage(
     request: Request,
@@ -221,6 +241,9 @@ async def my_usage(
         cost_limit=cost_limit,
         period=period,
         by_model=by_model,
+        near_limit=_compute_near_limit(
+            tokens_used, tokens_limit, cost_used, cost_limit, request.app.state.settings
+        ),
     )
 
 

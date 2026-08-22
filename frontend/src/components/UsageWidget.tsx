@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Coins, Cpu } from "lucide-react";
+import { ChevronDown, ChevronUp, Coins, Cpu, AlertTriangle } from "lucide-react";
 import { useMyUsage } from "../hooks/useMyUsage";
 
 function formatTokens(n: number): string {
@@ -67,9 +67,17 @@ export function UsageWidget() {
     <div className="relative">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
+        className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-accent ${
+          data.near_limit
+            ? "text-amber-600 dark:text-amber-400"
+            : "text-muted-foreground"
+        }`}
       >
-        <Cpu className="h-3.5 w-3.5" />
+        {data.near_limit ? (
+          <AlertTriangle className="h-3.5 w-3.5" />
+        ) : (
+          <Cpu className="h-3.5 w-3.5" />
+        )}
         <span className="font-medium">{formatTokens(data.tokens_used)}</span>
         {data.tokens_limit !== null && (
           <span className="text-muted-foreground">
@@ -88,6 +96,13 @@ export function UsageWidget() {
           <div className="mb-2 text-xs font-medium text-muted-foreground">
             Расход за {data.period}
           </div>
+
+          {data.near_limit && (
+            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+              Приближение к лимиту бюджета
+            </div>
+          )}
 
           <div className="space-y-2">
             <MetricBar

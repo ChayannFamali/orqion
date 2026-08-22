@@ -25,6 +25,7 @@ function mockUsageData(overrides: Partial<MyUsageResponse> = {}): MyUsageRespons
         cost: 0.01,
       },
     ],
+    near_limit: false,
     ...overrides,
   };
 }
@@ -101,5 +102,45 @@ describe("UsageWidget", () => {
 
     const { container } = render(<UsageWidget />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it("T-435: shows budget warning when near_limit=true", async () => {
+    vi.mocked(useMyUsage).mockReturnValue({
+      data: mockUsageData({
+        tokens_used: 4_500_000,
+        tokens_limit: 5_000_000, // 90%
+        near_limit: true,
+      }),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useMyUsage>);
+
+    render(<UsageWidget />);
+
+    // Collapsed: warning icon visible (AlertTriangle replaces Cpu)
+    const button = screen.getByRole("button");
+    expect(button.className).toContain("amber");
+
+    // Expand: warning banner visible
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(screen.getByText("Приближение к лимиту бюджета")).toBeInTheDocument();
+    });
+  });
+
+  it("T-435: no budget warning when near_limit=false", () => {
+    vi.mocked(useMyUsage).mockReturnValue({
+      data: mockUsageData({ near_limit: false }),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useMyUsage>);
+
+    render(<UsageWidget />);
+
+    const button = screen.getByRole("button");
+    expect(button.className).not.toContain("amber");
+
+    fireEvent.click(button);
+    expect(screen.queryByText("Приближение к лимиту бюджета")).not.toBeInTheDocument();
   });
 });

@@ -1973,10 +1973,12 @@ export interface components {
         };
         /**
          * MyUsageResponse
-         * @description Личный расход пользователя в текущем месяце (T-424).
+         * @description Личный расход пользователя в текущем месяце (T-424, T-435).
          *
          *     tokens_limit / cost_limit: None = unlimited по этому измерению.
          *     Frontend проверяет limit === null per-field для отображения "Без лимита".
+         *     near_limit: True когда использовано >= budget_near_limit_threshold (T-435).
+         *     При budget=None (unlimited) — всегда False.
          */
         MyUsageResponse: {
             /** Tokens Used */
@@ -1991,6 +1993,11 @@ export interface components {
             period: string;
             /** By Model */
             by_model: components["schemas"]["ModelUsageBreakdown"][];
+            /**
+             * Near Limit
+             * @default false
+             */
+            near_limit: boolean;
         };
         /** ProviderCreate */
         ProviderCreate: {

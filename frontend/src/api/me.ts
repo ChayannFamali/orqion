@@ -16,6 +16,7 @@ export interface MyUsageResponse {
   cost_limit: number | null;
   period: string;
   by_model: ModelUsageBreakdown[];
+  near_limit: boolean;
 }
 
 export async function apiGetMyUsage(): Promise<MyUsageResponse> {

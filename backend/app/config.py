@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # T-433: генерация заголовка диалога utility-моделью. По умолчанию выключена,
     # как rag_query_reformulation_enabled — отдельный тумблер для отдельной фичи.
     title_generation_enabled: bool = False
+    # T-435: порог предупреждения о бюджете (доля использованных токенов/стоимости).
+    # near_limit=True когда использовано >= порога. 0.8 = 80%.
+    budget_near_limit_threshold: float = 0.8
 
     # OIDC (T-404b). По умолчанию отключён — локальный вход работает без env.
     oidc_enabled: bool = False
