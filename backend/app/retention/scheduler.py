@@ -94,6 +94,16 @@ async def retention_cleanup(
         conv_ids = [row[0] for row in conv_result.all()]
 
         if conv_ids:
+            # T-436: dual-write — удаляем FTS5-индекс перед удалением messages.
+            # retention реально стирает контент (§5.3); FTS5-копия текста
+            # должна быть удалена тоже, иначе поиск найдёт стёртый контент.
+            from sqlalchemy import bindparam
+            from sqlalchemy import text as sa_text
+
+            stmt = sa_text("DELETE FROM fts_messages WHERE conversation_id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            await session.execute(stmt, {"ids": conv_ids})
             # Удаляем messages этих диалогов
             await session.execute(delete(Message).where(Message.conversation_id.in_(conv_ids)))
             # Удаляем сами диалоги

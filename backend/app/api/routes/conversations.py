@@ -18,6 +18,7 @@ from app.api.schemas.conversation import (
     ConversationResponse,
     ConversationUpdate,
     MessageResponse,
+    MessageSearchResult,
 )
 from app.auth.dependencies import current_user
 from app.db.models import Conversation, Message, User
@@ -128,6 +129,38 @@ async def create_conversation(
     )
 
 
+@router.get("/search", response_model=list[MessageSearchResult])
+async def search_conversations(
+    request: Request,
+    q: str = Query(..., min_length=1, description="Поисковый запрос"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[MessageSearchResult]:
+    """Полнотекстовый поиск по своим диалогам (T-436).
+
+    FTS5 + JOIN conversation WHERE user_id (до MATCH, не пост-фильтрация — §8.2).
+    Экранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).
+    ВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе
+    "search" ловится как conversation_id (FastAPI матчит первый подходящий).
+    """
+    from app.search.message_search import search_messages
+
+    workspace_id = request.app.state.workspace_id
+    hits = await search_messages(session, q, user.id, workspace_id, limit=limit, offset=offset)
+    return [
+        MessageSearchResult(
+            message_id=h.message_id,
+            conversation_id=h.conversation_id,
+            role=h.role,
+            content=h.content,
+            score=h.score,
+        )
+        for h in hits
+    ]
+
+
 @router.get("/{conversation_id}", response_model=ConversationDetailResponse)
 async def get_conversation(
     conversation_id: str,
@@ -218,3 +251,14 @@ async def delete_conversation(
             hint="Диалог не найден",
         )
     await session.delete(conv)
+
+    # T-436: dual-write — удаляем FTS5-индекс сообщений диалога.
+    # session.delete(conv) → ORM cascade delete-orphan удаляет Message,
+    # но не FTS5 (не ORM-модель). Явный DELETE.
+    from sqlalchemy import text as sa_text
+
+    await session.execute(
+        sa_text("DELETE FROM fts_messages WHERE conversation_id = :cid"),
+        {"cid": conversation_id},
+    )
+    await session.commit()

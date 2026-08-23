@@ -399,6 +399,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conversations/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Conversations
+         * @description Полнотекстовый поиск по своим диалогам (T-436).
+         *
+         *     FTS5 + JOIN conversation WHERE user_id (до MATCH, не пост-фильтрация — §8.2).
+         *     Экранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).
+         *     ВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе
+         *     "search" ловится как conversation_id (FastAPI матчит первый подходящий).
+         */
+        get: operations["search_conversations_api_conversations_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conversations/{conversation_id}": {
         parameters: {
             query?: never;
@@ -1844,6 +1869,22 @@ export interface components {
             };
         };
         /**
+         * MessageSearchResult
+         * @description Результат полнотекстового поиска по диалогам (T-436).
+         */
+        MessageSearchResult: {
+            /** Message Id */
+            message_id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Role */
+            role: string;
+            /** Content */
+            content: string;
+            /** Score */
+            score: number;
+        };
+        /**
          * MetricDeltaRead
          * @description Дельта одной метрики между двумя прогонами.
          */
@@ -3040,6 +3081,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_conversations_api_conversations_search_get: {
+        parameters: {
+            query: {
+                /** @description Поисковый запрос */
+                q: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageSearchResult"][];
                 };
             };
             /** @description Validation Error */

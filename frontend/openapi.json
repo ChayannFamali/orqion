@@ -1036,6 +1036,79 @@
         }
       }
     },
+    "/api/conversations/search": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Search Conversations",
+        "description": "Полнотекстовый поиск по своим диалогам (T-436).\n\nFTS5 + JOIN conversation WHERE user_id (до MATCH, не пост-фильтрация — §8.2).\nЭкранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).\nВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе\n\"search\" ловится как conversation_id (FastAPI матчит первый подходящий).",
+        "operationId": "search_conversations_api_conversations_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Поисковый запрос",
+              "title": "Q"
+            },
+            "description": "Поисковый запрос"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageSearchResult"
+                  },
+                  "title": "Response Search Conversations Api Conversations Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/{conversation_id}": {
       "get": {
         "tags": [
@@ -4871,6 +4944,40 @@
           "meta"
         ],
         "title": "MessageResponse"
+      },
+      "MessageSearchResult": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "conversation_id",
+          "role",
+          "content",
+          "score"
+        ],
+        "title": "MessageSearchResult",
+        "description": "Результат полнотекстового поиска по диалогам (T-436)."
       },
       "MetricDeltaRead": {
         "properties": {

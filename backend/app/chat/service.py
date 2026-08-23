@@ -496,20 +496,22 @@ async def _save_messages_impl(
         conversation_id = conv.id
 
     # Сохраняем user-сообщения
+    user_message_ids: list[tuple[str, str]] = []
     for msg in chat_ctx.messages:
         if msg["role"] == "user":
-            session.add(
-                Message(
-                    workspace_id=workspace_id,
-                    conversation_id=conversation_id,
-                    role="user",
-                    content=msg["content"],
-                    model_id=None,
-                    tokens_in=None,
-                    tokens_out=None,
-                    meta={},
-                )
+            user_msg = Message(
+                workspace_id=workspace_id,
+                conversation_id=conversation_id,
+                role="user",
+                content=msg["content"],
+                model_id=None,
+                tokens_in=None,
+                tokens_out=None,
+                meta={},
             )
+            session.add(user_msg)
+            await session.flush()
+            user_message_ids.append((user_msg.id, msg["content"]))
 
     # Сохраняем ответ ассистента
     full_content = "".join(chat_ctx.accumulated_content)
@@ -540,6 +542,38 @@ async def _save_messages_impl(
         session.add(assistant_msg)
         await session.flush()
         assistant_message_id = assistant_msg.id
+
+    # T-436: dual-write — FTS5-индекс для полнотекстового поиска.
+    # Каждое сообщение (user + assistant) записывается в fts_messages
+    # в той же транзакции. Edit/regenerate (T-305) не удаляет Message на
+    # бэкенде (фронтенд обрезает localMessages в state, отправляет новый
+    # запрос поверх; старые Message остаются в БД) — синхронизация FTS5
+    # не нужна. Если T-305 когда-либо добавит DELETE Message на бэкенде,
+    # обязан добавить симметричный DELETE FROM fts_messages.
+    from sqlalchemy import text as sa_text
+
+    for mid, content in user_message_ids:
+        await session.execute(
+            sa_text(
+                "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
+                "VALUES (:content, :cid, :mid, :role)"
+            ),
+            {"content": content, "cid": conversation_id, "mid": mid, "role": "user"},
+        )
+
+    if full_content and assistant_message_id is not None:
+        await session.execute(
+            sa_text(
+                "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
+                "VALUES (:content, :cid, :mid, :role)"
+            ),
+            {
+                "content": full_content,
+                "cid": conversation_id,
+                "mid": assistant_message_id,
+                "role": "assistant",
+            },
+        )
 
     # Обновляем last_activity_at для retention (T-406)
     conv_result = await session.execute(

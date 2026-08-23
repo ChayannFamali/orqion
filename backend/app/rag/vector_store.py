@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -25,28 +24,7 @@ from typing import Protocol, runtime_checkable
 import aiosqlite
 
 from app.rag.embeddings import EmbeddedChunk
-
-# ---------------------------------------------------------------------------
-# FTS5 query escaping (BUG-003)
-# ---------------------------------------------------------------------------
-
-# FTS5 спецсимволы: " * - : ( ) ? ^ ! & |
-_FTS5_SPECIAL = re.compile(r'["*\-:()?!&|]')
-
-
-def _escape_fts5_query(query: str) -> str:
-    """Экранирует пользовательский запрос для FTS5 MATCH.
-
-    FTS5 трактует ?, ", *, -, :, (, ), ^ как операторы.
-    Разбиваем запрос на слова, обёртываем каждое в двойные кавычки —
-    получается phrase-query per-token, сохраняя неявный AND между термами.
-    Пустой результат → '' (вызывающий код пропускает MATCH-условие).
-    """
-    tokens = _FTS5_SPECIAL.sub(" ", query).split()
-    if not tokens:
-        return ""
-    return " ".join(f'"{tok}"' for tok in tokens)
-
+from app.utils.fts5 import escape_fts5_query as _escape_fts5_query
 
 # ---------------------------------------------------------------------------
 # Контракты

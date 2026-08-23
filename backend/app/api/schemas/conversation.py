@@ -42,3 +42,13 @@ class ConversationUpdate(BaseModel):
 class ConversationListResponse(BaseModel):
     conversations: list[ConversationResponse]
     total: int
+
+
+class MessageSearchResult(BaseModel):
+    """Результат полнотекстового поиска по диалогам (T-436)."""
+
+    message_id: str
+    conversation_id: str
+    role: str
+    content: str
+    score: float

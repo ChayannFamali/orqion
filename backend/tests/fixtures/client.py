@@ -88,9 +88,17 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
 
     from app.db.base import Base
     from app.db.models import Workspace  # noqa: F401
+    from sqlalchemy import text as sa_text
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # T-436: FTS5 virtual table — не входит в Base.metadata, создаём явно.
+        await conn.execute(
+            sa_text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages "
+                "USING fts5(content, conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED)"
+            )
+        )
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
