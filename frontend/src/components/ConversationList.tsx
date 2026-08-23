@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, X } from "lucide-react";
+import { Search, Trash2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { ConversationResponse } from "../api/types";
 import {
@@ -11,17 +11,22 @@ interface ConversationListProps {
   conversations: ConversationResponse[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** T-443: удаление диалога (кнопка появляется только при переданном колбэке). */
+  onDelete?: (id: string) => void;
 }
 
 export function ConversationList({
   conversations,
   activeId,
   onSelect,
+  onDelete,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MessageSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  // T-443: инлайн-подтверждение удаления (прецедент CorporaPage — без window.confirm)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce 300ms
@@ -140,18 +145,56 @@ export function ConversationList({
             <ul className="space-y-0.5 p-2">
               {conversations.map((conv) => (
                 <li key={conv.id}>
-                  <button
-                    onClick={() => onSelect(conv.id)}
-                    className={cn(
-                      "w-full truncate rounded-md px-3 py-2 text-left text-sm transition-colors",
-                      activeId === conv.id
-                        ? "bg-accent text-foreground"
-                        : "hover:bg-secondary/60",
-                    )}
-                    title={conv.title || "Без заголовка"}
-                  >
-                    {conv.title || "Без заголовка"}
-                  </button>
+                  {confirmDeleteId === conv.id ? (
+                    <div
+                      className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1.5"
+                      data-testid="delete-confirm"
+                    >
+                      <span className="flex-1 truncate text-xs">
+                        Удалить «{conv.title || "Без заголовка"}»?
+                      </span>
+                      <button
+                        onClick={() => {
+                          setConfirmDeleteId(null);
+                          onDelete?.(conv.id);
+                        }}
+                        className="shrink-0 rounded bg-destructive px-2 py-0.5 text-xs text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Удалить
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="shrink-0 rounded px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="group flex items-center gap-1">
+                      <button
+                        onClick={() => onSelect(conv.id)}
+                        className={cn(
+                          "min-w-0 flex-1 truncate rounded-md px-3 py-2 text-left text-sm transition-colors",
+                          activeId === conv.id
+                            ? "bg-accent text-foreground"
+                            : "hover:bg-secondary/60",
+                        )}
+                        title={conv.title || "Без заголовка"}
+                      >
+                        {conv.title || "Без заголовка"}
+                      </button>
+                      {onDelete && (
+                        <button
+                          onClick={() => setConfirmDeleteId(conv.id)}
+                          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                          title="Удалить диалог"
+                          aria-label="Удалить диалог"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

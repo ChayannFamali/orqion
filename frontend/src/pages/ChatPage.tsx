@@ -5,6 +5,7 @@ import {
   useConversation,
   useUpdateConversation,
   useResetConversationContext,
+  useDeleteConversation,
 } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
 import { useChat } from "../hooks/useChat";
@@ -28,6 +29,7 @@ export function ChatPage() {
   const models = useEnabledModels();
   const updateConv = useUpdateConversation();
   const resetContext = useResetConversationContext();
+  const deleteConv = useDeleteConversation();
   const chat = useChat();
 
   // Явный дефолт вместо null: селектор всегда показывает модель, которая
@@ -111,6 +113,25 @@ export function ChatPage() {
     });
   }, [activeId, resetContext]);
 
+  // T-443: удаление диалога из списка. Если удалён активный —
+  // переключение на следующий (последний по времени) или пустое состояние.
+  const handleDeleteConversation = useCallback(
+    (id: string) => {
+      deleteConv.mutate(id, {
+        onSuccess: () => {
+          if (activeId === id) {
+            const remaining = (conversations.data?.conversations ?? []).filter(
+              (c) => c.id !== id,
+            );
+            setActiveId(remaining.length > 0 ? remaining[0].id : null);
+            setLocalMessages([]);
+          }
+        },
+      });
+    },
+    [activeId, conversations.data, deleteConv],
+  );
+
   const handleRegenerate = useCallback(() => {
     // Убираем последний ответ ассистента, отправляем заново
     const msgs = [...localMessages];
@@ -182,6 +203,7 @@ export function ChatPage() {
           conversations={conversations.data?.conversations ?? []}
           activeId={activeId}
           onSelect={handleSelect}
+          onDelete={handleDeleteConversation}
         />
       </aside>
 

@@ -25,8 +25,15 @@ const mockConversations: ConversationResponse[] = [
   { id: "c2", title: "Второй диалог", archived: false, created_at: "2026-01-02T00:00:00Z", message_count: 0 },
 ];
 
-function renderList(overrides: { conversations?: ConversationResponse[]; onSelect?: (id: string) => void } = {}) {
+function renderList(
+  overrides: {
+    conversations?: ConversationResponse[];
+    onSelect?: (id: string) => void;
+    onDelete?: (id: string) => void;
+  } = {},
+) {
   const onSelect = overrides.onSelect ?? vi.fn();
+  const onDelete = overrides.onDelete;
   const conversations = overrides.conversations ?? mockConversations;
   return {
     onSelect,
@@ -35,6 +42,7 @@ function renderList(overrides: { conversations?: ConversationResponse[]; onSelec
         conversations={conversations}
         activeId={null}
         onSelect={onSelect}
+        onDelete={onDelete}
       />,
     ),
   };
@@ -129,5 +137,44 @@ describe("ConversationList search (T-436)", () => {
     await waitFor(() => {
       expect(screen.getByText("Первый диалог")).toBeInTheDocument();
     });
+  });
+});
+
+describe("ConversationList delete (T-443)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("hides delete button when onDelete not provided", () => {
+    renderList();
+    expect(screen.queryByLabelText("Удалить диалог")).not.toBeInTheDocument();
+  });
+
+  it("shows delete buttons when onDelete provided", () => {
+    renderList({ onDelete: vi.fn() });
+    expect(screen.getAllByLabelText("Удалить диалог")).toHaveLength(2);
+  });
+
+  it("shows inline confirm and calls onDelete on confirm", () => {
+    const onDelete = vi.fn();
+    renderList({ onDelete });
+    const deleteButtons = screen.getAllByLabelText("Удалить диалог");
+    fireEvent.click(deleteButtons[0]);
+    // Инлайн-подтверждение с именем диалога
+    expect(screen.getByTestId("delete-confirm")).toBeInTheDocument();
+    expect(screen.getByText(/Удалить «Первый диалог»/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Удалить"));
+    expect(onDelete).toHaveBeenCalledWith("c1");
+  });
+
+  it("cancel hides confirm without calling onDelete", () => {
+    const onDelete = vi.fn();
+    renderList({ onDelete });
+    const deleteButtons = screen.getAllByLabelText("Удалить диалог");
+    fireEvent.click(deleteButtons[1]);
+    expect(screen.getByTestId("delete-confirm")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Отмена"));
+    expect(screen.queryByTestId("delete-confirm")).not.toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 });
