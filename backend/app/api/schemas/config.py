@@ -26,4 +26,7 @@ class ImportResultResponse(BaseModel):
     roles_unchanged: int = 0
     routing_rules_replaced: bool = False
     routing_rules_count: int = 0
+    corpora_created: int = 0
+    corpora_updated: int = 0
+    corpora_unchanged: int = 0
     warnings: list[str] = Field(default_factory=list)

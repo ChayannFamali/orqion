@@ -65,6 +65,7 @@ async def import_config_endpoint(
         workspace_id,
         body.yaml,
         dry_run=body.dry_run,
+        actor_user_id=user.id,
     )
     return ImportResultResponse(
         roles_created=result.roles_created,
@@ -72,5 +73,8 @@ async def import_config_endpoint(
         roles_unchanged=result.roles_unchanged,
         routing_rules_replaced=result.routing_rules_replaced,
         routing_rules_count=result.routing_rules_count,
+        corpora_created=result.corpora_created,
+        corpora_updated=result.corpora_updated,
+        corpora_unchanged=result.corpora_unchanged,
         warnings=result.warnings,
     )

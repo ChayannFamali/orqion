@@ -1861,6 +1861,21 @@ export interface components {
              * @default 0
              */
             routing_rules_count: number;
+            /**
+             * Corpora Created
+             * @default 0
+             */
+            corpora_created: number;
+            /**
+             * Corpora Updated
+             * @default 0
+             */
+            corpora_updated: number;
+            /**
+             * Corpora Unchanged
+             * @default 0
+             */
+            corpora_unchanged: number;
             /** Warnings */
             warnings?: string[];
         };

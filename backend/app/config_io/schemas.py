@@ -1,10 +1,14 @@
-"""Pydantic-схемы для YAML export/import (T-425)."""
+"""Pydantic-схемы для YAML export/import (T-425, корпуса — T-438)."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+# arch.md §8.5 — кириллическая "К" (U+041A), не латинская "K".
+# Набор идентичен DataClass в app/api/schemas/corpus.py.
+DataClassYAML = Literal["К0", "К1", "К2", "К3"]
 
 
 class RoleYAML(BaseModel):
@@ -31,12 +35,28 @@ class RoutingRuleYAML(BaseModel):
     reason: str = ""
 
 
+class CorpusYAML(BaseModel):
+    """Корпус в YAML-формате (T-438). Только метаданные — без документов.
+
+    Модель пина идентифицируется алиасом, а не UUID: UUID различается
+    между инстансами, алиас уникален в workspace (T-113) и стабилен
+    при переносе конфигурации (ADR-17).
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    data_class: DataClassYAML | None = None
+    pinned_model_alias: str | None = None
+
+
 class ConfigYAML(BaseModel):
     """Корневая схема YAML-файла конфигурации."""
 
     schema_version: int
     roles: list[RoleYAML] = Field(default_factory=list)
     routing_rules: list[RoutingRuleYAML] = Field(default_factory=list)
+    # T-438: секция появляется в schema_version 2; в v1 отсутствует,
+    # при чтении остаётся пустой (обратная совместимость).
+    corpora: list[CorpusYAML] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_role_names(self) -> ConfigYAML:
@@ -66,6 +86,20 @@ class ConfigYAML(BaseModel):
             raise ValueError(f"Duplicate routing rule orders in YAML: {dupes}")
         return self
 
+    @model_validator(mode="after")
+    def validate_unique_corpus_names(self) -> ConfigYAML:
+        names = [c.name for c in self.corpora]
+        if len(names) != len(set(names)):
+            seen: set[str] = set()
+            dupes: set[str] = set()
+            for n in names:
+                if n in seen:
+                    dupes.add(n)
+                else:
+                    seen.add(n)
+            raise ValueError(f"Duplicate corpus names in YAML: {dupes}")
+        return self
+
 
 class ImportResult(BaseModel):
     """Результат импорта конфигурации."""
@@ -75,4 +109,7 @@ class ImportResult(BaseModel):
     roles_unchanged: int = 0
     routing_rules_replaced: bool = False
     routing_rules_count: int = 0
+    corpora_created: int = 0
+    corpora_updated: int = 0
+    corpora_unchanged: int = 0
     warnings: list[str] = Field(default_factory=list)

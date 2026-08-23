@@ -411,11 +411,11 @@ routing_rules:
 
 @pytest.mark.asyncio
 async def test_import_config_bad_schema_version(test_engine: AsyncEngine) -> None:
-    """schema_version=2 → reject."""
+    """schema_version=3 → reject (поддерживаются 1 и 2 — с T-438)."""
     _, factory, ws_id = await _setup_db(test_engine)
 
     yaml_content = """
-schema_version: 2
+schema_version: 3
 roles: []
 routing_rules: []
 """

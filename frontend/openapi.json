@@ -4938,6 +4938,21 @@
             "title": "Routing Rules Count",
             "default": 0
           },
+          "corpora_created": {
+            "type": "integer",
+            "title": "Corpora Created",
+            "default": 0
+          },
+          "corpora_updated": {
+            "type": "integer",
+            "title": "Corpora Updated",
+            "default": 0
+          },
+          "corpora_unchanged": {
+            "type": "integer",
+            "title": "Corpora Unchanged",
+            "default": 0
+          },
           "warnings": {
             "items": {
               "type": "string"

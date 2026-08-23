@@ -83,7 +83,7 @@ def main() -> None:
 
     export_parser = subparsers.add_parser(
         "export-config",
-        help="Экспорт ролей и routing rules в YAML",
+        help="Экспорт ролей, routing rules и корпусов в YAML",
     )
     export_parser.add_argument(
         "--output",
@@ -93,7 +93,7 @@ def main() -> None:
 
     import_parser = subparsers.add_parser(
         "import-config",
-        help="Импорт ролей и routing rules из YAML",
+        help="Импорт ролей, routing rules и корпусов из YAML",
     )
     import_parser.add_argument(
         "--input",
@@ -417,7 +417,7 @@ async def _run_ingest_git(
 
 
 async def _run_export_config(*, output_path: str | None) -> None:
-    """Экспортирует роли и routing rules в YAML."""
+    """Экспортирует роли, routing rules и корпуса в YAML."""
     from app.config_io.service import export_config
     from app.db.engine import create_engine, create_session_factory
     from app.db.workspace import ensure_default_workspace
@@ -442,7 +442,11 @@ async def _run_export_config(*, output_path: str | None) -> None:
 
 
 async def _run_import_config(*, input_path: str | None, dry_run: bool) -> None:
-    """Импортирует роли и routing rules из YAML."""
+    """Импортирует роли, routing rules и корпуса из YAML.
+
+    CLI работает без пользователя — аудит изменений корпусов не пишется
+    (по прецеденту T-425: CLI-импорт без записи в audit_log).
+    """
     from app.config_io.service import import_config
     from app.db.engine import create_engine, create_session_factory
     from app.db.workspace import ensure_default_workspace
@@ -479,6 +483,9 @@ async def _run_import_config(*, input_path: str | None, dry_run: bool) -> None:
             f"Roles unchanged: {result.roles_unchanged}\n"
             f"Routing rules replaced: {result.routing_rules_replaced}\n"
             f"Routing rules count: {result.routing_rules_count}\n"
+            f"Corpora created: {result.corpora_created}\n"
+            f"Corpora updated: {result.corpora_updated}\n"
+            f"Corpora unchanged: {result.corpora_unchanged}\n"
             + (
                 "Warnings:\n" + "\n".join(f"  - {w}" for w in result.warnings) + "\n"
                 if result.warnings

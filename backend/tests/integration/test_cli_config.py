@@ -66,13 +66,14 @@ async def test_cli_export_config_stdout(monkeypatch: pytest.MonkeyPatch) -> None
     # Instead, verify via re-export from DB
     async with session_factory() as session:
         ws_id = await ensure_default_workspace(session)
-        from app.config_io.service import export_config
+        from app.config_io.service import SCHEMA_VERSION, export_config
 
         yaml_str = await export_config(session, ws_id)
         data = yaml_lib.safe_load(yaml_str)
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == SCHEMA_VERSION
         assert len(data["roles"]) == 5
         assert len(data["routing_rules"]) == 4
+        assert data["corpora"] == []  # T-438: секция присутствует
 
     await engine.dispose()
 
@@ -94,10 +95,13 @@ async def test_cli_export_config_to_file(monkeypatch: pytest.MonkeyPatch) -> Non
     assert os.path.exists(output_path)
     from pathlib import Path
 
+    from app.config_io.service import SCHEMA_VERSION
+
     content = Path(output_path).read_text(encoding="utf-8")
     data = yaml_lib.safe_load(content)
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == SCHEMA_VERSION
     assert len(data["roles"]) == 5
+    assert data["corpora"] == []  # T-438: секция присутствует
 
     await engine.dispose()
 
