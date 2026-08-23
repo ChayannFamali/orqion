@@ -994,7 +994,25 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Model
+         * @description Удаление модели провайдера — метаданные (T-443, коммит 2).
+         *
+         *     Если модель закреплена за корпусом (corpus.pinned_model_id) — 409 без
+         *     каскада, иначе гарантия ADR-12 терялась бы тихо. Проверка до delete:
+         *     SELECT count(*) FROM corpus WHERE pinned_model_id = :id.
+         *
+         *     Опциональная очистка с диска (delete_from_disk=true) — только по явному
+         *     подтверждению из UI, не поведение по умолчанию; проводится через
+         *     нативные эндпоинты контракта model_download.py с тем же kind-гейтом
+         *     (DOWNLOADABLE_KINDS). Ошибка диска НЕ блокирует удаление метаданных,
+         *     но возвращается в ответе и показывается пользователю.
+         *
+         *     Ссылки из истории (message.model_id, usage_event.model_id) обнуляются —
+         *     прецедент usage_event «при удалении диалога связи становятся NULL»:
+         *     записи о сообщениях и расходе сохраняются, модель отвязывается.
+         */
+        delete: operations["delete_model_api_providers_models__model_id__delete"];
         options?: never;
         head?: never;
         /** Update Model */
@@ -2062,6 +2080,21 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+        };
+        /**
+         * ModelDeleteResponse
+         * @description Результат удаления модели провайдера (T-443, коммит 2).
+         *
+         *     disk_deleted / disk_error заполняются только при запрошенной очистке
+         *     с диска; ошибка диска не блокирует удаление метаданных.
+         */
+        ModelDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Disk Deleted */
+            disk_deleted?: boolean | null;
+            /** Disk Error */
+            disk_error?: string | null;
         };
         /** ModelResponse */
         ModelResponse: {
@@ -4326,6 +4359,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_model_api_providers_models__model_id__delete: {
+        parameters: {
+            query?: {
+                delete_from_disk?: boolean;
+            };
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDeleteResponse"];
                 };
             };
             /** @description Validation Error */

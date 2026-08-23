@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { DownloadStatusResponse, ModelCreate, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
+import type { DownloadStatusResponse, ModelCreate, ModelDeleteResponse, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
 
 export async function apiListProviders(): Promise<ProviderListResponse> {
   return apiFetch<ProviderListResponse>("/api/providers");
@@ -49,6 +49,21 @@ export async function apiUpdateModel(
   return apiFetch<ModelResponse>(`/api/providers/models/${modelId}`, {
     method: "PATCH",
     body: JSON.stringify(body),
+  });
+}
+
+/**
+ * T-443 (коммит 2): удаление модели провайдера.
+ * `deleteFromDisk` — опциональная очистка с диска (только по явному
+ * подтверждению в UI); ошибка диска не блокирует удаление метаданных.
+ */
+export async function apiDeleteModel(
+  modelId: string,
+  deleteFromDisk = false,
+): Promise<ModelDeleteResponse> {
+  const query = deleteFromDisk ? "?delete_from_disk=true" : "";
+  return apiFetch<ModelDeleteResponse>(`/api/providers/models/${modelId}${query}`, {
+    method: "DELETE",
   });
 }
 

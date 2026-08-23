@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiCreateModel, apiCreateProvider, apiGetModelDownloadStatus, apiListProviders, apiProbeProvider, apiStartModelDownload, apiUpdateModel, apiUpdateProvider } from "../api/providers";
+import { apiCreateModel, apiCreateProvider, apiDeleteModel, apiGetModelDownloadStatus, apiListProviders, apiProbeProvider, apiStartModelDownload, apiUpdateModel, apiUpdateProvider } from "../api/providers";
 import { queryKeys } from "../api/query-keys";
 import type { DownloadStatusResponse, ModelCreate, ModelUpdate, ProviderCreate, ProviderUpdate } from "../api/types";
 
@@ -71,6 +71,18 @@ export function useUpdateModel() {
   return useMutation({
     mutationFn: ({ modelId, body }: { modelId: string; body: ModelUpdate }) =>
       apiUpdateModel(modelId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.providers.all });
+    },
+  });
+}
+
+/** T-443 (коммит 2): удаление модели провайдера (опц. с очисткой диска). */
+export function useDeleteModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ modelId, deleteFromDisk }: { modelId: string; deleteFromDisk: boolean }) =>
+      apiDeleteModel(modelId, deleteFromDisk),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.providers.all });
     },

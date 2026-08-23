@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, X, Zap, Key, Activity, CheckCircle, XCircle, Settings2, Download } from "lucide-react";
-import { isTerminalDownloadStatus, useCreateModel, useCreateProvider, useModelDownloadStatus, useProbeProvider, useProviders, useStartModelDownload, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
+import { Loader2, Plus, X, Zap, Key, Activity, CheckCircle, XCircle, Settings2, Download, Trash2 } from "lucide-react";
+import { isTerminalDownloadStatus, useCreateModel, useCreateProvider, useDeleteModel, useModelDownloadStatus, useProbeProvider, useProviders, useStartModelDownload, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
 import type { DownloadStatusResponse, ModelResponse, ProbeResult, ProviderKind, ProviderResponse } from "../api/types";
 
 /** Канонические виды провайдеров для формы создания (валидация — на уровне API-схемы). */
@@ -19,6 +19,11 @@ export function ProvidersPage() {
     upstreamName?: string;
   } | null>(null);
   const [editingModel, setEditingModel] = useState<ModelResponse | null>(null);
+  // T-443 (коммит 2): удаление модели; нужен kind провайдера для гейта очистки с диска
+  const [deletingModel, setDeletingModel] = useState<{
+    model: ModelResponse;
+    providerKind: string;
+  } | null>(null);
 
   if (isLoading) {
     return (
@@ -69,6 +74,9 @@ export function ProvidersPage() {
                   setCreatingModelFor({ providerId: provider.id, upstreamName })
                 }
                 onEditModel={(model) => setEditingModel(model)}
+                onDeleteModel={(model) =>
+                  setDeletingModel({ model, providerKind: provider.kind })
+                }
               />
             ))}
           </div>
@@ -97,6 +105,13 @@ export function ProvidersPage() {
           onClose={() => setEditingModel(null)}
         />
       )}
+      {deletingModel && (
+        <DeleteModelModal
+          model={deletingModel.model}
+          providerKind={deletingModel.providerKind}
+          onClose={() => setDeletingModel(null)}
+        />
+      )}
     </div>
   );
 }
@@ -108,6 +123,7 @@ function ProviderCard({
   onEdit,
   onAddModel,
   onEditModel,
+  onDeleteModel,
 }: {
   provider: ProviderResponse;
   probeResult?: ProbeResult;
@@ -115,6 +131,7 @@ function ProviderCard({
   onEdit: () => void;
   onAddModel: (upstreamName?: string) => void;
   onEditModel: (model: ModelResponse) => void;
+  onDeleteModel: (model: ModelResponse) => void;
 }) {
   const probeMutation = useProbeProvider();
   const updateMutation = useUpdateProvider();
@@ -249,8 +266,17 @@ function ProviderCard({
                   <button
                     onClick={() => onEditModel(model)}
                     className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    aria-label="Изменить модель"
                   >
                     <Settings2 className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => onDeleteModel(model)}
+                    className="rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                    title="Удалить модель"
+                    aria-label="Удалить модель"
+                  >
+                    <Trash2 className="h-3 w-3" />
                   </button>
                 </li>
               );
@@ -520,6 +546,121 @@ function DownloadModelModal({
                 Закрыть
               </button>
             )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * T-443 (коммит 2): удаление модели провайдера.
+ *
+ * Метаданные удаляются всегда; очистка с диска — только при явном выборе
+ * чекбокса (доступен для DOWNLOADABLE_KINDS). Ошибка диска НЕ блокирует
+ * удаление метаданных, но показывается в модалке явно.
+ */
+function DeleteModelModal({
+  model,
+  providerKind,
+  onClose,
+}: {
+  model: ModelResponse;
+  providerKind: string;
+  onClose: () => void;
+}) {
+  const deleteMutation = useDeleteModel();
+  const [deleteFromDisk, setDeleteFromDisk] = useState(false);
+  // Ошибка очистки с диска после успешного удаления метаданных.
+  const [diskError, setDiskError] = useState<string | null>(null);
+  const downloadable = DOWNLOADABLE_KINDS.includes(providerKind);
+
+  const handleConfirm = async () => {
+    try {
+      const result = await deleteMutation.mutateAsync({
+        modelId: model.id,
+        deleteFromDisk,
+      });
+      if (result.disk_error) {
+        // Метаданные удалены; ошибку диска показываем и не проглатываем.
+        setDiskError(result.disk_error);
+      } else {
+        onClose();
+      }
+    } catch {
+      // Ошибка удаления (например 409 «модель — пин корпуса») —
+      // показывается через глобальный mutations.onError.
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Удалить модель</h3>
+          <button onClick={onClose}>
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {diskError ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <CheckCircle className="h-4 w-4" />
+              Модель «{model.alias}» удалена из orqion.
+            </div>
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+              Очистить с диска не удалось: {diskError}
+            </div>
+            <button
+              onClick={onClose}
+              className="w-full rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Закрыть
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm">
+              Удалить модель <span className="font-medium">{model.alias}</span>{" "}
+              из orqion?
+              {downloadable &&
+                " Метаданные будут удалены; файл модели на провайдере останется, если не выбрать очистку с диска."}
+            </p>
+            {downloadable && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={deleteFromDisk}
+                  onChange={(e) => setDeleteFromDisk(e.target.checked)}
+                />
+                Также удалить файл с диска ({providerKind})
+              </label>
+            )}
+            {deleteMutation.isError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+                Не удалось удалить модель
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={handleConfirm}
+                disabled={deleteMutation.isPending}
+                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground transition-colors hover:bg-destructive/90"
+              >
+                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Удалить
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 rounded-md border border-border px-4 py-2 text-sm transition-colors hover:bg-accent"
+              >
+                Отмена
+              </button>
+            </div>
           </div>
         )}
       </div>

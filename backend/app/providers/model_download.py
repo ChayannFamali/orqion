@@ -25,6 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
@@ -376,6 +377,64 @@ async def lmstudio_download_status(
         status="error",
         error=f"Неизвестный статус LM Studio: {native_status or '<пусто>'}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Нативное удаление модели с диска (T-443, коммит 2)
+# ---------------------------------------------------------------------------
+
+
+async def ollama_delete_model(
+    base_url: str,
+    api_key: str | None,
+    model: str,
+) -> str | None:
+    """DELETE /api/delete — нативное удаление модели с диска Ollama.
+
+    Возвращает None при успехе, иначе текст ошибки. Ошибка диска НЕ
+    блокирует удаление метаданных модели в БД (см. роут удаления модели).
+    """
+    try:
+        async with _build_client(normalize_base_url(base_url), api_key, LMSTUDIO_TIMEOUT) as client:
+            response = await client.request("DELETE", "/api/delete", json={"model": model})
+        if response.status_code != 200:
+            return f"Ollama вернул HTTP {response.status_code}: {response.text[:500]}"
+        return None
+    except httpx.HTTPError as exc:
+        return f"Ollama недоступен: {exc}"
+
+
+async def lmstudio_delete_model(
+    base_url: str,
+    api_key: str | None,
+    model: str,
+) -> str | None:
+    """DELETE /api/v1/models/{id} — нативное удаление с диска LM Studio.
+
+    Идентификатор модели может содержать слеши (например, ссылка на
+    HuggingFace), поэтому в пути он URL-кодируется. Возвращает None при
+    успехе, иначе текст ошибки.
+    """
+    result = await _lmstudio_request(
+        normalize_base_url(base_url),
+        api_key,
+        "DELETE",
+        f"/api/v1/models/{quote(model, safe='')}",
+        None,
+    )
+    if isinstance(result, DownloadStatusView):
+        return result.error or "LM Studio недоступен"
+    status_code, body_text = result
+    if status_code != 200:
+        return f"LM Studio вернул HTTP {status_code}: {body_text[:500]}"
+    try:
+        data = json.loads(body_text)
+    except json.JSONDecodeError:
+        # 200 без JSON-тела трактуем как успех.
+        return None
+    if isinstance(data, dict) and data.get("error"):
+        return _lmstudio_error_text(data["error"])
+    return None
 
 
 # ---------------------------------------------------------------------------

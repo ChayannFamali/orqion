@@ -93,3 +93,15 @@ class ModelUpdate(BaseModel):
 
 class ProviderListResponse(BaseModel):
     providers: list[ProviderResponse]
+
+
+class ModelDeleteResponse(BaseModel):
+    """Результат удаления модели провайдера (T-443, коммит 2).
+
+    disk_deleted / disk_error заполняются только при запрошенной очистке
+    с диска; ошибка диска не блокирует удаление метаданных.
+    """
+
+    deleted: bool
+    disk_deleted: bool | None = None
+    disk_error: str | None = None

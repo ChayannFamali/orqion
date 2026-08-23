@@ -37,6 +37,8 @@ export type ProviderKind = ProviderCreate["kind"];
 export type DownloadStatusResponse = components["schemas"]["DownloadStatusResponse"];
 export type ModelCreate = components["schemas"]["ModelCreate"];
 export type ModelUpdate = components["schemas"]["ModelUpdate"];
+/** Результат удаления модели провайдера (T-443, коммит 2). */
+export type ModelDeleteResponse = components["schemas"]["ModelDeleteResponse"];
 export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];

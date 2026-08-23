@@ -132,3 +132,9 @@ class BadRequest(OrqionError):
     error_code = "bad_request"
     reason = "Некорректный запрос"
     status_code = 400
+
+
+class Conflict(OrqionError):
+    error_code = "conflict"
+    reason = "Операция конфликтует с текущим состоянием"
+    status_code = 409

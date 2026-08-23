@@ -7,13 +7,14 @@ Access control: capability "manage_providers" (только admin через "*"
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.schemas.provider import (
     ModelCreate,
+    ModelDeleteResponse,
     ModelResponse,
     ModelUpdate,
     ProviderCreate,
@@ -22,10 +23,10 @@ from app.api.schemas.provider import (
     ProviderUpdate,
 )
 from app.auth.dependencies import current_user
-from app.crypto.service import encrypt_api_key
-from app.db.models import Model, Provider, User
+from app.crypto.service import decrypt_api_key, encrypt_api_key
+from app.db.models import Corpus, Message, Model, Provider, UsageEvent, User
 from app.db.session import get_session
-from app.errors import BadRequest, NotFound
+from app.errors import BadRequest, Conflict, NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.providers.client import normalize_base_url
@@ -353,3 +354,104 @@ async def update_model(
     await session.refresh(model)
 
     return _model_to_response(model)
+
+
+@router.delete("/models/{model_id}", response_model=ModelDeleteResponse)
+async def delete_model(
+    model_id: str,
+    request: Request,
+    delete_from_disk: bool = False,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> ModelDeleteResponse:
+    """Удаление модели провайдера — метаданные (T-443, коммит 2).
+
+    Если модель закреплена за корпусом (corpus.pinned_model_id) — 409 без
+    каскада, иначе гарантия ADR-12 терялась бы тихо. Проверка до delete:
+    SELECT count(*) FROM corpus WHERE pinned_model_id = :id.
+
+    Опциональная очистка с диска (delete_from_disk=true) — только по явному
+    подтверждению из UI, не поведение по умолчанию; проводится через
+    нативные эндпоинты контракта model_download.py с тем же kind-гейтом
+    (DOWNLOADABLE_KINDS). Ошибка диска НЕ блокирует удаление метаданных,
+    но возвращается в ответе и показывается пользователю.
+
+    Ссылки из истории (message.model_id, usage_event.model_id) обнуляются —
+    прецедент usage_event «при удалении диалога связи становятся NULL»:
+    записи о сообщениях и расходе сохраняются, модель отвязывается.
+    """
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Model).where(Model.id == model_id, Model.workspace_id == workspace_id)
+    )
+    model = result.scalar_one_or_none()
+    if model is None:
+        raise NotFound(
+            constraint={"object": "model", "id": model_id},
+            hint="Модель не найдена",
+        )
+
+    # 409: модель — чей-то пин корпуса (гарантия ADR-12)
+    pinned_count = await session.scalar(
+        select(func.count())
+        .select_from(Corpus)
+        .where(
+            Corpus.pinned_model_id == model.id,
+            Corpus.workspace_id == workspace_id,
+        )
+    )
+    if pinned_count:
+        raise Conflict(
+            "Модель закреплена за корпусом — сначала снимите закрепление",
+            constraint={"object": "model", "id": model.id, "reason": "pinned_by_corpus"},
+            hint="Удалите или смените пин корпуса и повторите",
+        )
+
+    # Опциональная очистка с диска. Отложенный импорт: модельный модуль уже
+    # импортирует _check_manage_providers из этого файла (цикл на уровне модуля).
+    disk_deleted: bool | None = None
+    disk_error: str | None = None
+    if delete_from_disk:
+        from app.providers.model_download import (
+            DOWNLOADABLE_KINDS,
+            lmstudio_delete_model,
+            ollama_delete_model,
+        )
+
+        provider = await session.get(Provider, model.provider_id)
+        if provider is None or provider.kind not in DOWNLOADABLE_KINDS:
+            # Запрошено, но не выполнено → диск не очищен (метаданные удаляются).
+            disk_deleted = False
+            disk_error = (
+                "Очистка с диска доступна только для локальных провайдеров (ollama, lmstudio)"
+            )
+        else:
+            secret_key = request.app.state.secret_key
+            api_key = (
+                decrypt_api_key(provider.api_key_enc, secret_key) if provider.api_key_enc else None
+            )
+            if provider.kind == "ollama":
+                disk_error = await ollama_delete_model(
+                    provider.base_url, api_key, model.upstream_name
+                )
+            else:
+                disk_error = await lmstudio_delete_model(
+                    provider.base_url, api_key, model.upstream_name
+                )
+            disk_deleted = disk_error is None
+
+    # Отвязываем исторические ссылки, затем удаляем саму модель.
+    await session.execute(update(Message).where(Message.model_id == model.id).values(model_id=None))
+    await session.execute(
+        update(UsageEvent).where(UsageEvent.model_id == model.id).values(model_id=None)
+    )
+    await session.delete(model)
+    await session.commit()
+
+    return ModelDeleteResponse(deleted=True, disk_deleted=disk_deleted, disk_error=disk_error)

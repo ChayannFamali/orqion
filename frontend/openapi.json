@@ -2674,6 +2674,57 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Delete Model",
+        "description": "Удаление модели провайдера — метаданные (T-443, коммит 2).\n\nЕсли модель закреплена за корпусом (corpus.pinned_model_id) — 409 без\nкаскада, иначе гарантия ADR-12 терялась бы тихо. Проверка до delete:\nSELECT count(*) FROM corpus WHERE pinned_model_id = :id.\n\nОпциональная очистка с диска (delete_from_disk=true) — только по явному\nподтверждению из UI, не поведение по умолчанию; проводится через\nнативные эндпоинты контракта model_download.py с тем же kind-гейтом\n(DOWNLOADABLE_KINDS). Ошибка диска НЕ блокирует удаление метаданных,\nно возвращается в ответе и показывается пользователю.\n\nСсылки из истории (message.model_id, usage_event.model_id) обнуляются —\nпрецедент usage_event «при удалении диалога связи становятся NULL»:\nзаписи о сообщениях и расходе сохраняются, модель отвязывается.",
+        "operationId": "delete_model_api_providers_models__model_id__delete",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          },
+          {
+            "name": "delete_from_disk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Delete From Disk"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/providers/{provider_id}/download-models": {
@@ -5414,6 +5465,42 @@
           "upstream_name"
         ],
         "title": "ModelCreate"
+      },
+      "ModelDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "disk_deleted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Deleted"
+          },
+          "disk_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "ModelDeleteResponse",
+        "description": "Результат удаления модели провайдера (T-443, коммит 2).\n\ndisk_deleted / disk_error заполняются только при запрошенной очистке\nс диска; ошибка диска не блокирует удаление метаданных."
       },
       "ModelResponse": {
         "properties": {

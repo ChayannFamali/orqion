@@ -262,10 +262,8 @@ describe("ProvidersPage", () => {
 
     render(<ProvidersPage />);
 
-    // Открываем форму редактирования модели (кнопка с Settings2 — последняя в списке)
-    const allButtons = screen.getAllByRole("button");
-    // Кнопка edit model — последняя в ProviderCard (после probe/toggle/edit provider/model toggle)
-    const editModelBtn = allButtons[allButtons.length - 1];
+    // Открываем форму редактирования модели (кнопка настроек в строке модели)
+    const editModelBtn = screen.getByLabelText("Изменить модель");
     fireEvent.click(editModelBtn);
 
     // Ждём появления модалки
