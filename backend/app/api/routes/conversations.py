@@ -21,6 +21,7 @@ from app.api.schemas.conversation import (
     MessageSearchResult,
 )
 from app.auth.dependencies import current_user
+from app.db.base import _utcnow
 from app.db.models import Conversation, Message, User
 from app.db.session import get_session
 from app.errors import NotFound
@@ -40,6 +41,7 @@ def _conversation_to_response(
         archived=conv.archived,
         created_at=conv.created_at,
         message_count=message_count,
+        context_reset_at=conv.context_reset_at,
     )
 
 
@@ -125,6 +127,7 @@ async def create_conversation(
         archived=conv.archived,
         created_at=conv.created_at,
         message_count=0,
+        context_reset_at=conv.context_reset_at,
         messages=[],
     )
 
@@ -191,6 +194,7 @@ async def get_conversation(
         archived=conv.archived,
         created_at=conv.created_at,
         message_count=len(conv.messages),
+        context_reset_at=conv.context_reset_at,
         messages=[_message_to_response(m) for m in conv.messages],
     )
 
@@ -225,6 +229,44 @@ async def update_conversation(
         conv.archived = body.archived
 
     await session.flush()
+    return _conversation_to_response(conv, 0)
+
+
+@router.post("/{conversation_id}/reset-context", response_model=ConversationResponse)
+async def reset_context(
+    conversation_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ConversationResponse:
+    """Мягкий сброс контекста диалога (T-442). Только свои.
+
+    Устанавливает маркер context_reset_at = текущий момент. Сообщения не
+    удаляются: видимая лента сохраняется, но в историю для модели на будущих
+    ходах попадают только сообщения после маркера (сборка payload фильтрует
+    по маркеру; см. планинг T-442). Повторный сброс сдвигает маркер вперёд.
+    Бюджет и RAG-параметры запроса сброс не затрагивает.
+    """
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.workspace_id == workspace_id,
+            Conversation.user_id == user.id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        raise NotFound(
+            constraint={"object": "conversation", "id": conversation_id},
+            hint="Диалог не найден",
+        )
+
+    conv.context_reset_at = _utcnow()
+    await session.flush()
+    await session.refresh(conv)
+    # message_count=0 — прецедент PATCH: клиент рефетчит детали сам
+    # (иначе потребовалась бы загрузка сообщений в ответе).
     return _conversation_to_response(conv, 0)
 
 

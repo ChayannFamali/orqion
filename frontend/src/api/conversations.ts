@@ -46,6 +46,13 @@ export async function apiDeleteConversation(id: string): Promise<void> {
   await apiFetch<void>(`/api/conversations/${id}`, { method: "DELETE" });
 }
 
+/** T-442: мягкий сброс контекста — сервер ставит маркер context_reset_at. */
+export async function apiResetConversationContext(id: string): Promise<ConversationResponse> {
+  return apiFetch<ConversationResponse>(`/api/conversations/${id}/reset-context`, {
+    method: "POST",
+  });
+}
+
 export interface MessageSearchResult {
   message_id: string;
   conversation_id: string;

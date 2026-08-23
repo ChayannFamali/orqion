@@ -19,6 +19,7 @@ vi.mock("../api/conversations", () => ({
   apiCreateConversation: vi.fn(),
   apiUpdateConversation: vi.fn(),
   apiDeleteConversation: vi.fn(),
+  apiResetConversationContext: vi.fn(),
 }));
 
 vi.mock("../api/models", () => ({

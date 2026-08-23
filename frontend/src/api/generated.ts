@@ -452,6 +452,32 @@ export interface paths {
         patch: operations["update_conversation_api_conversations__conversation_id__patch"];
         trace?: never;
     };
+    "/api/conversations/{conversation_id}/reset-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Context
+         * @description Мягкий сброс контекста диалога (T-442). Только свои.
+         *
+         *     Устанавливает маркер context_reset_at = текущий момент. Сообщения не
+         *     удаляются: видимая лента сохраняется, но в историю для модели на будущих
+         *     ходах попадают только сообщения после маркера (сборка payload фильтрует
+         *     по маркеру; см. планинг T-442). Повторный сброс сдвигает маркер вперёд.
+         *     Бюджет и RAG-параметры запроса сброс не затрагивает.
+         */
+        post: operations["reset_context_api_conversations__conversation_id__reset_context_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora": {
         parameters: {
             query?: never;
@@ -1483,6 +1509,8 @@ export interface components {
              * @default 0
              */
             message_count: number;
+            /** Context Reset At */
+            context_reset_at?: string | null;
             /**
              * Messages
              * @default []
@@ -1514,6 +1542,8 @@ export interface components {
              * @default 0
              */
             message_count: number;
+            /** Context Reset At */
+            context_reset_at?: string | null;
         };
         /** ConversationUpdate */
         ConversationUpdate: {
@@ -3290,6 +3320,37 @@ export interface operations {
                 "application/json": components["schemas"]["ConversationUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_context_api_conversations__conversation_id__reset_context_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

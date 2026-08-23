@@ -1,4 +1,5 @@
-"""Интеграционные тесты API диалогов: CRUD, доступ только к своим, архивация."""
+"""Интеграционные тесты API диалогов: CRUD, доступ только к своим, архивация,
+мягкий сброс контекста (T-442)."""
 
 from __future__ import annotations
 
@@ -303,4 +304,119 @@ async def test_unauthenticated_cannot_access(
 ) -> None:
     """Без логина — 401."""
     response = await api_client.get("/api/conversations")
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# T-442: мягкий сброс контекста
+# ---------------------------------------------------------------------------
+
+
+async def _add_message(
+    app_fixture: FastAPI,
+    conversation_id: str,
+    role: str,
+    content: str,
+) -> None:
+    """Сообщение в диалог напрямую в БД (чат-эндпоинт не нужен)."""
+    from app.db.models import Message
+
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        session.add(
+            Message(
+                workspace_id=workspace_id,
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_reset_context_sets_marker_and_keeps_messages(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Сброс ставит маркер; сообщения, заголовок и архив не тронуты."""
+    await _login_user(api_client, app_fixture)
+    create_resp = await api_client.post("/api/conversations", json={"title": "Resettable"})
+    conv_id = create_resp.json()["id"]
+    await _add_message(app_fixture, conv_id, "user", "старое сообщение")
+    await _add_message(app_fixture, conv_id, "assistant", "старый ответ")
+
+    response = await api_client.post(f"/api/conversations/{conv_id}/reset-context")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["context_reset_at"] is not None
+
+    # Детали: маркер виден, сообщения на месте
+    detail = (await api_client.get(f"/api/conversations/{conv_id}")).json()
+    assert detail["context_reset_at"] == body["context_reset_at"]
+    assert detail["message_count"] == 2
+    assert [m["content"] for m in detail["messages"]] == [
+        "старое сообщение",
+        "старый ответ",
+    ]
+    assert detail["title"] == "Resettable"
+    assert detail["archived"] is False
+
+
+@pytest.mark.asyncio
+async def test_reset_context_repeat_moves_marker(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Повторный сброс сдвигает маркер вперёд (или оставляет тем же)."""
+    from datetime import datetime
+
+    await _login_user(api_client, app_fixture)
+    conv_id = (await api_client.post("/api/conversations", json={})).json()["id"]
+
+    first = (await api_client.post(f"/api/conversations/{conv_id}/reset-context")).json()[
+        "context_reset_at"
+    ]
+    second = (await api_client.post(f"/api/conversations/{conv_id}/reset-context")).json()[
+        "context_reset_at"
+    ]
+    assert datetime.fromisoformat(second) >= datetime.fromisoformat(first)
+
+
+@pytest.mark.asyncio
+async def test_reset_context_is_per_conversation(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Сброс одного диалога не затрагивает другие."""
+    await _login_user(api_client, app_fixture)
+    conv_a = (await api_client.post("/api/conversations", json={"title": "A"})).json()["id"]
+    conv_b = (await api_client.post("/api/conversations", json={"title": "B"})).json()["id"]
+
+    await api_client.post(f"/api/conversations/{conv_a}/reset-context")
+
+    detail_b = (await api_client.get(f"/api/conversations/{conv_b}")).json()
+    assert detail_b["context_reset_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_reset_context_other_users_conversation_404(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    await _login_user(api_client, app_fixture, email="first@orqion.local")
+    conv_id = (await api_client.post("/api/conversations", json={})).json()["id"]
+
+    await _login_second_user(api_client, app_fixture)
+    response = await api_client.post(f"/api/conversations/{conv_id}/reset-context")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reset_context_unauthenticated_401(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    response = await api_client.post("/api/conversations/some-id/reset-context")
     assert response.status_code == 401

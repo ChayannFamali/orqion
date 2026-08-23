@@ -5,6 +5,7 @@ import {
   apiCreateConversation,
   apiUpdateConversation,
   apiDeleteConversation,
+  apiResetConversationContext,
 } from "../api/conversations";
 import { queryKeys } from "../api/query-keys";
 
@@ -58,6 +59,18 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (id: string) => apiDeleteConversation(id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
+    },
+  });
+}
+
+/** T-442: мягкий сброс контекста диалога. */
+export function useResetConversationContext() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiResetConversationContext(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
   });

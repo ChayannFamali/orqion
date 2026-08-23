@@ -24,6 +24,9 @@ class ConversationResponse(BaseModel):
     archived: bool
     created_at: datetime
     message_count: int = 0
+    # T-442: маркер мягкого сброса контекста (до этой отметки история
+    # не уходит в модель).
+    context_reset_at: datetime | None = None
 
 
 class ConversationDetailResponse(ConversationResponse):

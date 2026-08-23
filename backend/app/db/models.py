@@ -218,6 +218,12 @@ class Conversation(Base, IdMixin, TimestampMixin, WorkspaceMixin):
         nullable=False,
         default=_utcnow,
     )
+    # T-442: маркер мягкого сброса контекста — сообщения до этой отметки
+    # не входят в историю для модели; видимая лента диалога не меняется.
+    context_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     messages: Mapped[list[Message]] = relationship(
         back_populates="conversation",
         order_by="Message.created_at",

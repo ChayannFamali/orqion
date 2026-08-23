@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download } from "lucide-react";
-import { useConversations, useConversation, useUpdateConversation } from "../hooks/useConversations";
+import { Download, Eraser } from "lucide-react";
+import {
+  useConversations,
+  useConversation,
+  useUpdateConversation,
+  useResetConversationContext,
+} from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
 import { useChat } from "../hooks/useChat";
 import { ConversationList } from "../components/ConversationList";
@@ -10,6 +15,7 @@ import { ModelSelector } from "../components/ModelSelector";
 import { NewChatModal } from "../components/NewChatModal";
 import type { ChatMessage, MessageResponse } from "../api/types";
 import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
+import { estimateTokens } from "../utils/estimateTokens";
 
 export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -21,6 +27,7 @@ export function ChatPage() {
   const conversation = useConversation(activeId);
   const models = useEnabledModels();
   const updateConv = useUpdateConversation();
+  const resetContext = useResetConversationContext();
   const chat = useChat();
 
   // Явный дефолт вместо null: селектор всегда показывает модель, которая
@@ -32,6 +39,14 @@ export function ChatPage() {
   }, [models.data, selectedModel]);
 
   const displayedMessages: MessageResponse[] = conversation.data?.messages ?? [];
+
+  // T-442: занятость окна контекста = оценка токенов буфера отправки
+  // (именно он уходит в модель). После сброса буфер обнуляется → 0.
+  const selectedModelMeta = models.data?.find((m) => m.alias === selectedModel);
+  const contextUsage = {
+    used: localMessages.reduce((acc, m) => acc + estimateTokens(m.content), 0),
+    max: selectedModelMeta?.max_input_tokens ?? null,
+  };
 
   const handleSelect = useCallback((id: string) => {
     setActiveId(id);
@@ -85,6 +100,16 @@ export function ChatPage() {
     const filename = sanitizeFilename(conversation.data.title);
     downloadMarkdown(filename, markdown);
   }, [conversation.data]);
+
+  // T-442: мягкий сброс контекста — маркер на сервере, буфер отправки
+  // обнуляется (в модель уйдут только сообщения после маркера), видимая
+  // лента сохраняется. RAG-привязка и бюджет не затрагиваются.
+  const handleResetContext = useCallback(() => {
+    if (!activeId) return;
+    resetContext.mutate(activeId, {
+      onSuccess: () => setLocalMessages([]),
+    });
+  }, [activeId, resetContext]);
 
   const handleRegenerate = useCallback(() => {
     // Убираем последний ответ ассистента, отправляем заново
@@ -186,6 +211,16 @@ export function ChatPage() {
           />
           {activeId && conversation.data && (
             <button
+              onClick={handleResetContext}
+              disabled={chat.isStreaming || resetContext.isPending || displayedMessages.length === 0}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              title="Сбросить контекст: история останется видимой, но в модель уйдут только сообщения после маркера"
+            >
+              <Eraser className="h-4 w-4" />
+            </button>
+          )}
+          {activeId && conversation.data && (
+            <button
               onClick={handleExport}
               className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               title="Экспорт в Markdown"
@@ -207,6 +242,7 @@ export function ChatPage() {
           ragDegraded={chat.ragDegraded}
           onRegenerate={localMessages.length > 0 ? handleRegenerate : undefined}
           onEdit={handleEdit}
+          contextResetAt={conversation.data?.context_reset_at ?? null}
         />
 
         {/* Input */}
@@ -215,6 +251,7 @@ export function ChatPage() {
           onAbort={handleAbort}
           isStreaming={chat.isStreaming}
           disabled={models.data?.length === 0}
+          contextUsage={contextUsage}
         />
       </main>
 

@@ -1237,6 +1237,49 @@
         }
       }
     },
+    "/api/conversations/{conversation_id}/reset-context": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Reset Context",
+        "description": "Мягкий сброс контекста диалога (T-442). Только свои.\n\nУстанавливает маркер context_reset_at = текущий момент. Сообщения не\nудаляются: видимая лента сохраняется, но в историю для модели на будущих\nходах попадают только сообщения после маркера (сборка payload фильтрует\nпо маркеру; см. планинг T-442). Повторный сброс сдвигает маркер вперёд.\nБюджет и RAG-параметры запроса сброс не затрагивает.",
+        "operationId": "reset_context_api_conversations__conversation_id__reset_context_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora": {
       "get": {
         "tags": [
@@ -4007,6 +4050,18 @@
             "title": "Message Count",
             "default": 0
           },
+          "context_reset_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Reset At"
+          },
           "messages": {
             "items": {
               "$ref": "#/components/schemas/MessageResponse"
@@ -4069,6 +4124,18 @@
             "type": "integer",
             "title": "Message Count",
             "default": 0
+          },
+          "context_reset_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Reset At"
           }
         },
         "type": "object",

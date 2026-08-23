@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { RotateCcw, Pencil, Check, X } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { SourceList } from "./SourceList";
@@ -22,6 +22,18 @@ interface ChatMessagesProps {
   onRegenerate?: () => void;
   /** Редактировать сообщение пользователя и переотправить */
   onEdit?: (messageIndex: number, newContent: string) => void;
+  /** T-442: маркер мягкого сброса контекста (лента видна, контекст — после маркера) */
+  contextResetAt?: string | null;
+}
+
+function ResetDivider() {
+  return (
+    <div className="flex items-center gap-3 py-1" data-testid="context-reset-divider">
+      <div className="h-px flex-1 bg-border" />
+      <span className="text-xs text-muted-foreground">Контекст сброшен</span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
 }
 
 export function ChatMessages({
@@ -34,6 +46,7 @@ export function ChatMessages({
   ragErrors,
   onRegenerate,
   onEdit,
+  contextResetAt,
 }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -59,6 +72,16 @@ export function ChatMessages({
     return -1;
   })();
 
+  // T-442: разделитель «Контекст сброшен» перед первым сообщением ПОСЛЕ
+  // маркера. Если маркер задан, но новых сообщений ещё нет — в конце ленты.
+  const resetBoundaryIdx = (() => {
+    if (!contextResetAt) return -1;
+    const resetTs = new Date(contextResetAt).getTime();
+    return messages.findIndex((m) => new Date(m.created_at).getTime() > resetTs);
+  })();
+  const resetDividerAtEnd =
+    contextResetAt != null && resetBoundaryIdx === -1 && messages.length > 0;
+
   const startEdit = (idx: number, content: string) => {
     setEditingIdx(idx);
     setEditText(content);
@@ -81,15 +104,16 @@ export function ChatMessages({
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-6">
       <div className="mx-auto max-w-3xl space-y-4">
         {messages.map((msg, idx) => (
-          <div
-            key={msg.id}
-            className={cn(
-              "rounded-lg px-4 py-3",
-              msg.role === "user"
-                ? "bg-secondary text-secondary-foreground"
-                : "bg-background border border-border",
-            )}
-          >
+          <Fragment key={msg.id}>
+            {idx === resetBoundaryIdx && <ResetDivider />}
+            <div
+              className={cn(
+                "rounded-lg px-4 py-3",
+                msg.role === "user"
+                  ? "bg-secondary text-secondary-foreground"
+                  : "bg-background border border-border",
+              )}
+            >
             <div className="mb-1 flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">
                 {msg.role === "user" ? "Вы" : "Ассистент"}
@@ -145,8 +169,11 @@ export function ChatMessages({
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm">{msg.content}</p>
             )}
-          </div>
+            </div>
+          </Fragment>
         ))}
+
+        {resetDividerAtEnd && <ResetDivider />}
 
         {streamingContent && (
           <div className="rounded-lg border border-border bg-background px-4 py-3">

@@ -55,6 +55,14 @@ vi.mock("../api/conversations", () => ({
   apiCreateConversation: vi.fn(),
   apiUpdateConversation: vi.fn(),
   apiDeleteConversation: vi.fn(),
+  apiResetConversationContext: vi.fn().mockResolvedValue({
+    id: "c1",
+    title: "Test conversation",
+    archived: false,
+    created_at: "2026-08-08T10:00:00Z",
+    message_count: 2,
+    context_reset_at: "2026-08-08T11:00:00Z",
+  }),
 }));
 
 vi.mock("../api/models", () => ({
