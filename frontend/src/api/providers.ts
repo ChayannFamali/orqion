@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { ModelCreate, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
+import type { DownloadStatusResponse, ModelCreate, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
 
 export async function apiListProviders(): Promise<ProviderListResponse> {
   return apiFetch<ProviderListResponse>("/api/providers");
@@ -50,4 +50,28 @@ export async function apiUpdateModel(
     method: "PATCH",
     body: JSON.stringify(body),
   });
+}
+
+/** T-437: старт скачивания модели на локальный провайдер (единый контракт). */
+export async function apiStartModelDownload(
+  providerId: string,
+  model: string,
+): Promise<DownloadStatusResponse> {
+  return apiFetch<DownloadStatusResponse>(
+    `/api/providers/${providerId}/download-models`,
+    {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    },
+  );
+}
+
+/** T-437: статус скачивания (поллинг до терминального статуса). */
+export async function apiGetModelDownloadStatus(
+  providerId: string,
+  jobId: string,
+): Promise<DownloadStatusResponse> {
+  return apiFetch<DownloadStatusResponse>(
+    `/api/providers/${providerId}/download-status/${jobId}`,
+  );
 }

@@ -35,4 +35,20 @@ describe("queryKeys", () => {
       queryKeys.conversations.all,
     );
   });
+
+  it("providers.downloadStatus is scoped by provider and job", () => {
+    expect(queryKeys.providers.downloadStatus("p1", "job-1")).toEqual([
+      "providers",
+      "p1",
+      "download-status",
+      "job-1",
+    ]);
+  });
+
+  it("providers.all is a prefix of providers.downloadStatus", () => {
+    const status = queryKeys.providers.downloadStatus("p1", "job-1");
+    expect(status.slice(0, queryKeys.providers.all.length)).toEqual(
+      queryKeys.providers.all,
+    );
+  });
 });

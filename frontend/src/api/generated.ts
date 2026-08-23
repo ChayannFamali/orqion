@@ -975,6 +975,50 @@ export interface paths {
         patch: operations["update_model_api_providers_models__model_id__patch"];
         trace?: never;
     };
+    "/api/providers/{provider_id}/download-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Model Download
+         * @description Старт скачивания модели на локальный провайдер.
+         *
+         *     202 — задание принято, дальше клиент поллит статус.
+         *     200 — терминальный статус сразу (уже скачана, скачана синхронно,
+         *     либо ошибка старта).
+         */
+        post: operations["start_model_download_api_providers__provider_id__download_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/{provider_id}/download-status/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Model Download Status
+         * @description Статус скачивания. Клиент поллит до терминального статуса.
+         */
+        get: operations["get_model_download_status_api_providers__provider_id__download_status__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/roles": {
         parameters: {
             query?: never;
@@ -1602,6 +1646,30 @@ export interface components {
              */
             uploaded_at: string;
         };
+        /** DownloadModelRequest */
+        DownloadModelRequest: {
+            /** Model */
+            model: string;
+        };
+        /**
+         * DownloadStatusResponse
+         * @description Статус скачивания модели — ответ старта и поллинга.
+         */
+        DownloadStatusResponse: {
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "downloading" | "completed" | "error" | "already_downloaded";
+            /** Percent */
+            percent?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Message */
+            message?: string | null;
+        };
         /**
          * EvalCompareRequest
          * @description Запрос сравнения прогонов (POST /api/eval-runs/compare).
@@ -2042,8 +2110,11 @@ export interface components {
         };
         /** ProviderCreate */
         ProviderCreate: {
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ollama" | "lmstudio" | "external";
             /** Base Url */
             base_url: string;
             /** Api Key */
@@ -2081,6 +2152,8 @@ export interface components {
         };
         /** ProviderUpdate */
         ProviderUpdate: {
+            /** Kind */
+            kind?: ("ollama" | "lmstudio" | "external") | null;
             /** Base Url */
             base_url?: string | null;
             /** Api Key */
@@ -4212,6 +4285,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_model_download_api_providers__provider_id__download_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_model_download_status_api_providers__provider_id__download_status__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadStatusResponse"];
                 };
             };
             /** @description Validation Error */

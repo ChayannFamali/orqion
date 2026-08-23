@@ -21,3 +21,5 @@ docs/*
 .pgdata/
 .tmp-edge-profile
 data/blobs/
+data/*.log
+data/curl_cookies.txt

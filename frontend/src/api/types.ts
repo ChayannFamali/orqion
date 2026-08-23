@@ -8,7 +8,7 @@
  * типы обновляются автоматически через `npm run gen:types`.
  */
 
-export type { ApiError, SSEEvent, ModelStatus, ProbeResult, RoleResponse, RoleListResponse, RoleCreate, RoleUpdate, UserListItem, UserListResponse, UserDetailResponse, UserUpdate, UserCreateRequest, UserCreateResponse, ChangePasswordRequest, ChangePasswordResponse, CorpusResponse, CorpusListResponse, CorpusCreate, CorpusUpdate } from "./runtime";
+export type { ApiError, SSEEvent, ModelStatus, ProbeAvailableModel, ProbeResult, RoleResponse, RoleListResponse, RoleCreate, RoleUpdate, UserListItem, UserListResponse, UserDetailResponse, UserUpdate, UserCreateRequest, UserCreateResponse, ChangePasswordRequest, ChangePasswordResponse, CorpusResponse, CorpusListResponse, CorpusCreate, CorpusUpdate } from "./runtime";
 
 import type { components } from "./generated";
 
@@ -31,6 +31,10 @@ export type ProviderResponse = components["schemas"]["ProviderResponse"];
 export type ProviderListResponse = components["schemas"]["ProviderListResponse"];
 export type ProviderCreate = components["schemas"]["ProviderCreate"];
 export type ProviderUpdate = components["schemas"]["ProviderUpdate"];
+/** Канонический набор видов провайдера (T-437) — выводится из схемы. */
+export type ProviderKind = ProviderCreate["kind"];
+/** Единый статус скачивания модели (T-437, часть А). */
+export type DownloadStatusResponse = components["schemas"]["DownloadStatusResponse"];
 export type ModelCreate = components["schemas"]["ModelCreate"];
 export type ModelUpdate = components["schemas"]["ModelUpdate"];
 export type SpanResponse = components["schemas"]["SpanResponse"];

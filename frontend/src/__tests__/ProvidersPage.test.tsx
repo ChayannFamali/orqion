@@ -117,7 +117,12 @@ describe("ProvidersPage", () => {
 
     fireEvent.click(screen.getByText("Добавить"));
     expect(screen.getByText("Новый провайдер")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("openai")).toBeInTheDocument();
+    // T-437: kind — select с каноническим набором, не свободный ввод
+    const kindSelect = screen.getByRole("combobox");
+    expect(kindSelect).toHaveValue("external");
+    expect(screen.getByRole("option", { name: "ollama" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "lmstudio" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "external" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("sk-...")).toBeInTheDocument();
   });
 

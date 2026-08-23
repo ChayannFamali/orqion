@@ -29,9 +29,15 @@ export interface ModelStatus {
   status: string;
 }
 
+/** Доступная модель в ответе probe (T-437, часть Б): имя + зарегистрирована ли в orqion. */
+export interface ProbeAvailableModel {
+  name: string;
+  registered: boolean;
+}
+
 /** Результат probe провайдера (T-308). Не из OpenAPI — untyped dict на backend. */
 export interface ProbeResult {
-  available_models: string[];
+  available_models: ProbeAvailableModel[];
   supports_streaming: boolean;
   max_parallel: number;
   model_statuses: ModelStatus[];

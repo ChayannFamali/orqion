@@ -153,6 +153,8 @@ async def update_provider(
             hint="Провайдер не найден",
         )
 
+    if body.kind is not None:
+        provider.kind = body.kind
     if body.base_url is not None:
         provider.base_url = normalize_base_url(body.base_url)
     if body.api_key is not None:
@@ -213,8 +215,15 @@ async def probe_provider_endpoint(
     }
     provider.last_probe_at = probe_result.probed_at
 
+    # T-437, часть Б: метка «уже зарегистрирована в orqion» для каждой
+    # доступной модели. В capabilities (БД) остаётся чистый список имён —
+    # измеренные значения; обогащение только в ответе.
+    registered_names = {m.upstream_name for m in provider.models}
     response: dict[str, object] = {
-        "available_models": probe_result.available_models,
+        "available_models": [
+            {"name": name, "registered": name in registered_names}
+            for name in probe_result.available_models
+        ],
         "supports_streaming": probe_result.supports_streaming,
         "max_parallel": probe_result.max_parallel,
         "model_statuses": [s.model_dump() for s in probe_result.model_statuses],

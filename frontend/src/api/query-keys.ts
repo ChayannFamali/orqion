@@ -28,6 +28,8 @@ export const queryKeys = {
   },
   providers: {
     all: ["providers"] as const,
+    downloadStatus: (providerId: string, jobId: string) =>
+      ["providers", providerId, "download-status", jobId] as const,
   },
   roles: {
     all: ["roles"] as const,

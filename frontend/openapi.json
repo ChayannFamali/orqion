@@ -2633,6 +2633,111 @@
         }
       }
     },
+    "/api/providers/{provider_id}/download-models": {
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Start Model Download",
+        "description": "Старт скачивания модели на локальный провайдер.\n\n202 — задание принято, дальше клиент поллит статус.\n200 — терминальный статус сразу (уже скачана, скачана синхронно,\nлибо ошибка старта).",
+        "operationId": "start_model_download_api_providers__provider_id__download_models_post",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadModelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/providers/{provider_id}/download-status/{job_id}": {
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Get Model Download Status",
+        "description": "Статус скачивания. Клиент поллит до терминального статуса.",
+        "operationId": "get_model_download_status_api_providers__provider_id__download_status__job_id__get",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/roles": {
       "get": {
         "tags": [
@@ -4341,6 +4446,86 @@
         ],
         "title": "DocumentResponse"
       },
+      "DownloadModelRequest": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "DownloadModelRequest"
+      },
+      "DownloadStatusResponse": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "downloading",
+              "completed",
+              "error",
+              "already_downloaded"
+            ],
+            "title": "Status"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DownloadStatusResponse",
+        "description": "Статус скачивания модели — ответ старта и поллинга."
+      },
       "EvalCompareRequest": {
         "properties": {
           "run_ids": {
@@ -5449,6 +5634,11 @@
         "properties": {
           "kind": {
             "type": "string",
+            "enum": [
+              "ollama",
+              "lmstudio",
+              "external"
+            ],
             "title": "Kind"
           },
           "base_url": {
@@ -5539,6 +5729,22 @@
       },
       "ProviderUpdate": {
         "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ollama",
+                  "lmstudio",
+                  "external"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
           "base_url": {
             "anyOf": [
               {

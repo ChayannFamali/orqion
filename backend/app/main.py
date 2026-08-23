@@ -85,6 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Task-референс сохраняется здесь, чтобы Python не собрать GC до завершения.
     app.state.background_tasks = set[asyncio.Task[None]]()
 
+    # T-437: in-memory реестр заданий скачивания моделей (Ollama pull).
+    from app.providers.model_download import DownloadTracker
+
+    app.state.download_tracker = DownloadTracker()
+
     # Embedding backend для RAG-конвейера (T-221, T-430)
     from app.rag.embedding_resolver import resolve_embedding_backend
 
@@ -165,6 +170,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except asyncio.CancelledError:
         pass
 
+    # T-437: отмена фоновых скачиваний до закрытия ресурсов.
+    await app.state.download_tracker.cancel_all()
+
     # Закрытие ресурсов: vector_store.close() и др.
     # AsyncExitStack гарантирует, что исключение при закрытии одного
     # ресурса не мешает закрыть остальные.
@@ -208,6 +216,9 @@ def create_app() -> FastAPI:
         users_router,
     )
 
+    # T-437: скачивание моделей (роутер живёт в app.providers — доменный модуль)
+    from app.providers.model_download import router as model_download_router
+
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(analytics_router)
@@ -222,6 +233,7 @@ def create_app() -> FastAPI:
     app.include_router(index_versions_router)
     app.include_router(models_router)
     app.include_router(providers_router)
+    app.include_router(model_download_router)
     app.include_router(roles_router)
     app.include_router(routing_router)
     app.include_router(traces_router)

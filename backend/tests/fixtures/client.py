@@ -135,6 +135,11 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
     # T-433: fire-and-forget background tasks (title generation).
     app.state.background_tasks = set()
 
+    # T-437: in-memory реестр заданий скачивания моделей (аналог lifespan).
+    from app.providers.model_download import DownloadTracker
+
+    app.state.download_tracker = DownloadTracker()
+
     from app.rag.vector_store import SQLiteVectorStore
 
     app.state.vector_store = SQLiteVectorStore(settings.vector_store_path)
@@ -180,6 +185,9 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
         app.state.embedding_backend = embedding_backend
 
     yield app
+
+    # T-437: отменяем фоновые скачивания до закрытия ресурсов.
+    await app.state.download_tracker.cancel_all()
 
     # T-433: отменяем фоновые задачи (title generation) до dispose —
     # иначе SQLite-сессия остаётся locked.

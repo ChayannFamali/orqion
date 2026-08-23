@@ -1,7 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiCreateModel, apiCreateProvider, apiListProviders, apiProbeProvider, apiUpdateModel, apiUpdateProvider } from "../api/providers";
+import { apiCreateModel, apiCreateProvider, apiGetModelDownloadStatus, apiListProviders, apiProbeProvider, apiStartModelDownload, apiUpdateModel, apiUpdateProvider } from "../api/providers";
 import { queryKeys } from "../api/query-keys";
-import type { ModelCreate, ModelUpdate, ProviderCreate, ProviderUpdate } from "../api/types";
+import type { DownloadStatusResponse, ModelCreate, ModelUpdate, ProviderCreate, ProviderUpdate } from "../api/types";
+
+/** Терминальные статусы скачивания (единый контракт, бэкенд T-437). */
+export const TERMINAL_DOWNLOAD_STATUSES = new Set<DownloadStatusResponse["status"]>([
+  "completed",
+  "error",
+  "already_downloaded",
+]);
+
+export function isTerminalDownloadStatus(
+  status: DownloadStatusResponse["status"] | undefined,
+): boolean {
+  return status !== undefined && TERMINAL_DOWNLOAD_STATUSES.has(status);
+}
 
 export function useProviders() {
   return useQuery({
@@ -60,6 +73,37 @@ export function useUpdateModel() {
       apiUpdateModel(modelId, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.providers.all });
+    },
+  });
+}
+
+/** T-437, часть А: старт скачивания модели на локальный провайдер. */
+export function useStartModelDownload() {
+  return useMutation({
+    mutationFn: ({ providerId, model }: { providerId: string; model: string }) =>
+      apiStartModelDownload(providerId, model),
+  });
+}
+
+/**
+ * T-437, часть А: поллинг статуса скачивания.
+ *
+ * Активен пока есть живой job_id и статус не терминальный;
+ * частота 2s по прецеденту useIndexVersions. Ответ старта может быть
+ * уже терминальным (already_downloaded) — тогда поллинг не нужен.
+ */
+export function useModelDownloadStatus(
+  providerId: string,
+  jobId: string | null,
+  initialStatus: DownloadStatusResponse["status"] | null,
+) {
+  return useQuery({
+    queryKey: queryKeys.providers.downloadStatus(providerId, jobId ?? "none"),
+    queryFn: () => apiGetModelDownloadStatus(providerId, jobId!),
+    enabled: jobId !== null && !isTerminalDownloadStatus(initialStatus ?? undefined),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return isTerminalDownloadStatus(status) ? false : 2000;
     },
   });
 }

@@ -62,7 +62,7 @@ async def test_create_provider_key_encrypted_not_returned(
     response = await api_client.post(
         "/api/providers",
         json={
-            "kind": "openai",
+            "kind": "external",
             "base_url": "http://localhost:1234/v1",
             "api_key": "sk-secret-key-123",
             "enabled": True,
@@ -70,7 +70,7 @@ async def test_create_provider_key_encrypted_not_returned(
     )
     assert response.status_code == 201
     body = response.json()
-    assert body["kind"] == "openai"
+    assert body["kind"] == "external"
     assert body["base_url"] == "http://localhost:1234"
     assert "api_key" not in body
     assert "api_key_enc" not in body
@@ -170,7 +170,7 @@ async def test_update_provider_key_replaced(
     create_response = await api_client.post(
         "/api/providers",
         json={
-            "kind": "openai",
+            "kind": "external",
             "base_url": "http://localhost:1234/v1",
             "api_key": "sk-old-key",
         },
@@ -277,7 +277,7 @@ async def test_create_provider_non_admin_forbidden(
 
     resp = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://evil.test/v1", "api_key": "stolen"},
+        json={"kind": "external", "base_url": "http://evil.test/v1", "api_key": "stolen"},
     )
     assert resp.status_code == 404
 
@@ -292,7 +292,7 @@ async def test_update_provider_non_admin_forbidden(
     await _login_as_admin(api_client, app_fixture)
     create_resp = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://legit.test/v1"},
+        json={"kind": "external", "base_url": "http://legit.test/v1"},
     )
     assert create_resp.status_code == 201
     provider_id = create_resp.json()["id"]
@@ -315,7 +315,7 @@ async def test_probe_provider_non_admin_forbidden(
     await _login_as_admin(api_client, app_fixture)
     create_resp = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://legit.test/v1"},
+        json={"kind": "external", "base_url": "http://legit.test/v1"},
     )
     provider_id = create_resp.json()["id"]
 
@@ -339,7 +339,7 @@ async def _create_provider_and_model(
     await _login_as_admin(api_client, app_fixture)
     create_resp = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://localhost:1234/v1"},
+        json={"kind": "external", "base_url": "http://localhost:1234/v1"},
     )
     provider_id = create_resp.json()["id"]
 
@@ -391,12 +391,12 @@ async def test_create_model_provider_id_in_body_ignored(
     # Создаём два провайдера
     resp1 = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://p1.test/v1"},
+        json={"kind": "external", "base_url": "http://p1.test/v1"},
     )
     provider1_id = resp1.json()["id"]
     resp2 = await api_client.post(
         "/api/providers",
-        json={"kind": "openai", "base_url": "http://p2.test/v1"},
+        json={"kind": "external", "base_url": "http://p2.test/v1"},
     )
     provider2_id = resp2.json()["id"]
 
@@ -419,3 +419,53 @@ async def test_create_model_provider_id_in_body_ignored(
     assert len(p1["models"]) == 1
     assert p1["models"][0]["alias"] == "cross-provider-test"
     assert len(p2["models"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# T-437: канонический набор kind (Pydantic-валидация на уровне API)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_kind", ["lm", "openai", "LM Studio", ""])
+async def test_create_provider_non_canonical_kind_rejected(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    legacy_kind: str,
+) -> None:
+    """kind вне канонического набора {ollama, lmstudio, external} → 422."""
+    await _login_as_admin(api_client, app_fixture)
+
+    resp = await api_client.post(
+        "/api/providers",
+        json={"kind": legacy_kind, "base_url": "http://localhost:1234"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_provider_kind_canonical(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """PATCH kind принимает только канонические значения."""
+    await _login_as_admin(api_client, app_fixture)
+
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "external", "base_url": "http://localhost:1234/v1"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    resp = await api_client.patch(
+        f"/api/providers/{provider_id}",
+        json={"kind": "lmstudio"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["kind"] == "lmstudio"
+
+    resp = await api_client.patch(
+        f"/api/providers/{provider_id}",
+        json={"kind": "lm"},
+    )
+    assert resp.status_code == 422

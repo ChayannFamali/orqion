@@ -1,14 +1,23 @@
-import { useState } from "react";
-import { Loader2, Plus, X, Zap, Key, Activity, CheckCircle, XCircle, Settings2 } from "lucide-react";
-import { useCreateModel, useCreateProvider, useProbeProvider, useProviders, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
-import type { ModelResponse, ProbeResult, ProviderResponse } from "../api/types";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Plus, X, Zap, Key, Activity, CheckCircle, XCircle, Settings2, Download } from "lucide-react";
+import { isTerminalDownloadStatus, useCreateModel, useCreateProvider, useModelDownloadStatus, useProbeProvider, useProviders, useStartModelDownload, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
+import type { DownloadStatusResponse, ModelResponse, ProbeResult, ProviderKind, ProviderResponse } from "../api/types";
+
+/** Канонические виды провайдеров для формы создания (валидация — на уровне API-схемы). */
+const PROVIDER_KINDS: ProviderKind[] = ["ollama", "lmstudio", "external"];
+
+/** Провайдеры с нативным download-API (гейт кнопки «Скачать модель», бэкенд T-437). */
+const DOWNLOADABLE_KINDS: readonly string[] = ["ollama", "lmstudio"];
 
 export function ProvidersPage() {
   const { data, isLoading, error } = useProviders();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
-  const [creatingModelFor, setCreatingModelFor] = useState<string | null>(null);
+  const [creatingModelFor, setCreatingModelFor] = useState<{
+    providerId: string;
+    upstreamName?: string;
+  } | null>(null);
   const [editingModel, setEditingModel] = useState<ModelResponse | null>(null);
 
   if (isLoading) {
@@ -56,7 +65,9 @@ export function ProvidersPage() {
                 probeResult={probeResults[provider.id]}
                 onProbeResult={(result) => setProbeResults((prev) => ({ ...prev, [provider.id]: result }))}
                 onEdit={() => setEditingProvider(provider.id)}
-                onAddModel={() => setCreatingModelFor(provider.id)}
+                onAddModel={(upstreamName) =>
+                  setCreatingModelFor({ providerId: provider.id, upstreamName })
+                }
                 onEditModel={(model) => setEditingModel(model)}
               />
             ))}
@@ -75,7 +86,8 @@ export function ProvidersPage() {
       )}
       {creatingModelFor && (
         <CreateModelModal
-          providerId={creatingModelFor}
+          providerId={creatingModelFor.providerId}
+          initialUpstreamName={creatingModelFor.upstreamName}
           onClose={() => setCreatingModelFor(null)}
         />
       )}
@@ -101,12 +113,14 @@ function ProviderCard({
   probeResult?: ProbeResult;
   onProbeResult: (result: ProbeResult) => void;
   onEdit: () => void;
-  onAddModel: () => void;
+  onAddModel: (upstreamName?: string) => void;
   onEditModel: (model: ModelResponse) => void;
 }) {
   const probeMutation = useProbeProvider();
   const updateMutation = useUpdateProvider();
   const updateModelMutation = useUpdateModel();
+  const [showDownload, setShowDownload] = useState(false);
+  const downloadable = DOWNLOADABLE_KINDS.includes(provider.kind);
 
   const handleProbe = async () => {
     try {
@@ -152,6 +166,15 @@ function ProviderCard({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {downloadable && (
+            <button
+              onClick={() => setShowDownload(true)}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
+            >
+              <Download className="h-3 w-3" />
+              Скачать модель
+            </button>
+          )}
           <button
             onClick={handleProbe}
             disabled={probeMutation.isPending}
@@ -185,7 +208,7 @@ function ProviderCard({
           <div className="flex items-center justify-between">
             <div className="text-xs font-medium text-muted-foreground">Модели:</div>
             <button
-              onClick={onAddModel}
+              onClick={() => onAddModel()}
               className="flex items-center gap-0.5 text-xs text-primary hover:underline"
             >
               <Plus className="h-3 w-3" />
@@ -238,7 +261,7 @@ function ProviderCard({
       {provider.models.length === 0 && (
         <div className="mt-3">
           <button
-            onClick={onAddModel}
+            onClick={() => onAddModel()}
             className="flex items-center gap-0.5 text-xs text-primary hover:underline"
           >
             <Plus className="h-3 w-3" />
@@ -266,9 +289,32 @@ function ProviderCard({
                 <span className="text-muted-foreground">Параллелизм:</span>{" "}
                 {probeResult.max_parallel}
               </div>
+              {/* T-437, часть Б: доступные модели с флагом «уже в orqion» и быстрым добавлением */}
               <div>
-                <span className="text-muted-foreground">Доступные модели:</span>{" "}
-                {probeResult.available_models.join(", ") || "нет"}
+                <span className="text-muted-foreground">Доступные модели:</span>
+                {probeResult.available_models.length === 0 ? (
+                  <span> нет</span>
+                ) : (
+                  <ul className="mt-1 space-y-0.5">
+                    {probeResult.available_models.map((m) => (
+                      <li key={m.name} className="flex items-center gap-2">
+                        <span>{m.name}</span>
+                        {m.registered ? (
+                          <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-green-600">
+                            в orqion
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => onAddModel(m.name)}
+                            className="text-primary hover:underline"
+                          >
+                            Добавить как модель
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {probeResult.observed_context && (
                 <div>
@@ -284,13 +330,206 @@ function ProviderCard({
           )}
         </div>
       )}
+
+      {showDownload && (
+        <DownloadModelModal
+          provider={provider}
+          probeResult={probeResult}
+          onClose={() => setShowDownload(false)}
+          onDownloaded={handleProbe}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * T-437, часть А: скачивание модели на локальный провайдер.
+ *
+ * Единый контракт бэкенда: старт → 202 + job_id (поллинг) либо 200 с
+ * терминальным статусом сразу (уже скачана / ошибка старта). Поллинг
+ * через useModelDownloadStatus (2s, стоп на терминальном статусе).
+ * Ошибки показываются как есть, без интерпретации.
+ */
+function DownloadModelModal({
+  provider,
+  probeResult,
+  onClose,
+  onDownloaded,
+}: {
+  provider: ProviderResponse;
+  probeResult?: ProbeResult;
+  onClose: () => void;
+  onDownloaded: () => void;
+}) {
+  const startMutation = useStartModelDownload();
+  const [model, setModel] = useState("");
+  const [job, setJob] = useState<DownloadStatusResponse | null>(null);
+  const notifiedRef = useRef(false);
+
+  const jobId = job?.job_id ?? null;
+  const statusQuery = useModelDownloadStatus(provider.id, jobId, job?.status ?? null);
+  // Последний известный статус: поллинг имеет приоритет над ответом старта.
+  const current: DownloadStatusResponse | null =
+    jobId !== null ? statusQuery.data ?? job : job;
+
+  const suggestions = (probeResult?.available_models ?? []).filter((m) => !m.registered);
+  const started = job !== null;
+  const terminal = isTerminalDownloadStatus(current?.status);
+
+  // После успешного скачивания обновляем probe — новая модель появится
+  // в списке доступных (вызывается один раз).
+  useEffect(() => {
+    if (
+      !notifiedRef.current &&
+      current &&
+      (current.status === "completed" || current.status === "already_downloaded")
+    ) {
+      notifiedRef.current = true;
+      onDownloaded();
+    }
+  }, [current, onDownloaded]);
+
+  const handleStart = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const result = await startMutation.mutateAsync({
+      providerId: provider.id,
+      model,
+    });
+    setJob(result);
+  };
+
+  const percent = current?.percent ?? null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Скачать модель</h3>
+          <button onClick={onClose}>
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {!started ? (
+          <form onSubmit={handleStart} className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Модель</label>
+              <input
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full rounded-md border border-border px-3 py-2 text-sm"
+                placeholder={
+                  provider.kind === "ollama"
+                    ? "llama3.2:1b"
+                    : "https://huggingface.co/org/repo-GGUF"
+                }
+                required
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {provider.kind === "ollama"
+                  ? "Имя модели из реестра Ollama."
+                  : "Идентификатор каталога или полная ссылка Hugging Face (GGUF)."}
+              </p>
+            </div>
+            {suggestions.length > 0 && (
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  Доступны на провайдере, но не добавлены в orqion:
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {suggestions.map((m) => (
+                    <button
+                      key={m.name}
+                      type="button"
+                      onClick={() => setModel(m.name)}
+                      className="rounded border border-border px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={startMutation.isPending}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              {startMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Скачать
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-sm">
+              <span className="text-muted-foreground">Модель:</span> {model}
+            </div>
+
+            {current?.status === "pending" && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Ожидание старта…
+              </div>
+            )}
+
+            {current?.status === "downloading" && (
+              <div className="space-y-1">
+                <div className="h-2 w-full rounded-full bg-muted">
+                  <div
+                    className="h-2 rounded-full bg-primary transition-all"
+                    style={{ width: `${percent ?? 0}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{current.message ?? "downloading"}</span>
+                  <span>{percent !== null ? `${percent}%` : ""}</span>
+                </div>
+              </div>
+            )}
+
+            {current?.status === "completed" && (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <CheckCircle className="h-4 w-4" />
+                Модель скачана
+              </div>
+            )}
+
+            {current?.status === "already_downloaded" && (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <CheckCircle className="h-4 w-4" />
+                Модель уже скачана на провайдере
+              </div>
+            )}
+
+            {current?.status === "error" && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+                {current.error ?? "Ошибка скачивания"}
+              </div>
+            )}
+
+            {terminal && (
+              <button
+                onClick={onClose}
+                className="w-full rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Закрыть
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function CreateProviderModal({ onClose }: { onClose: () => void }) {
   const createMutation = useCreateProvider();
-  const [kind, setKind] = useState("openai");
+  const [kind, setKind] = useState<ProviderKind>("external");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
 
@@ -320,13 +559,17 @@ function CreateProviderModal({ onClose }: { onClose: () => void }) {
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="mb-1 block text-sm font-medium">Тип (kind)</label>
-            <input
-              type="text"
+            <select
               value={kind}
-              onChange={(e) => setKind(e.target.value)}
+              onChange={(e) => setKind(e.target.value as ProviderKind)}
               className="w-full rounded-md border border-border px-3 py-2 text-sm"
-              placeholder="openai"
-            />
+            >
+              {PROVIDER_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">Base URL</label>
@@ -442,14 +685,18 @@ function EditProviderModal({
 
 function CreateModelModal({
   providerId,
+  initialUpstreamName,
   onClose,
 }: {
   providerId: string;
+  initialUpstreamName?: string;
   onClose: () => void;
 }) {
   const createMutation = useCreateModel();
   const [alias, setAlias] = useState("");
-  const [upstreamName, setUpstreamName] = useState("");
+  // T-437, часть Б: быстрое добавление из списка доступных моделей —
+  // upstream_name предзаполняется именем модели на провайдере.
+  const [upstreamName, setUpstreamName] = useState(initialUpstreamName ?? "");
   const [locality, setLocality] = useState("local");
   const [maxInputTokens, setMaxInputTokens] = useState("");
   const [maxOutputTokens, setMaxOutputTokens] = useState("");
