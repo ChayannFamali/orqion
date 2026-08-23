@@ -125,9 +125,25 @@ async def chat(
             corpus = await resolve_corpus(session, workspace_id, body.corpus_name)
         # Корпус переопределяет data_class из БД
         corpus_data_class = corpus.data_class
-        # pinned_model_id для К2/К3 переопределяет выбор пользователя
+        # pinned_model_id переопределяет выбор пользователя. Пин хранится как
+        # id модели, а маршрутизация сравнивает алиасы (BUG-013) — резолвим
+        # алиас до входа в select_model.
         if corpus.pinned_model_id is not None:
-            model_alias = corpus.pinned_model_id
+            pinned_result = await session.execute(
+                select(Model).where(Model.id == corpus.pinned_model_id)
+            )
+            pinned_model = pinned_result.scalar_one_or_none()
+            if pinned_model is None:
+                # FK corpus.pinned_model_id → model.id при PRAGMA foreign_keys=ON
+                # делает ветку недостижимой при целостных данных.
+                raise NoRouteAvailable(
+                    constraint={
+                        "reason": "pinned_model_not_found",
+                        "corpus_name": body.corpus_name,
+                    },
+                    hint="Модель, закреплённая за корпусом, не найдена",
+                )
+            model_alias = pinned_model.alias
 
     async with span(trace_ctx, "prepare"):
         try:

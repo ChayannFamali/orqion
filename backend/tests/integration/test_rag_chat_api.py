@@ -4,6 +4,8 @@
 - test_chat_with_corpus_returns_rag_answer: corpus_name задан, RAG возвращает ответ
 - test_chat_with_corpus_uses_corpus_data_class: data_class из корпуса, не из запроса
 - test_chat_with_corpus_pinned_model: pinned_model_id переопределяет model_alias
+- test_chat_with_corpus_pinned_model_among_multiple_candidates: BUG-013 —
+  пин среди нескольких local-кандидатов → primary == pinned
 - test_chat_with_corpus_k2_rejects_external_model: К2 + external model → 403
 - test_chat_with_corpus_no_active_index: corpus без active_index_version_id → 409
 - test_chat_with_corpus_not_found: несуществующий corpus_name → 404
@@ -612,6 +614,50 @@ async def test_chat_with_corpus_pinned_model(
     assert response.status_code == 200
     data = response.json()
     # Модель в ответе — pinned, не запрошенная
+    assert data["model"] == "local/pinned-model"
+
+
+async def test_chat_with_corpus_pinned_model_among_multiple_candidates(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG-013: пин среди нескольких local-кандидатов → primary == pinned.
+
+    Регрессия: до фикса pinned_model_id подставлялся в model_alias как UUID —
+    alias-lookup не находил совпадения, пин молча игнорировался и primary
+    становился candidates[0] (первый по алиасу). Здесь закреплённая модель —
+    НЕ первый кандидат, поэтому без фикса тест красный.
+    """
+    await _login_as_admin(api_client, app_fixture)
+    # Два local-кандидата: первый по алфавиту алиас не закреплён за корпусом
+    await _seed_provider_and_model(app_fixture, model_alias="local/aaa-other")
+    pinned_model_id = await _seed_provider_and_model(app_fixture, model_alias="local/pinned-model")
+    await _seed_corpus(app_fixture, data_class="К2", pinned_model_id=pinned_model_id)
+    _patch_provider_both(monkeypatch, "pinned among many answer")
+
+    monkeypatch.setattr(
+        "app.rag.pipeline.hybrid_search",
+        AsyncMock(return_value=AsyncMock(merged=[])),
+    )
+    monkeypatch.setattr(
+        "app.rag.pipeline.rerank",
+        AsyncMock(return_value=AsyncMock(results=[], degraded=False, error=None)),
+    )
+
+    # Запрос с другим model_alias — пин переопределяет выбор пользователя
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "test-corpus",
+            "model_alias": "local/aaa-other",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # primary — pinned, не candidates[0] («local/aaa-other») и не запрошенный алиас
     assert data["model"] == "local/pinned-model"
 
 
