@@ -414,6 +414,10 @@ export interface paths {
          *     Экранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).
          *     ВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе
          *     "search" ловится как conversation_id (FastAPI матчит первый подходящий).
+         *
+         *     BUG-017: на не-SQLite диалектах поиск недоступен — честный 501
+         *     вместо молчаливого пустого результата (§7.3: отказ всегда содержит
+         *     причину). Нативный PostgreSQL-поиск (tsvector) — отдельная задача.
          */
         get: operations["search_conversations_api_conversations_search_get"];
         put?: never;

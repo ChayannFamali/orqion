@@ -1042,7 +1042,7 @@
           "conversations"
         ],
         "summary": "Search Conversations",
-        "description": "Полнотекстовый поиск по своим диалогам (T-436).\n\nFTS5 + JOIN conversation WHERE user_id (до MATCH, не пост-фильтрация — §8.2).\nЭкранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).\nВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе\n\"search\" ловится как conversation_id (FastAPI матчит первый подходящий).",
+        "description": "Полнотекстовый поиск по своим диалогам (T-436).\n\nFTS5 + JOIN conversation WHERE user_id (до MATCH, не пост-фильтрация — §8.2).\nЭкранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).\nВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе\n\"search\" ловится как conversation_id (FastAPI матчит первый подходящий).\n\nBUG-017: на не-SQLite диалектах поиск недоступен — честный 501\nвместо молчаливого пустого результата (§7.3: отказ всегда содержит\nпричину). Нативный PostgreSQL-поиск (tsvector) — отдельная задача.",
         "operationId": "search_conversations_api_conversations_search_get",
         "parameters": [
           {
