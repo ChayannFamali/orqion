@@ -577,30 +577,35 @@ async def _save_messages_impl(
     # запрос поверх; старые Message остаются в БД) — синхронизация FTS5
     # не нужна. Если T-305 когда-либо добавит DELETE Message на бэкенде,
     # обязан добавить симметричный DELETE FROM fts_messages.
-    from sqlalchemy import text as sa_text
+    # BUG-017: fts_messages существует только в SQLite (диалект-гейт
+    # миграции 0024) — на других диалектах dual-write пропускается.
+    from app.utils.fts5 import fts5_available
 
-    for mid, content in user_message_ids:
-        await session.execute(
-            sa_text(
-                "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
-                "VALUES (:content, :cid, :mid, :role)"
-            ),
-            {"content": content, "cid": conversation_id, "mid": mid, "role": "user"},
-        )
+    if fts5_available(session):
+        from sqlalchemy import text as sa_text
 
-    if full_content and assistant_message_id is not None:
-        await session.execute(
-            sa_text(
-                "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
-                "VALUES (:content, :cid, :mid, :role)"
-            ),
-            {
-                "content": full_content,
-                "cid": conversation_id,
-                "mid": assistant_message_id,
-                "role": "assistant",
-            },
-        )
+        for mid, content in user_message_ids:
+            await session.execute(
+                sa_text(
+                    "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
+                    "VALUES (:content, :cid, :mid, :role)"
+                ),
+                {"content": content, "cid": conversation_id, "mid": mid, "role": "user"},
+            )
+
+        if full_content and assistant_message_id is not None:
+            await session.execute(
+                sa_text(
+                    "INSERT INTO fts_messages (content, conversation_id, message_id, role) "
+                    "VALUES (:content, :cid, :mid, :role)"
+                ),
+                {
+                    "content": full_content,
+                    "cid": conversation_id,
+                    "mid": assistant_message_id,
+                    "role": "assistant",
+                },
+            )
 
     # Обновляем last_activity_at для retention (T-406)
     conv_result = await session.execute(

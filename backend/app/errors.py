@@ -138,3 +138,11 @@ class Conflict(OrqionError):
     error_code = "conflict"
     reason = "Операция конфликтует с текущим состоянием"
     status_code = 409
+
+
+class FeatureNotSupported(OrqionError):
+    """Функция недоступна в текущей конфигурации (честный отказ, §7.3)."""
+
+    error_code = "feature_not_supported"
+    reason = "Функция не поддерживается текущей конфигурацией"
+    status_code = 501

@@ -24,7 +24,7 @@ from app.auth.dependencies import current_user
 from app.db.base import _utcnow
 from app.db.models import Conversation, Message, User
 from app.db.session import get_session
-from app.errors import NotFound
+from app.errors import FeatureNotSupported, NotFound
 
 router = APIRouter(
     prefix="/api/conversations", tags=["conversations"], dependencies=[Depends(current_user)]
@@ -147,8 +147,19 @@ async def search_conversations(
     Экранирование — app.utils.fts5.escape_fts5_query (T-212/BUG-003).
     ВАЖНО: этот маршрут обязан стоять ДО /{conversation_id}, иначе
     "search" ловится как conversation_id (FastAPI матчит первый подходящий).
+
+    BUG-017: на не-SQLite диалектах поиск недоступен — честный 501
+    вместо молчаливого пустого результата (§7.3: отказ всегда содержит
+    причину). Нативный PostgreSQL-поиск (tsvector) — отдельная задача.
     """
     from app.search.message_search import search_messages
+    from app.utils.fts5 import fts5_available
+
+    if not fts5_available(session):
+        raise FeatureNotSupported(
+            constraint={"object": "message_search", "requirement": "sqlite fts5"},
+            hint="Полнотекстовый поиск по диалогам доступен только для SQLite",
+        )
 
     workspace_id = request.app.state.workspace_id
     hits = await search_messages(session, q, user.id, workspace_id, limit=limit, offset=offset)
@@ -297,10 +308,15 @@ async def delete_conversation(
     # T-436: dual-write — удаляем FTS5-индекс сообщений диалога.
     # session.delete(conv) → ORM cascade delete-orphan удаляет Message,
     # но не FTS5 (не ORM-модель). Явный DELETE.
-    from sqlalchemy import text as sa_text
+    # BUG-017: fts_messages существует только в SQLite — на других
+    # диалектах таблицы нет, удаление пропускается.
+    from app.utils.fts5 import fts5_available
 
-    await session.execute(
-        sa_text("DELETE FROM fts_messages WHERE conversation_id = :cid"),
-        {"cid": conversation_id},
-    )
+    if fts5_available(session):
+        from sqlalchemy import text as sa_text
+
+        await session.execute(
+            sa_text("DELETE FROM fts_messages WHERE conversation_id = :cid"),
+            {"cid": conversation_id},
+        )
     await session.commit()

@@ -8,6 +8,22 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def fts5_available(session: AsyncSession) -> bool:
+    """Доступен ли FTS5-поиск по диалогам для этой БД.
+
+    FTS5-таблица fts_messages создаётся только для SQLite (диалект-гейт
+    миграции 0024, прецедент BUG-005/0013). На PostgreSQL таблицы нет —
+    dual-write пропускается, поиск отказывает явно (BUG-017).
+    """
+    bind = session.bind
+    if bind is None:
+        return False
+    return bind.dialect.name == "sqlite"
+
+
 # FTS5 спецсимволы: " * - : ( ) ? ^ ! & |
 _FTS5_SPECIAL = re.compile(r'["*\-:()?!&|]')
 

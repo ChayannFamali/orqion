@@ -83,6 +83,68 @@ def test_migration_0013_skips_on_postgres(
     mock_bind.execute.assert_not_called()
 
 
+def test_migration_0024_skips_on_postgres(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """BUG-017: миграция 0024 (fts_messages) повторяет фикс BUG-005.
+
+    На SQLite миграция создаёт fts_messages. На не-SQLite диалекте
+    upgrade()/downgrade() обязаны вернуть без выполнения DDL —
+    CREATE VIRTUAL TABLE ... fts5 на PostgreSQL падает с
+    syntax error at or near "VIRTUAL".
+    """
+    from unittest.mock import MagicMock
+
+    from alembic import command
+    from alembic.config import Config
+
+    ALEMBIC_INI = Path(__file__).resolve().parent.parent.parent.parent / "alembic.ini"
+    MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "app" / "db" / "migrations"
+
+    db_url = f"sqlite:///{tmp_path}/migrate_0024_test.db"
+    config = Config(str(ALEMBIC_INI))
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    config.set_main_option("sqlalchemy.url", db_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url)
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+
+    # На SQLite: fts_messages должна существовать
+    assert "fts_messages" in table_names, "fts_messages must exist on SQLite"
+    engine.dispose()
+
+    # Прямая проверка dialect guard: вызываем upgrade/downgrade с mock bind (postgresql)
+    migration_path = (
+        Path(__file__).resolve().parent.parent.parent
+        / "app"
+        / "db"
+        / "migrations"
+        / "versions"
+        / "0024_fts_messages.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0024_test", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    migration_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration_mod)
+
+    mock_bind = MagicMock()
+    mock_bind.dialect.name = "postgresql"
+    monkeypatch.setattr("alembic.op.get_bind", lambda: mock_bind)
+
+    # upgrade() на "postgresql" — должен вернуть без выполнения DDL
+    migration_mod.upgrade()
+    mock_bind.execute.assert_not_called()
+
+    # downgrade() на "postgresql" — тоже должен вернуть
+    migration_mod.downgrade()
+    mock_bind.execute.assert_not_called()
+
+
 # -----------------------------------------------------------------------
 # Test 1: migrate_sqlite_to_postgres — row counts + content verification
 # -----------------------------------------------------------------------
