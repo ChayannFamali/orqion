@@ -35,6 +35,9 @@ class ChatAction(Protocol):
     output_tokens: int
     corpus_data_class: str | None
     corpus_name: str | None
+    # T-439: мульти-корпусный запрос. Если задан — проверяется весь список,
+    # одиночное поле игнорируется.
+    corpus_names: list[str] | None
 
 
 def _matches(patterns: list[str], value: str) -> bool:
@@ -78,13 +81,24 @@ def enforce(
         )
 
     # 1.5. Видимость корпуса — проверка до поиска (S-12, ADR-12)
-    if action.corpus_name is not None and not _matches(policy.corpora, action.corpus_name):
+    # T-439: в мульти-режиме проверяется каждый выбранный корпус; отказ —
+    # явный 403 со списком всех неразрешённых (тихое подмножество запрещено
+    # решениями дизайн-ревью).
+    effective_corpus_names = (
+        action.corpus_names
+        if action.corpus_names is not None
+        else ([action.corpus_name] if action.corpus_name is not None else [])
+    )
+    disallowed = [name for name in effective_corpus_names if not _matches(policy.corpora, name)]
+    if disallowed:
         raise Forbidden(
             constraint={
-                "corpus": action.corpus_name,
+                "corpora": disallowed,
                 "allowed": policy.corpora,
             },
-            hint="Корпус не разрешён политикой роли",
+            hint="Корпус не разрешён политикой роли"
+            if len(disallowed) == 1
+            else "Корпуса не разрешены политикой роли",
         )
 
     # 2. Видимость модели

@@ -446,3 +446,23 @@ async def resolve_corpus(
             hint="Корпус не имеет активной версии индекса",
         )
     return corpus
+
+
+async def resolve_corpora(
+    session: AsyncSession,
+    workspace_id: str,
+    corpus_names: list[str],
+) -> list[Corpus]:
+    """Загружает несколько корпусов по именам в рамках workspace (T-439).
+
+    Дубликаты имён схлопываются с сохранением порядка. Ошибки — те же,
+    что у resolve_corpus, и срабатывают на первом проблемном корпусе:
+    NotFound — корпус не существует;
+    CorpusNotReady — нет активной версии индекса.
+
+    Решения дизайн-ревью Т-439: идентификация по имени (как в
+    policy.corpora), fail-closed — весь запрос падает, если хоть один
+    из выбранных корпусов не найден или не готов.
+    """
+    unique_names = list(dict.fromkeys(corpus_names))
+    return [await resolve_corpus(session, workspace_id, name) for name in unique_names]

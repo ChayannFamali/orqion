@@ -87,6 +87,8 @@ class SourceEntry:
     structural_path — человекочитаемый путь из метаданных чанка.
     score — оценка реранкера (или RRF-скор в degraded mode).
     original_rank — позиция в merged до реранкинга, 1-based.
+    corpus_id / corpus_name — атрибуция корпуса (T-439): из какого
+    корпуса фрагмент; заполняется, когда пайплайн знает соответствие.
     """
 
     chunk_id: str
@@ -94,12 +96,15 @@ class SourceEntry:
     structural_path: str
     score: float
     original_rank: int
+    corpus_id: str | None = None
+    corpus_name: str | None = None
 
 
 def build_sources(
     included_chunk_ids: list[str],
     reranked: list[RerankResult],
     chunks: list[Chunk],
+    corpus_by_chunk: dict[str, tuple[str, str]] | None = None,
 ) -> list[SourceEntry]:
     """Строит список источников из включённых фрагментов.
 
@@ -110,6 +115,8 @@ def build_sources(
         included_chunk_ids: chunk_id, попавшие в контекст (в порядке включения).
         reranked: результаты реранкинга (для score и original_rank).
         chunks: Chunk из БД (для document_id и meta).
+        corpus_by_chunk: опц. соответствие chunk_id → (corpus_id, corpus_name)
+            для атрибуции источников (T-439).
 
     Returns:
         Список SourceEntry в порядке включения фрагментов в контекст.
@@ -124,6 +131,7 @@ def build_sources(
         if chunk is None or rerank_result is None:
             continue
         structural_path = build_structural_path(chunk.meta, chunk)
+        attribution = (corpus_by_chunk or {}).get(chunk_id)
         sources.append(
             SourceEntry(
                 chunk_id=chunk_id,
@@ -131,6 +139,8 @@ def build_sources(
                 structural_path=structural_path,
                 score=rerank_result.score,
                 original_rank=rerank_result.original_rank,
+                corpus_id=attribution[0] if attribution else None,
+                corpus_name=attribution[1] if attribution else None,
             )
         )
     return sources

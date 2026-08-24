@@ -25,7 +25,7 @@ from app.db.models import Chunk, Model, Provider
 from app.providers.client import ProviderClient
 from app.rag.context_builder import ContextOutput, build_context
 from app.rag.embeddings import EmbeddingBackend
-from app.rag.hybrid_search import HybridResult, HybridSearchOutput, hybrid_search
+from app.rag.hybrid_search import HybridResult, HybridSearchOutput, hybrid_search, rrf
 from app.rag.query_rewrite import maybe_rewrite_query
 from app.rag.reranker import RerankOutput, create_reranker, rerank
 from app.rag.sources import SourceEntry, build_sources
@@ -51,9 +51,17 @@ class RagState:
     errors: list[str] = field(default_factory=list)
     usage: dict[str, Any] | None = None
     sources: list[SourceEntry] = field(default_factory=list)
+    # T-439: атрибуция чанков корпусам — chunk_id → (corpus_id, corpus_name)
+    chunk_corpus: dict[str, tuple[str, str]] = field(default_factory=dict)
     # T-307: данные для панели трассировки
     search_candidates: list[dict[str, object]] = field(default_factory=list)
     rerank_results: list[dict[str, object]] = field(default_factory=list)
+
+
+# T-439: потолок объединённого списка после второго RRF перед реранком.
+# Контракт реранкера (T-217, «50→8») не меняется — через него проходит
+# объединённый top-50 вместо одиночного корпусного.
+MULTI_RRF_TOP_K = 50
 
 
 @dataclass
@@ -72,6 +80,11 @@ class RagContext:
     trace_ctx: TraceContext | None = None
     messages: list[dict[str, str]] | None = None
     reranker: Any = None  # LocalReranker | None
+    # T-439: мульти-корпусный режим. Если список задан и длиннее одного —
+    # поиск идёт по каждой версии, результаты сливаются вторым RRF.
+    # corpus_attribution: index_version_id → (corpus_id, corpus_name).
+    index_version_ids: list[str] = field(default_factory=list)
+    corpus_attribution: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 RagStep = Callable[[RagState, RagContext], Awaitable[RagState]]
@@ -97,16 +110,63 @@ async def step_rewrite(state: RagState, ctx: RagContext) -> RagState:
 
 
 async def step_search(state: RagState, ctx: RagContext) -> RagState:
-    """Гибридный поиск (T-216)."""
+    """Гибридный поиск (T-216). T-439: по нескольким версиям — двухуровневый
+    RRF (решение В1 дизайн-ревью): гибрид по каждому корпусу с k=50, затем
+    второй RRF по корпусным merged-спискам с обрезкой до MULTI_RRF_TOP_K.
+    """
     search_query = state.rewritten or state.query
-    output: HybridSearchOutput = await hybrid_search(
-        ctx.vector_store,
-        ctx.embedding_backend,
-        ctx.index_version_id,
-        search_query,
-        k=50,
-    )
-    state.hits = output.merged
+    version_ids = ctx.index_version_ids or [ctx.index_version_id]
+
+    if len(version_ids) <= 1:
+        output: HybridSearchOutput = await hybrid_search(
+            ctx.vector_store,
+            ctx.embedding_backend,
+            version_ids[0],
+            search_query,
+            k=50,
+        )
+        state.hits = output.merged
+        attribution = ctx.corpus_attribution.get(version_ids[0])
+        if attribution is not None:
+            state.chunk_corpus = {h.chunk_id: attribution for h in output.merged}
+    else:
+        outputs: list[HybridSearchOutput] = []
+        for version_id in version_ids:
+            outputs.append(
+                await hybrid_search(
+                    ctx.vector_store,
+                    ctx.embedding_backend,
+                    version_id,
+                    search_query,
+                    k=50,
+                )
+            )
+        # Второй уровень: каждый корпусный merged — отдельный ранжированный
+        # вход. Скоры плотного/разреженного поиска разных версий индексов
+        # несравнимы, поэтому пулинг хитов отклонён дизайн-ревью.
+        rankings = [[h.chunk_id for h in out.merged] for out in outputs]
+        fused_scores = rrf(rankings)
+
+        text_map: dict[str, str] = {}
+        for version_id, out in zip(version_ids, outputs):
+            attribution = ctx.corpus_attribution.get(version_id)
+            for h in out.merged:
+                text_map.setdefault(h.chunk_id, h.text)
+                if attribution is not None:
+                    state.chunk_corpus.setdefault(h.chunk_id, attribution)
+
+        ordered = sorted(fused_scores.items(), key=lambda kv: kv[1], reverse=True)[:MULTI_RRF_TOP_K]
+        state.hits = [
+            HybridResult(
+                chunk_id=chunk_id,
+                score=score,
+                text=text_map.get(chunk_id, ""),
+                dense_rank=None,
+                sparse_rank=None,
+            )
+            for chunk_id, score in ordered
+        ]
+
     # T-307: кандидаты поиска для панели трассировки
     state.search_candidates = [
         {
@@ -115,7 +175,7 @@ async def step_search(state: RagState, ctx: RagContext) -> RagState:
             "dense_rank": h.dense_rank,
             "sparse_rank": h.sparse_rank,
         }
-        for h in output.merged
+        for h in state.hits
     ]
     return state
 
@@ -171,6 +231,7 @@ async def step_build_context(state: RagState, ctx: RagContext) -> RagState:
         included_chunk_ids=output.included_chunk_ids,
         reranked=state.reranked,
         chunks=chunks,
+        corpus_by_chunk=state.chunk_corpus or None,
     )
     if output.truncated:
         state.degraded = True

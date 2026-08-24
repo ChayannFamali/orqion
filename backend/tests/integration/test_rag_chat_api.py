@@ -467,7 +467,7 @@ async def test_chat_with_corpus_traces_rag_steps(
     app_fixture: FastAPI,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Trace содержит span'ы шагов RAG (resolve_corpus, prepare, rag_pipeline)."""
+    """Trace содержит span'ы шагов RAG (resolve_corpora, prepare, rag_pipeline)."""
     await _login_as_admin(api_client, app_fixture)
     await _seed_provider_and_model(app_fixture)
     await _seed_corpus(app_fixture)
@@ -505,7 +505,7 @@ async def test_chat_with_corpus_traces_rag_steps(
             .all()
         )
         span_names = [s.name for s in spans]
-        assert "resolve_corpus" in span_names
+        assert "resolve_corpora" in span_names
         assert "prepare" in span_names
         assert "rag_pipeline" in span_names
         # T-307: routing span записан с payload

@@ -590,7 +590,7 @@ async def test_stream_abort_closes_upstream(
         temperature=0.7,
         stream=True,
         corpus_data_class=None,
-        corpus_name=None,
+        corpus_names=None,
         task_type=None,
         conversation_id=None,
     )

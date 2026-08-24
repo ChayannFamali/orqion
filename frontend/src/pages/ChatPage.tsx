@@ -8,11 +8,13 @@ import {
   useDeleteConversation,
 } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
+import { useAvailableCorpora } from "../hooks/useCorpora";
 import { useChat } from "../hooks/useChat";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
 import { ModelSelector } from "../components/ModelSelector";
+import { CorpusSelector } from "../components/CorpusSelector";
 import { NewChatModal } from "../components/NewChatModal";
 import type { ChatMessage, MessageResponse } from "../api/types";
 import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
@@ -23,10 +25,13 @@ export function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [newChatOpen, setNewChatOpen] = useState(false);
+  // T-439: имена выбранных корпусов для RAG-запроса (мульти-режим)
+  const [selectedCorpora, setSelectedCorpora] = useState<string[]>([]);
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
   const models = useEnabledModels();
+  const availableCorpora = useAvailableCorpora();
   const updateConv = useUpdateConversation();
   const resetContext = useResetConversationContext();
   const deleteConv = useDeleteConversation();
@@ -55,6 +60,13 @@ export function ChatPage() {
     setLocalMessages([]);
   }, []);
 
+  // T-439: переключение корпуса в мульти-селекторе
+  const handleToggleCorpus = useCallback((name: string) => {
+    setSelectedCorpora((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    );
+  }, []);
+
   const handleNew = useCallback(() => {
     setNewChatOpen(true);
   }, []);
@@ -78,6 +90,7 @@ export function ChatPage() {
         messages: messagesToSend,
         modelAlias: selectedModel,
         conversationId: activeId,
+        corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
         onDone: (fullContent) => {
           const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
           setLocalMessages(updated);
@@ -89,7 +102,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation],
   );
 
   const handleAbort = useCallback(() => {
@@ -149,6 +162,7 @@ export function ChatPage() {
       messages: messagesToSend,
       modelAlias: selectedModel,
       conversationId: activeId,
+      corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
       onDone: (fullContent) => {
         const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
         setLocalMessages(updated);
@@ -159,7 +173,7 @@ export function ChatPage() {
         }
       },
     });
-  }, [localMessages, selectedModel, activeId, chat, conversations, conversation]);
+  }, [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation]);
 
   const handleEdit = useCallback(
     (messageIndex: number, newContent: string) => {
@@ -173,6 +187,7 @@ export function ChatPage() {
         messages: messagesToSend,
         modelAlias: selectedModel,
         conversationId: activeId,
+        corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
         onDone: (fullContent) => {
           const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
           setLocalMessages(updated);
@@ -184,7 +199,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation],
   );
 
   return (
@@ -251,6 +266,18 @@ export function ChatPage() {
             </button>
           )}
         </div>
+
+        {/* T-439: мультивыбор корпусов для RAG */}
+        {(availableCorpora.data?.corpora.length ?? 0) > 0 && (
+          <div className="border-b border-border px-4 py-2">
+            <CorpusSelector
+              corpora={availableCorpora.data?.corpora ?? []}
+              selected={selectedCorpora}
+              onToggle={handleToggleCorpus}
+              disabled={chat.isStreaming}
+            />
+          </div>
+        )}
 
         {/* Messages */}
         <ChatMessages

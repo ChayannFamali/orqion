@@ -1340,6 +1340,28 @@
         }
       }
     },
+    "/api/corpora/available": {
+      "get": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "Available Corpora",
+        "description": "Корпуса, доступные пользователю для чата (T-439).\n\nВидимость — по policy.corpora роли (та же семантика, что у проверки\nв enforce: шаблоны имён, «*» = все). Управление корпусами\n(manage_corpora) НЕ требуется — это чтение для селектора чата.\n\nФормат ответа — имя корпуса (решение Г1: идентификация по имени,\nкак в policy.corpora; второй способ адресации не вводится).",
+        "operationId": "available_corpora_api_corpora_available_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailableCorporaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora/{corpus_id}": {
       "patch": {
         "tags": [
@@ -3659,6 +3681,59 @@
         ],
         "title": "AuditLogResponse"
       },
+      "AvailableCorporaResponse": {
+        "properties": {
+          "corpora": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableCorpusEntry"
+            },
+            "type": "array",
+            "title": "Corpora"
+          }
+        },
+        "type": "object",
+        "required": [
+          "corpora"
+        ],
+        "title": "AvailableCorporaResponse",
+        "description": "Список корпусов, доступных пользователю для чата (T-439)."
+      },
+      "AvailableCorpusEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "data_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Class"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "data_class",
+          "ready"
+        ],
+        "title": "AvailableCorpusEntry",
+        "description": "Корпус, доступный пользователю для чата (T-439).\n\nВидимость — по policy.corpora роли (совпадение имени с шаблонами).\nready=False — нет активной версии индекса; запрос с таким корпусом\nупадёт CorpusNotReady (fail-closed)."
+      },
       "Body_import_to_eval_set_api_eval_sets__eval_set_id__import_post": {
         "properties": {
           "file": {
@@ -3829,6 +3904,20 @@
             ],
             "title": "Corpus Name"
           },
+          "corpus_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Names"
+          },
           "task_type": {
             "anyOf": [
               {
@@ -3985,6 +4074,28 @@
           "original_rank": {
             "type": "integer",
             "title": "Original Rank"
+          },
+          "corpus_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Id"
+          },
+          "corpus_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Name"
           }
         },
         "type": "object",

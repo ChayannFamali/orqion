@@ -145,13 +145,13 @@ describe("useChat RAG non-streaming", () => {
     await act(async () => {
       result.current.sendMessage({
         messages: [{ role: "user", content: "question" }] as ChatMessage[],
-        corpusName: "my-corpus",
+        corpusNames: ["my-corpus"],
       });
     });
 
     expect(vi.mocked(completeChat)).toHaveBeenCalledTimes(1);
     const callArg = vi.mocked(completeChat).mock.calls[0][0];
-    expect(callArg.corpus_name).toBe("my-corpus");
+    expect(callArg.corpus_names).toEqual(["my-corpus"]);
     expect(callArg.stream).toBe(false);
 
     expect(result.current.streamingContent).toBe("RAG answer with sources");
@@ -176,7 +176,7 @@ describe("useChat RAG non-streaming", () => {
     await act(async () => {
       result.current.sendMessage({
         messages: [{ role: "user", content: "question" }] as ChatMessage[],
-        corpusName: "my-corpus",
+        corpusNames: ["my-corpus"],
       });
     });
 
@@ -210,7 +210,7 @@ describe("useChat RAG non-streaming", () => {
     await act(async () => {
       result.current.sendMessage({
         messages: [{ role: "user", content: "question" }] as ChatMessage[],
-        corpusName: "corpus",
+        corpusNames: ["corpus"],
         onDone,
       });
     });
@@ -236,7 +236,7 @@ describe("useChat RAG non-streaming", () => {
     await act(async () => {
       result.current.sendMessage({
         messages: [{ role: "user", content: "q" }] as ChatMessage[],
-        corpusName: "corpus",
+        corpusNames: ["corpus"],
       });
     });
 

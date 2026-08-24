@@ -496,6 +496,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpora/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Available Corpora
+         * @description Корпуса, доступные пользователю для чата (T-439).
+         *
+         *     Видимость — по policy.corpora роли (та же семантика, что у проверки
+         *     в enforce: шаблоны имён, «*» = все). Управление корпусами
+         *     (manage_corpora) НЕ требуется — это чтение для селектора чата.
+         *
+         *     Формат ответа — имя корпуса (решение Г1: идентификация по имени,
+         *     как в policy.corpora; второй способ адресации не вводится).
+         */
+        get: operations["available_corpora_api_corpora_available_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}": {
         parameters: {
             query?: never;
@@ -1337,6 +1364,32 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * AvailableCorporaResponse
+         * @description Список корпусов, доступных пользователю для чата (T-439).
+         */
+        AvailableCorporaResponse: {
+            /** Corpora */
+            corpora: components["schemas"]["AvailableCorpusEntry"][];
+        };
+        /**
+         * AvailableCorpusEntry
+         * @description Корпус, доступный пользователю для чата (T-439).
+         *
+         *     Видимость — по policy.corpora роли (совпадение имени с шаблонами).
+         *     ready=False — нет активной версии индекса; запрос с таким корпусом
+         *     упадёт CorpusNotReady (fail-closed).
+         */
+        AvailableCorpusEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Data Class */
+            data_class: string | null;
+            /** Ready */
+            ready: boolean;
+        };
         /** Body_import_to_eval_set_api_eval_sets__eval_set_id__import_post */
         Body_import_to_eval_set_api_eval_sets__eval_set_id__import_post: {
             /** File */
@@ -1403,6 +1456,8 @@ export interface components {
             corpus_data_class?: string | null;
             /** Corpus Name */
             corpus_name?: string | null;
+            /** Corpus Names */
+            corpus_names?: string[] | null;
             /** Task Type */
             task_type?: string | null;
         };
@@ -1461,6 +1516,10 @@ export interface components {
             score: number;
             /** Original Rank */
             original_rank: number;
+            /** Corpus Id */
+            corpus_id?: string | null;
+            /** Corpus Name */
+            corpus_name?: string | null;
         };
         /** ChatUsage */
         ChatUsage: {
@@ -3454,6 +3513,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    available_corpora_api_corpora_available_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableCorporaResponse"];
                 };
             };
         };

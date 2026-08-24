@@ -18,7 +18,8 @@ interface UseChatResult {
     messages: ChatMessage[];
     modelAlias?: string | null;
     conversationId?: string | null;
-    corpusName?: string | null;
+    /** T-439: мульти-корпусный RAG. Пустой/не заданный список = обычный чат. */
+    corpusNames?: string[] | null;
     onDone?: (
       fullContent: string,
       error: { code: string; message: string } | null,
@@ -60,7 +61,7 @@ export function useChat(): UseChatResult {
   }, []);
 
   const sendMessage = useCallback<UseChatResult["sendMessage"]>(
-    ({ messages, modelAlias, conversationId, corpusName, onDone }) => {
+    ({ messages, modelAlias, conversationId, corpusNames, onDone }) => {
       setError(null);
       setStreamingContent("");
       setSources(null);
@@ -73,7 +74,7 @@ export function useChat(): UseChatResult {
       let accumulated = "";
       pendingContentRef.current = "";
 
-      if (corpusName) {
+      if (corpusNames && corpusNames.length > 0) {
         // RAG-ветка: non-streaming, JSON-ответ с sources
         (async () => {
           try {
@@ -84,7 +85,7 @@ export function useChat(): UseChatResult {
                 conversation_id: conversationId ?? null,
                 temperature: 0.7,
                 stream: false,
-                corpus_name: corpusName,
+                corpus_names: corpusNames,
               },
               controller.signal,
             );

@@ -19,6 +19,9 @@ class ChatRequest(BaseModel):
     stream: bool = True
     corpus_data_class: str | None = None
     corpus_name: str | None = None
+    # T-439: мульти-корпусный RAG. corpus_name и corpus_names взаимно
+    # исключают друг друга (оба заданы → 400). Пустой список = обычный чат.
+    corpus_names: list[str] | None = None
     task_type: str | None = None
 
 
@@ -33,6 +36,9 @@ class ChatSourceEntry(BaseModel):
     structural_path: str
     score: float
     original_rank: int
+    # T-439: атрибуция корпуса — из какого корпуса фрагмент.
+    corpus_id: str | None = None
+    corpus_name: str | None = None
 
 
 class ChatResponse(BaseModel):

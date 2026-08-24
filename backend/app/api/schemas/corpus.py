@@ -38,3 +38,23 @@ class CorpusListResponse(BaseModel):
     """Список корпусов."""
 
     corpora: list[CorpusResponse]
+
+
+class AvailableCorpusEntry(BaseModel):
+    """Корпус, доступный пользователю для чата (T-439).
+
+    Видимость — по policy.corpora роли (совпадение имени с шаблонами).
+    ready=False — нет активной версии индекса; запрос с таким корпусом
+    упадёт CorpusNotReady (fail-closed).
+    """
+
+    id: str
+    name: str
+    data_class: str | None
+    ready: bool
+
+
+class AvailableCorporaResponse(BaseModel):
+    """Список корпусов, доступных пользователю для чата (T-439)."""
+
+    corpora: list[AvailableCorpusEntry]

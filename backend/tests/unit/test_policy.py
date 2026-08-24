@@ -30,6 +30,7 @@ class FakeAction:
     output_tokens: int = 0
     corpus_data_class: str | None = None
     corpus_name: str | None = None
+    corpus_names: list[str] | None = None
 
 
 class TestPolicyValidation:
@@ -343,3 +344,75 @@ class TestResolvePolicy:
         policy = await resolve_policy(db_session, user)
         assert policy.max_input_tokens == 64000
         assert "external/*" in policy.models
+
+
+class TestEnforceCorpusVisibility:
+    """T-439 (Б1): видимость корпусов в мульти-режиме — проверяется каждый
+    выбранный корпус; отказ со списком всех непройденных."""
+
+    def _policy_with_corpora(self, corpora: list[str]) -> Policy:
+        return Policy(models=["*"], corpora=corpora)
+
+    def test_all_corpora_allowed_passes(self) -> None:
+        policy = self._policy_with_corpora(["public", "team"])
+        action = FakeAction(
+            model_alias="local/m",
+            model_locality="local",
+            input_tokens=100,
+            corpus_names=["public", "team"],
+        )
+        enforce(policy, action)
+
+    def test_single_disallowed_corpus_listed_in_constraint(self) -> None:
+        from app.errors import Forbidden
+
+        policy = self._policy_with_corpora(["public"])
+        action = FakeAction(
+            model_alias="local/m",
+            model_locality="local",
+            input_tokens=100,
+            corpus_names=["public", "secret"],
+        )
+        with pytest.raises(Forbidden) as exc_info:
+            enforce(policy, action)
+        assert exc_info.value.constraint is not None
+        assert exc_info.value.constraint["corpora"] == ["secret"]
+
+    def test_all_disallowed_corpora_listed(self) -> None:
+        from app.errors import Forbidden
+
+        policy = self._policy_with_corpora(["public"])
+        action = FakeAction(
+            model_alias="local/m",
+            model_locality="local",
+            input_tokens=100,
+            corpus_names=["secret-a", "secret-b"],
+        )
+        with pytest.raises(Forbidden) as exc_info:
+            enforce(policy, action)
+        assert exc_info.value.constraint is not None
+        assert exc_info.value.constraint["corpora"] == ["secret-a", "secret-b"]
+
+    def test_wildcard_corpora_allows_any(self) -> None:
+        policy = self._policy_with_corpora(["*"])
+        action = FakeAction(
+            model_alias="local/m",
+            model_locality="local",
+            input_tokens=100,
+            corpus_names=["anything", "else"],
+        )
+        enforce(policy, action)
+
+    def test_single_corpus_name_still_enforced(self) -> None:
+        """Регресс одиночного режима: список не задан — проверяется имя."""
+        from app.errors import Forbidden
+
+        policy = self._policy_with_corpora(["public"])
+        action = FakeAction(
+            model_alias="local/m",
+            model_locality="local",
+            input_tokens=100,
+            corpus_name="secret",
+        )
+        with pytest.raises(Forbidden):
+            enforce(policy, action)

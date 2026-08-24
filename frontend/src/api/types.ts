@@ -39,6 +39,9 @@ export type ModelCreate = components["schemas"]["ModelCreate"];
 export type ModelUpdate = components["schemas"]["ModelUpdate"];
 /** Результат удаления модели провайдера (T-443, коммит 2). */
 export type ModelDeleteResponse = components["schemas"]["ModelDeleteResponse"];
+/** Корпус, доступный пользователю для чата (T-439). */
+export type AvailableCorpusEntry = components["schemas"]["AvailableCorpusEntry"];
+export type AvailableCorporaResponse = components["schemas"]["AvailableCorporaResponse"];
 export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];

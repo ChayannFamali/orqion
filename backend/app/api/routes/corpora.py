@@ -12,6 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.corpus import (
+    AvailableCorporaResponse,
+    AvailableCorpusEntry,
     CorpusCreate,
     CorpusListResponse,
     CorpusResponse,
@@ -22,6 +24,7 @@ from app.auth.dependencies import current_user
 from app.db.models import Corpus, User
 from app.db.session import get_session
 from app.errors import BadRequest, NotFound
+from app.policy.enforce import _matches
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 
@@ -68,6 +71,40 @@ async def list_corpora(
     )
     corpora = result.scalars().all()
     return CorpusListResponse(corpora=[_to_response(c) for c in corpora])
+
+
+@router.get("/available", response_model=AvailableCorporaResponse)
+async def available_corpora(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> AvailableCorporaResponse:
+    """Корпуса, доступные пользователю для чата (T-439).
+
+    Видимость — по policy.corpora роли (та же семантика, что у проверки
+    в enforce: шаблоны имён, «*» = все). Управление корпусами
+    (manage_corpora) НЕ требуется — это чтение для селектора чата.
+
+    Формат ответа — имя корпуса (решение Г1: идентификация по имени,
+    как в policy.corpora; второй способ адресации не вводится).
+    """
+    policy = await resolve_policy(session, user)
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Corpus).where(Corpus.workspace_id == workspace_id).order_by(Corpus.created_at.desc())
+    )
+    corpora = result.scalars().all()
+    entries = [
+        AvailableCorpusEntry(
+            id=corpus.id,
+            name=corpus.name,
+            data_class=corpus.data_class,
+            ready=corpus.active_index_version_id is not None,
+        )
+        for corpus in corpora
+        if _matches(policy.corpora, corpus.name)
+    ]
+    return AvailableCorporaResponse(corpora=entries)
 
 
 @router.post("", response_model=CorpusResponse, status_code=201)

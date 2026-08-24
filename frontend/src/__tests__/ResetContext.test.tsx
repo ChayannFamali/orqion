@@ -86,6 +86,10 @@ vi.mock("../api/models", () => ({
   ]),
 }));
 
+vi.mock("../api/corpora", () => ({
+  apiListAvailableCorpora: vi.fn().mockResolvedValue({ corpora: [] }),
+}));
+
 vi.mock("../api/chat", () => ({
   streamChat: vi.fn(),
   completeChat: vi.fn(),

@@ -1,8 +1,19 @@
 import { apiFetch } from "./client";
-import type { CorpusCreate, CorpusListResponse, CorpusResponse, CorpusUpdate } from "./types";
+import type {
+  AvailableCorporaResponse,
+  CorpusCreate,
+  CorpusListResponse,
+  CorpusResponse,
+  CorpusUpdate,
+} from "./types";
 
 export async function apiListCorpora(): Promise<CorpusListResponse> {
   return apiFetch<CorpusListResponse>("/api/corpora");
+}
+
+/** T-439: корпуса, доступные пользователю для чата (по политике роли). */
+export async function apiListAvailableCorpora(): Promise<AvailableCorporaResponse> {
+  return apiFetch<AvailableCorporaResponse>("/api/corpora/available");
 }
 
 export async function apiCreateCorpus(body: CorpusCreate): Promise<CorpusResponse> {

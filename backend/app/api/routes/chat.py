@@ -28,9 +28,10 @@ from app.chat.service import (
     save_messages,
 )
 from app.config import Settings
-from app.db.models import Model, Provider, Role, User
+from app.db.models import Corpus, Model, Provider, Role, User
 from app.db.session import get_session
 from app.errors import (
+    BadRequest,
     DatabaseTemporarilyUnavailable,
     DataClassViolation,
     NoRouteAvailable,
@@ -39,11 +40,28 @@ from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from app.rag.pipeline import RagContext, RagState, run_pipeline
-from app.rag.service import resolve_corpus
+from app.rag.service import resolve_corpora
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
+
+# T-439 (решение А1): строгость классов данных. Любой К2/К3 среди выбранных
+# корпусов переводит весь запрос на локальные модели.
+_DATA_CLASS_STRICTNESS: dict[str, int] = {"К0": 0, "К1": 1, "К2": 2, "К3": 3}
+
+
+def _strictest_data_class(classes: list[str | None]) -> str | None:
+    """Самый строгий data_class побеждает; None трактуется как К0."""
+    strictest: str | None = None
+    for cls in classes:
+        if cls is None:
+            continue
+        if strictest is None or _DATA_CLASS_STRICTNESS.get(cls, 0) > _DATA_CLASS_STRICTNESS.get(
+            strictest, 0
+        ):
+            strictest = cls
+    return strictest
 
 
 def _is_adr12_violation(exc: DataClassViolation | NoRouteAvailable) -> bool:
@@ -115,23 +133,54 @@ async def chat(
         {"role": m.role, "content": m.content} for m in body.messages
     ]
 
-    # T-221: корпус resolution — если corpus_name задан, корпус = источник истины
-    # для data_class и pinned_model_id (ADR-12)
+    # T-221/T-439: резолв корпусов — корпуса являются источником истины для
+    # data_class и pinned_model_id (ADR-12). corpus_name (одиночный, обратная
+    # совместимость) и corpus_names (мульти-режим) взаимно исключают друг друга.
     corpus_data_class = body.corpus_data_class
     model_alias = body.model_alias
-    corpus = None
-    if body.corpus_name is not None:
-        async with span(trace_ctx, "resolve_corpus"):
-            corpus = await resolve_corpus(session, workspace_id, body.corpus_name)
-        # Корпус переопределяет data_class из БД
-        corpus_data_class = corpus.data_class
-        # pinned_model_id переопределяет выбор пользователя. Пин хранится как
-        # id модели, а маршрутизация сравнивает алиасы (BUG-013) — резолвим
-        # алиас до входа в select_model.
-        if corpus.pinned_model_id is not None:
-            pinned_result = await session.execute(
-                select(Model).where(Model.id == corpus.pinned_model_id)
+    corpora: list[Corpus] = []
+
+    if body.corpus_name is not None and body.corpus_names is not None:
+        raise BadRequest(
+            "Укажите corpus_name или corpus_names, но не оба поля сразу",
+            hint="Поля взаимно исключают друг друга",
+        )
+    requested_names: list[str] = []
+    if body.corpus_names is not None:
+        # dict.fromkeys — дедупликация с сохранением порядка (детерминизм Д1)
+        requested_names = list(dict.fromkeys(body.corpus_names))
+    elif body.corpus_name is not None:
+        requested_names = [body.corpus_name]
+
+    if any(not name.strip() for name in requested_names):
+        raise BadRequest(
+            "Имя корпуса не может быть пустым",
+            hint="Уберите пустые значения из списка корпусов",
+        )
+
+    if requested_names:
+        # Решения дизайн-ревью T-439: fail-closed (Е1) — первый ненайденный
+        # или неготовый корпус роняет весь запрос (см. resolve_corpora).
+        async with span(trace_ctx, "resolve_corpora"):
+            corpora = await resolve_corpora(session, workspace_id, requested_names)
+        # Решение А1: строжайший data_class побеждает — любой К2/К3 среди
+        # выбранных корпусов делает весь запрос доступным только локальным
+        # моделям (корпус переопределяет data_class из БД, как в T-221).
+        corpus_data_class = _strictest_data_class([c.data_class for c in corpora])
+        # Решение Д1: конфликт пинов → явная ошибка. Один общий пин
+        # применяется как в одиночном режиме: переопределяет выбор
+        # пользователя. Пин хранится как id модели, а маршрутизация
+        # сравнивает алиасы (BUG-013) — резолвим алиас до входа в select_model.
+        pins = {c.pinned_model_id for c in corpora if c.pinned_model_id is not None}
+        if len(pins) > 1:
+            raise BadRequest(
+                "Конфликт закрепления: выбранные корпуса закреплены за разными моделями",
+                constraint={"reason": "pin_conflict", "corpora": requested_names},
+                hint="Выберите корпуса с общим пином или снимите закрепление",
             )
+        if len(pins) == 1:
+            pinned_model_id = next(iter(pins))
+            pinned_result = await session.execute(select(Model).where(Model.id == pinned_model_id))
             pinned_model = pinned_result.scalar_one_or_none()
             if pinned_model is None:
                 # FK corpus.pinned_model_id → model.id при PRAGMA foreign_keys=ON
@@ -139,7 +188,7 @@ async def chat(
                 raise NoRouteAvailable(
                     constraint={
                         "reason": "pinned_model_not_found",
-                        "corpus_name": body.corpus_name,
+                        "corpus_names": requested_names,
                     },
                     hint="Модель, закреплённая за корпусом, не найдена",
                 )
@@ -158,7 +207,7 @@ async def chat(
                 temperature=body.temperature,
                 stream=body.stream,
                 corpus_data_class=corpus_data_class,
-                corpus_name=body.corpus_name,
+                corpus_names=requested_names or None,
                 task_type=body.task_type,
                 conversation_id=body.conversation_id,
                 rate_limiter=rate_limiter,
@@ -181,7 +230,7 @@ async def chat(
                         "reason": exc.reason,
                         "constraint": exc.constraint,
                         "model_alias": model_alias,
-                        "corpus_name": body.corpus_name,
+                        "corpus_names": requested_names or None,
                     },
                 )
                 await session.commit()
@@ -204,8 +253,8 @@ async def chat(
             "Failed to flush trace+prepare: degrading (database is locked)"
         )
 
-    # T-221: RAG-конвейер, если корпус задан
-    if corpus is not None:
+    # T-221/T-439: RAG-конвейер, если задан хотя бы один корпус
+    if corpora:
         vector_store = request.app.state.vector_store
         embedding_backend = request.app.state.embedding_backend
 
@@ -220,7 +269,9 @@ async def chat(
             embedding_backend=embedding_backend,
             secret_key=secret_key,
             workspace_id=workspace_id,
-            index_version_id=corpus.active_index_version_id or "",
+            index_version_id=corpora[0].active_index_version_id or "",
+            index_version_ids=[c.active_index_version_id or "" for c in corpora],
+            corpus_attribution={c.active_index_version_id or "": (c.id, c.name) for c in corpora},
             model=model,
             provider=provider,
             trace_ctx=trace_ctx,
@@ -313,6 +364,8 @@ async def chat(
                     structural_path=s.structural_path,
                     score=s.score,
                     original_rank=s.original_rank,
+                    corpus_id=s.corpus_id,
+                    corpus_name=s.corpus_name,
                 )
                 for s in rag_state.sources
             ],

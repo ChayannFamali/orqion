@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiCreateCorpus, apiListCorpora, apiUpdateCorpus } from "../api/corpora";
+import {
+  apiCreateCorpus,
+  apiListAvailableCorpora,
+  apiListCorpora,
+  apiUpdateCorpus,
+} from "../api/corpora";
 import { queryKeys } from "../api/query-keys";
 import type { CorpusCreate, CorpusUpdate } from "../api/types";
 
@@ -7,6 +12,14 @@ export function useCorpora() {
   return useQuery({
     queryKey: queryKeys.corpora.all,
     queryFn: apiListCorpora,
+  });
+}
+
+/** T-439: корпуса, доступные пользователю для чата (селектор в чате). */
+export function useAvailableCorpora() {
+  return useQuery({
+    queryKey: queryKeys.corpora.available,
+    queryFn: apiListAvailableCorpora,
   });
 }
 

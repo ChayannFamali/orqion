@@ -98,7 +98,7 @@ class ChatContext:
     temperature: float
     stream: bool
     corpus_data_class: str | None
-    corpus_name: str | None
+    corpus_names: list[str] | None
     task_type: str | None
     conversation_id: str | None
     rate_limiter: RateLimiter | None = None
@@ -123,6 +123,9 @@ class _ChatAction:
     output_tokens: int
     corpus_data_class: str | None
     corpus_name: str | None
+    # T-439: полный список корпусов запроса (для одиночного — из одного
+    # элемента). При заданном списке enforce проверяет его целиком.
+    corpus_names: list[str] | None = None
 
 
 async def prepare_chat(
@@ -136,7 +139,7 @@ async def prepare_chat(
     temperature: float,
     stream: bool,
     corpus_data_class: str | None,
-    corpus_name: str | None,
+    corpus_names: list[str] | None,
     task_type: str | None,
     conversation_id: str | None,
     rate_limiter: RateLimiter | None,
@@ -213,7 +216,8 @@ async def prepare_chat(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         corpus_data_class=corpus_data_class,
-        corpus_name=corpus_name,
+        corpus_name=corpus_names[0] if corpus_names else None,
+        corpus_names=corpus_names,
     )
     await enforce_all(
         policy,
@@ -235,7 +239,7 @@ async def prepare_chat(
         temperature=temperature,
         stream=stream,
         corpus_data_class=corpus_data_class,
-        corpus_name=corpus_name,
+        corpus_names=corpus_names,
         task_type=task_type,
         conversation_id=conversation_id,
         rate_limiter=rate_limiter,

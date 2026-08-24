@@ -689,3 +689,167 @@ async def test_pipeline_error_continues(db_session: AsyncSession) -> None:
     assert result.degraded is True
     assert any("vector store unavailable" in e for e in result.errors)
     assert result.answer == "answer"
+
+
+# ---------------------------------------------------------------------------
+# T-439: мульти-корпусный поиск — двухуровневый RRF в step_search
+# ---------------------------------------------------------------------------
+
+
+def _hybrid_output(chunk_ids: list[str]) -> Any:
+    from app.rag.hybrid_search import HybridSearchOutput
+
+    merged = [
+        HybridResult(
+            chunk_id=cid,
+            score=1.0 / (i + 1),
+            text=f"text-{cid}",
+            dense_rank=i + 1,
+            sparse_rank=None,
+        )
+        for i, cid in enumerate(chunk_ids)
+    ]
+    return HybridSearchOutput(dense_hits=[], sparse_hits=[], merged=merged)
+
+
+async def test_step_search_multi_corpus_second_level_rrf(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Два корпуса: второй RRF по корпусным merged, атрибуция чанков."""
+    workspace_id = await _make_workspace(db_session)
+    provider, model = _make_provider_and_model(workspace_id)
+    db_session.add(provider)
+    db_session.add(model)
+    await db_session.flush()
+
+    seen_versions: list[str] = []
+
+    async def _stub_hybrid_search(
+        vector_store: Any,
+        embedding_backend: Any,
+        index_version_id: str,
+        query: str,
+        k: int = 50,
+    ) -> Any:
+        seen_versions.append(index_version_id)
+        if index_version_id == "iv-a":
+            return _hybrid_output(["a1", "a2"])
+        return _hybrid_output(["b1"])
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+
+    state = RagState(query="q", trace_id="t")
+    ctx = RagContext(
+        session=db_session,
+        settings=_make_settings(),
+        vector_store=AsyncMock(),
+        embedding_backend=AsyncMock(),
+        secret_key="test-secret",
+        workspace_id=workspace_id,
+        index_version_id="iv-a",
+        index_version_ids=["iv-a", "iv-b"],
+        corpus_attribution={"iv-a": ("corp-a", "corpus-a"), "iv-b": ("corp-b", "corpus-b")},
+        model=model,
+        provider=provider,
+    )
+
+    result = await step_search(state, ctx)
+
+    assert seen_versions == ["iv-a", "iv-b"]
+    # Второй RRF: a1 и b1 — оба rank 1 (скор 1/61), a2 — rank 2 (1/62).
+    # Стабильная сортировка: при равенстве скора сохраняется порядок вставки.
+    assert [h.chunk_id for h in result.hits] == ["a1", "b1", "a2"]
+    assert result.hits[0].score > result.hits[2].score
+    # Атрибуция: каждый чанк привязан к своему корпусу
+    assert result.chunk_corpus["a1"] == ("corp-a", "corpus-a")
+    assert result.chunk_corpus["b1"] == ("corp-b", "corpus-b")
+    # В мульти-режиме ранги первого уровня не сохраняются
+    assert result.hits[0].dense_rank is None
+    assert result.hits[0].sparse_rank is None
+
+
+async def test_step_search_multi_corpus_capped_at_top_50(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Объединённый список режется до 50 перед реранком (контракт «50→8»)."""
+    workspace_id = await _make_workspace(db_session)
+    provider, model = _make_provider_and_model(workspace_id)
+    db_session.add(provider)
+    db_session.add(model)
+    await db_session.flush()
+
+    async def _stub_hybrid_search(
+        vector_store: Any,
+        embedding_backend: Any,
+        index_version_id: str,
+        query: str,
+        k: int = 50,
+    ) -> Any:
+        # 60 уникальных чанков на корпус — всего 120 кандидатов
+        prefix = index_version_id
+        return _hybrid_output([f"{prefix}-c{i}" for i in range(60)])
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+
+    state = RagState(query="q", trace_id="t")
+    ctx = RagContext(
+        session=db_session,
+        settings=_make_settings(),
+        vector_store=AsyncMock(),
+        embedding_backend=AsyncMock(),
+        secret_key="test-secret",
+        workspace_id=workspace_id,
+        index_version_id="iv-a",
+        index_version_ids=["iv-a", "iv-b"],
+        model=model,
+        provider=provider,
+    )
+
+    result = await step_search(state, ctx)
+    assert len(result.hits) == 50
+
+
+async def test_step_search_single_corpus_attribution(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Одиночный режим не меняется; атрибуция заполняется и для него."""
+    workspace_id = await _make_workspace(db_session)
+    provider, model = _make_provider_and_model(workspace_id)
+    db_session.add(provider)
+    db_session.add(model)
+    await db_session.flush()
+
+    async def _stub_hybrid_search(
+        vector_store: Any,
+        embedding_backend: Any,
+        index_version_id: str,
+        query: str,
+        k: int = 50,
+    ) -> Any:
+        assert index_version_id == "iv-a"
+        return _hybrid_output(["a1", "a2"])
+
+    monkeypatch.setattr("app.rag.pipeline.hybrid_search", _stub_hybrid_search)
+
+    state = RagState(query="q", trace_id="t")
+    ctx = RagContext(
+        session=db_session,
+        settings=_make_settings(),
+        vector_store=AsyncMock(),
+        embedding_backend=AsyncMock(),
+        secret_key="test-secret",
+        workspace_id=workspace_id,
+        index_version_id="iv-a",
+        corpus_attribution={"iv-a": ("corp-a", "corpus-a")},
+        model=model,
+        provider=provider,
+    )
+
+    result = await step_search(state, ctx)
+    # Одиночный режим: hits = merged как есть (скор и ранги первого уровня)
+    assert [h.chunk_id for h in result.hits] == ["a1", "a2"]
+    assert result.hits[0].dense_rank == 1
+    assert result.chunk_corpus["a2"] == ("corp-a", "corpus-a")
