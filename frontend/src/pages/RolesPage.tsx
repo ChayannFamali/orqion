@@ -14,6 +14,7 @@ const KNOWN_CAPABILITIES = [
   "view_traces",
   "manage_providers",
   "manage_roles",
+  "view_diagnostics",
 ];
 
 const REASONING_OPTIONS = ["off", "optional", "on"] as const;

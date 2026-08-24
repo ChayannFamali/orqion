@@ -204,6 +204,7 @@ def create_app() -> FastAPI:
         config_router,
         conversations_router,
         corpora_router,
+        diagnostics_router,
         document_router,
         documents_router,
         eval_router,
@@ -227,6 +228,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router)
     app.include_router(conversations_router)
     app.include_router(corpora_router)
+    app.include_router(diagnostics_router)
     app.include_router(documents_router)
     app.include_router(document_router)
     app.include_router(eval_router)

@@ -42,6 +42,11 @@ export type ModelDeleteResponse = components["schemas"]["ModelDeleteResponse"];
 /** Корпус, доступный пользователю для чата (T-439). */
 export type AvailableCorpusEntry = components["schemas"]["AvailableCorpusEntry"];
 export type AvailableCorporaResponse = components["schemas"]["AvailableCorporaResponse"];
+/** Диагностика окружения хоста (T-444, только чтение). */
+export type EnvironmentDiagnosticsResponse =
+  components["schemas"]["EnvironmentDiagnosticsResponse"];
+export type NvidiaDiagnostics = components["schemas"]["NvidiaDiagnostics"];
+export type GpuInfo = components["schemas"]["GpuInfo"];
 export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];

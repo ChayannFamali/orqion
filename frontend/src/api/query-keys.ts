@@ -62,4 +62,7 @@ export const queryKeys = {
     all: ["audit"] as const,
     actions: ["audit", "actions"] as const,
   },
+  diagnostics: {
+    environment: ["diagnostics", "environment"] as const,
+  },
 } as const;

@@ -37,7 +37,18 @@ describe("isNavVisible", () => {
       "roles",
       "users",
       "audit",
+      "diagnostics",
     ]);
+  });
+
+  it("T-444: диагностика — последний раздел, видна только с view_diagnostics", () => {
+    const item = navItems[navItems.length - 1];
+    expect(item.key).toBe("diagnostics");
+    expect(item.capability).toBe("view_diagnostics");
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    expect(isNavVisible(item, ["view_diagnostics"])).toBe(true);
+    expect(isNavVisible(item, ["chat", "manage_providers"])).toBe(false);
+    expect(isNavVisible(item, [])).toBe(false);
   });
 
   it("does not show item when capability is missing from list", () => {

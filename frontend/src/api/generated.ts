@@ -540,6 +540,23 @@ export interface paths {
         patch: operations["update_corpus_api_corpora__corpus_id__patch"];
         trace?: never;
     };
+    "/api/diagnostics/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Environment Diagnostics */
+        get: operations["get_environment_diagnostics_api_diagnostics_environment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}/documents": {
         parameters: {
             query?: never;
@@ -1780,6 +1797,15 @@ export interface components {
             message?: string | null;
         };
         /**
+         * EnvironmentDiagnosticsResponse
+         * @description Ответ GET /api/diagnostics/environment.
+         */
+        EnvironmentDiagnosticsResponse: {
+            nvidia: components["schemas"]["NvidiaDiagnostics"];
+            /** Vendor Url */
+            vendor_url?: string | null;
+        };
+        /**
          * EvalCompareRequest
          * @description Запрос сравнения прогонов (POST /api/eval-runs/compare).
          */
@@ -1934,6 +1960,22 @@ export interface components {
             created_at: string;
             /** Items */
             items: components["schemas"]["EvalItemRead"][];
+        };
+        /**
+         * GpuInfo
+         * @description Метрики одного GPU; поле = null, если метрика не читается.
+         */
+        GpuInfo: {
+            /** Name */
+            name?: string | null;
+            /** Memory Used Mib */
+            memory_used_mib?: number | null;
+            /** Memory Total Mib */
+            memory_total_mib?: number | null;
+            /** Temperature C */
+            temperature_c?: number | null;
+            /** Utilization Percent */
+            utilization_percent?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2246,6 +2288,23 @@ export interface components {
              * @default false
              */
             near_limit: boolean;
+        };
+        /**
+         * NvidiaDiagnostics
+         * @description Best-effort чтение через nvidia-smi; без него — честное «недоступно».
+         */
+        NvidiaDiagnostics: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Driver Version */
+            driver_version?: string | null;
+            /**
+             * Gpus
+             * @default []
+             */
+            gpus: components["schemas"]["GpuInfo"][];
         };
         /** ProviderCreate */
         ProviderCreate: {
@@ -3570,6 +3629,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_environment_diagnostics_api_diagnostics_environment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentDiagnosticsResponse"];
                 };
             };
         };

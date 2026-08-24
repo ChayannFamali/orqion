@@ -1414,6 +1414,27 @@
         }
       }
     },
+    "/api/diagnostics/environment": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Get Environment Diagnostics",
+        "operationId": "get_environment_diagnostics_api_diagnostics_environment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentDiagnosticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora/{corpus_id}/documents": {
       "post": {
         "tags": [
@@ -4766,6 +4787,30 @@
         "title": "DownloadStatusResponse",
         "description": "Статус скачивания модели — ответ старта и поллинга."
       },
+      "EnvironmentDiagnosticsResponse": {
+        "properties": {
+          "nvidia": {
+            "$ref": "#/components/schemas/NvidiaDiagnostics"
+          },
+          "vendor_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nvidia"
+        ],
+        "title": "EnvironmentDiagnosticsResponse",
+        "description": "Ответ GET /api/diagnostics/environment."
+      },
       "EvalCompareRequest": {
         "properties": {
           "run_ids": {
@@ -5137,6 +5182,68 @@
         ],
         "title": "EvalSetReadWithItems",
         "description": "Набор с элементами (GET /api/eval-sets/{id})."
+      },
+      "GpuInfo": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "memory_used_mib": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Used Mib"
+          },
+          "memory_total_mib": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Mib"
+          },
+          "temperature_c": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature C"
+          },
+          "utilization_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilization Percent"
+          }
+        },
+        "type": "object",
+        "title": "GpuInfo",
+        "description": "Метрики одного GPU; поле = null, если метрика не читается."
       },
       "HTTPValidationError": {
         "properties": {
@@ -5920,6 +6027,50 @@
         ],
         "title": "MyUsageResponse",
         "description": "Личный расход пользователя в текущем месяце (T-424, T-435).\n\ntokens_limit / cost_limit: None = unlimited по этому измерению.\nFrontend проверяет limit === null per-field для отображения \"Без лимита\".\nnear_limit: True когда использовано >= budget_near_limit_threshold (T-435).\nПри budget=None (unlimited) — всегда False."
+      },
+      "NvidiaDiagnostics": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "driver_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Version"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/GpuInfo"
+            },
+            "type": "array",
+            "title": "Gpus",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "NvidiaDiagnostics",
+        "description": "Best-effort чтение через nvidia-smi; без него — честное «недоступно»."
       },
       "ProviderCreate": {
         "properties": {

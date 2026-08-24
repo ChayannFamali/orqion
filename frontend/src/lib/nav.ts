@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText, Shield } from "lucide-react";
+import { MessageSquare, Database, Activity, BarChart3, Server, Users, ScrollText, Shield, Cpu } from "lucide-react";
 
 /**
  * Реестр навигационных разделов.
@@ -39,6 +39,8 @@ export const navItems: NavItem[] = [
   { key: "roles", label: "Роли", icon: Shield, capability: "manage_roles" },
   { key: "users", label: "Пользователи", icon: Users, capability: "manage_users" },
   { key: "audit", label: "Аудит", icon: ScrollText, capability: "view_audit" },
+  // T-444: только чтение; по умолчанию лишь admin через "*" (не в пресетах)
+  { key: "diagnostics", label: "Диагностика", icon: Cpu, capability: "view_diagnostics" },
 ];
 
 /** Проверяет, доступен ли пункт навигации по capabilities пользователя. */
