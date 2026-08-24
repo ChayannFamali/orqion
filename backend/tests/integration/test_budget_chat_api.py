@@ -128,7 +128,7 @@ def _patch_provider_client(monkeypatch: pytest.MonkeyPatch) -> None:
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> Any:
-        yield "Hello"
+        yield {"type": "token", "v": "Hello"}
 
     async def _stub_complete(
         self: ProviderClient,

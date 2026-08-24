@@ -228,9 +228,9 @@ async def test_fallback_on_primary_5xx_stream(
                 request=httpx.Request("POST", "http://stub/v1/chat/completions"),
                 response=httpx.Response(500),
             )
-        yield "Fallback"
-        yield " "
-        yield "token"
+        yield {"type": "token", "v": "Fallback"}
+        yield {"type": "token", "v": " "}
+        yield {"type": "token", "v": "token"}
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 
@@ -285,14 +285,14 @@ async def test_no_fallback_after_first_token(
         temperature: float = 0.7,
     ) -> Any:
         if model == "primary-upstream":
-            yield "First"
+            yield {"type": "token", "v": "First"}
             raise httpx.HTTPStatusError(
                 "Internal Server Error",
                 request=httpx.Request("POST", "http://stub/v1/chat/completions"),
                 response=httpx.Response(500),
             )
         # Fallback не должен вызываться
-        yield "Should not see this"
+        yield {"type": "token", "v": "Should not see this"}
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 

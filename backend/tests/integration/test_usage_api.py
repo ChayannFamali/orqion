@@ -103,7 +103,7 @@ def _patch_provider_client(monkeypatch: pytest.MonkeyPatch, response: str) -> No
         temperature: float = 0.7,
     ) -> Any:
         for word in response.split():
-            yield word + " "
+            yield {"type": "token", "v": word + " "}
 
     async def _stub_complete(
         self: ProviderClient,
@@ -250,7 +250,7 @@ async def test_usage_event_on_provider_error(
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> Any:
-        yield "partial "
+        yield {"type": "token", "v": "partial "}
         raise RuntimeError("provider crashed")
 
     monkeypatch.setattr(ProviderClient, "stream", _error_stream)

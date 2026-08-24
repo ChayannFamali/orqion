@@ -19,6 +19,8 @@ export interface ApiError {
 /** SSE-событие стриминга чата. */
 export type SSEEvent =
   | { type: "token"; v: string }
+  // T-440 (В1): reasoning-трейс — отдельный тип события, не флаг в токене.
+  | { type: "reasoning"; v: string }
   | { type: "error"; code: string; message: string };
 
 /** Статус модели после probe (T-308). */

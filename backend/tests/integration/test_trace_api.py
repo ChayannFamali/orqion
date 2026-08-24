@@ -108,7 +108,7 @@ def _patch_provider_client(monkeypatch: pytest.MonkeyPatch, response: str) -> No
         temperature: float = 0.7,
     ) -> Any:
         for word in response.split():
-            yield word + " "
+            yield {"type": "token", "v": word + " "}
 
     monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)

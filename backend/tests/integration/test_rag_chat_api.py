@@ -181,7 +181,7 @@ def _patch_provider_stream(
         temperature: float = 0.7,
     ) -> Any:
         for word in response.split():
-            yield word + " "
+            yield {"type": "token", "v": word + " "}
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 
@@ -1100,3 +1100,62 @@ async def test_chat_with_corpus_sources_preserve_inclusion_order(
     assert sources[0]["chunk_id"] == chunk_ids[2]
     assert sources[1]["chunk_id"] == chunk_ids[0]
     assert sources[2]["chunk_id"] == chunk_ids[1]
+
+
+@pytest.mark.asyncio
+async def test_chat_with_corpus_returns_reasoning_content(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-440: reasoning из RAG-generate — в теле ответа и в meta ассистента."""
+    await _login_as_admin(api_client, app_fixture)
+    await _seed_provider_and_model(app_fixture)
+    await _seed_corpus(app_fixture)
+
+    async def _stub_complete(
+        self: ProviderClient,
+        messages: list[dict[str, str]],
+        model: str,
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "RAG answer",
+                        "reasoning_content": "RAG thinking",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+    monkeypatch.setattr(ProviderClient, "complete", _stub_complete)
+    monkeypatch.setattr(
+        "app.rag.pipeline.hybrid_search",
+        AsyncMock(return_value=AsyncMock(merged=[])),
+    )
+    monkeypatch.setattr(
+        "app.rag.pipeline.rerank",
+        AsyncMock(return_value=AsyncMock(results=[], degraded=False, error=None)),
+    )
+
+    response = await api_client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "query"}],
+            "corpus_name": "test-corpus",
+            "stream": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["content"] == "RAG answer"
+    assert data["reasoning_content"] == "RAG thinking"
+
+    conv = await api_client.get(f"/api/conversations/{data['conversation_id']}")
+    assistant = next(m for m in conv.json()["messages"] if m["role"] == "assistant")
+    assert assistant["meta"]["reasoning_content"] == "RAG thinking"

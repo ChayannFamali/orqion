@@ -103,6 +103,9 @@ class ChatContext:
     conversation_id: str | None
     rate_limiter: RateLimiter | None = None
     accumulated_content: list[str] = field(default_factory=list)
+    # T-440: reasoning-трейс накапливается отдельно от контента ответа
+    # (биллинг не затрагивается — токены рассуждений уже в completion_tokens).
+    accumulated_reasoning: list[str] = field(default_factory=list)
     model_id: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
@@ -308,10 +311,17 @@ async def execute_stream(
                     temperature=chat_ctx.temperature,
                 )
                 try:
-                    async for token in upstream_gen:
+                    async for event in upstream_gen:
+                        # Любое отправленное клиенту событие (включая
+                        # reasoning) делает fallback невозможным.
                         got_token = True
-                        chat_ctx.accumulated_content.append(token)
-                        yield f"data: {json.dumps({'type': 'token', 'v': token})}\n\n"
+                        if event["type"] == "reasoning":
+                            chat_ctx.accumulated_reasoning.append(event["v"])
+                            sse = {"type": "reasoning", "v": event["v"]}
+                        else:
+                            chat_ctx.accumulated_content.append(event["v"])
+                            sse = {"type": "token", "v": event["v"]}
+                        yield f"data: {json.dumps(sse)}\n\n"
                 finally:
                     await upstream_gen.aclose()
                 # Успешное завершение — обновляем model_id на фактическую модель
@@ -383,12 +393,17 @@ async def execute_complete(
                 max_tokens=chat_ctx.max_tokens,
                 temperature=chat_ctx.temperature,
             )
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            message = result.get("choices", [{}])[0].get("message", {})
+            content = message.get("content", "")
+            # T-440 (Г1): только OpenAI-совместимое поле reasoning_content.
+            reasoning_content = message.get("reasoning_content") or ""
             chat_ctx.accumulated_content.append(content)
+            if reasoning_content:
+                chat_ctx.accumulated_reasoning.append(reasoning_content)
             usage = result.get("usage", {})
             chat_ctx.tokens_out = usage.get("completion_tokens") or _count_tokens(content)
             chat_ctx.model_id = current_model.id
-            return {
+            response: dict[str, object] = {
                 "type": "complete",
                 "content": content,
                 "usage": {
@@ -397,6 +412,9 @@ async def execute_complete(
                 },
                 "model": current_model.alias,
             }
+            if reasoning_content:
+                response["reasoning_content"] = reasoning_content
+            return response
         except Exception as exc:  # noqa: BLE001  граница системы
             last_error = normalize_error(exc)
             continue
@@ -522,6 +540,11 @@ async def _save_messages_impl(
     assistant_message_id: str | None = None
     if full_content:
         assistant_meta: dict[str, object] = {}
+        # T-440: reasoning-трейс в meta ассистента — без сохранения он
+        # теряется при перезагрузке страницы (прецедент meta.sources).
+        reasoning_text = "".join(chat_ctx.accumulated_reasoning)
+        if reasoning_text:
+            assistant_meta["reasoning_content"] = reasoning_text
         if sources:
             assistant_meta["sources"] = [
                 {

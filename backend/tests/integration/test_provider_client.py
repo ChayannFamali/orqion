@@ -125,13 +125,54 @@ async def test_stream() -> None:
         headers=client._headers(),
     )
 
-    chunks: list[str] = []
-    async for token in client.stream(
+    chunks: list[dict[str, str]] = []
+    async for event in client.stream(
         messages=[{"role": "user", "content": "Hi"}], model="qwen3-8b"
     ):
-        chunks.append(token)
+        chunks.append(event)
 
-    assert "".join(chunks) == "Hello world"
+    assert all(e["type"] == "token" for e in chunks)
+    assert "".join(e["v"] for e in chunks) == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_reasoning_content() -> None:
+    """T-440 (Г1): дельты reasoning_content идут отдельными событиями."""
+    provider = _make_provider()
+
+    sse_lines = [
+        'data: {"choices":[{"delta":{"reasoning_content":"Let me"}}]}',
+        'data: {"choices":[{"delta":{"reasoning_content":" think."}}]}',
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+        'data: {"choices":[{"delta":{"reasoning_content":"tail"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        "data: [DONE]",
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = "\n".join(sse_lines) + "\n\n"
+        return httpx.Response(
+            200, content=content.encode(), headers={"content-type": "text/event-stream"}
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = ProviderClient(provider, "test-secret")
+    client._client = lambda timeout=None: httpx.AsyncClient(  # type: ignore[method-assign]
+        transport=transport,
+        timeout=timeout or 120.0,
+        headers=client._headers(),
+    )
+
+    events: list[dict[str, str]] = []
+    async for event in client.stream(
+        messages=[{"role": "user", "content": "Hi"}], model="qwen3-8b"
+    ):
+        events.append(event)
+
+    reasoning = [e for e in events if e["type"] == "reasoning"]
+    tokens = [e for e in events if e["type"] == "token"]
+    assert "".join(e["v"] for e in reasoning) == "Let me think.tail"
+    assert "".join(e["v"] for e in tokens) == "Hello"
 
 
 @pytest.mark.asyncio

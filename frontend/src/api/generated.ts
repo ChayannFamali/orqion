@@ -1473,6 +1473,8 @@ export interface components {
              * @default
              */
             content: string;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
             /** Conversation Id */
             conversation_id?: string | null;
             /** Model */

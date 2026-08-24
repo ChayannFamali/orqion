@@ -285,6 +285,7 @@ export function ChatPage() {
           streamingContent={localMessages.length > 0 && localMessages[localMessages.length - 1].role === "assistant"
             ? localMessages[localMessages.length - 1].content
             : ""}
+          streamingReasoning={chat.streamingReasoning}
           isStreaming={chat.isStreaming}
           error={chat.error}
           sources={chat.sources}

@@ -299,6 +299,10 @@ async def chat(
         # пишет в rag_state.answer), поэтому заполняем вручную для save_messages.
         if rag_state.answer:
             chat_ctx.accumulated_content = [rag_state.answer]
+        # T-440: reasoning-трейс из generate — в meta ассистента (иначе
+        # теряется при перезагрузке) и в тело ответа.
+        if rag_state.reasoning_content:
+            chat_ctx.accumulated_reasoning = [rag_state.reasoning_content]
 
         conv_id, msg_id = await save_messages(
             session, chat_ctx, model, workspace_id, sources=rag_state.sources
@@ -352,6 +356,7 @@ async def chat(
         result = ChatResponse(
             type="complete",
             content=rag_state.answer or "",
+            reasoning_content=rag_state.reasoning_content,
             usage=ChatUsage(tokens_in=tokens_in, tokens_out=tokens_out),
             model=model.alias,
             conversation_id=conv_id,

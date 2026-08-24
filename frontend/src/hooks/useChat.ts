@@ -5,6 +5,8 @@ import type { ChatMessage, ChatResponse, ChatSourceEntry, SSEEvent } from "../ap
 interface UseChatResult {
   /** Накопленный стрим-контент ассистента */
   streamingContent: string;
+  /** T-440: накопленный reasoning-трейс последнего ответа (если был) */
+  streamingReasoning: string;
   /** Признак активого стриминга / запроса */
   isStreaming: boolean;
   /** Ошибка последнего запроса */
@@ -32,19 +34,22 @@ interface UseChatResult {
 
 export function useChat(): UseChatResult {
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [sources, setSources] = useState<ChatSourceEntry[] | null>(null);
   const [ragDegraded, setRagDegraded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // RAF-throttle: один setStreamingContent на кадр, не на каждый токен
+  // RAF-throttle: один flush на кадр, не на каждое событие стрима
   const rafRef = useRef<number | null>(null);
   const pendingContentRef = useRef("");
+  const pendingReasoningRef = useRef("");
 
   const flushContent = useCallback(() => {
     rafRef.current = null;
     setStreamingContent(pendingContentRef.current);
+    setStreamingReasoning(pendingReasoningRef.current);
   }, []);
 
   const abort = useCallback(() => {
@@ -64,6 +69,7 @@ export function useChat(): UseChatResult {
     ({ messages, modelAlias, conversationId, corpusNames, onDone }) => {
       setError(null);
       setStreamingContent("");
+      setStreamingReasoning("");
       setSources(null);
       setRagDegraded(false);
       setIsStreaming(true);
@@ -72,7 +78,9 @@ export function useChat(): UseChatResult {
       abortRef.current = controller;
 
       let accumulated = "";
+      let accumulatedReasoning = "";
       pendingContentRef.current = "";
+      pendingReasoningRef.current = "";
 
       if (corpusNames && corpusNames.length > 0) {
         // RAG-ветка: non-streaming, JSON-ответ с sources
@@ -91,7 +99,9 @@ export function useChat(): UseChatResult {
             );
 
             accumulated = result.content;
+            accumulatedReasoning = result.reasoning_content ?? "";
             setStreamingContent(accumulated);
+            setStreamingReasoning(accumulatedReasoning);
             setSources(result.sources ?? null);
             setRagDegraded(result.rag_degraded ?? false);
 
@@ -128,7 +138,14 @@ export function useChat(): UseChatResult {
 
           for await (const event of stream) {
             const e: SSEEvent = event;
-            if (e.type === "token") {
+            if (e.type === "reasoning") {
+              // T-440: трейс копится отдельно от ответа
+              accumulatedReasoning += e.v;
+              pendingReasoningRef.current = accumulatedReasoning;
+              if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(flushContent);
+              }
+            } else if (e.type === "token") {
               accumulated += e.v;
               pendingContentRef.current = accumulated;
               // Троттлинг: планируем flush на следующий кадр, если ещё не запланирован
@@ -146,6 +163,7 @@ export function useChat(): UseChatResult {
             rafRef.current = null;
           }
           setStreamingContent(accumulated);
+          setStreamingReasoning(accumulatedReasoning);
 
           onDone?.(accumulated, null);
         } catch (err) {
@@ -156,6 +174,7 @@ export function useChat(): UseChatResult {
               rafRef.current = null;
             }
             setStreamingContent(accumulated);
+            setStreamingReasoning(accumulatedReasoning);
             onDone?.(accumulated, null);
           } else {
             const msg =
@@ -172,5 +191,14 @@ export function useChat(): UseChatResult {
     [flushContent],
   );
 
-  return { streamingContent, isStreaming, error, sources, ragDegraded, sendMessage, abort };
+  return {
+    streamingContent,
+    streamingReasoning,
+    isStreaming,
+    error,
+    sources,
+    ragDegraded,
+    sendMessage,
+    abort,
+  };
 }

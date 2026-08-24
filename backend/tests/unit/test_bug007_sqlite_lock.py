@@ -252,8 +252,8 @@ async def test_streaming_save_error_sends_sse_error(
         model: str,
         max_tokens: int | None = None,
         temperature: float = 0.7,
-    ) -> AsyncIterator[str]:
-        yield "Hello"
+    ) -> AsyncIterator[dict[str, str]]:
+        yield {"type": "token", "v": "Hello"}
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 

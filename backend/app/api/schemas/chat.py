@@ -46,6 +46,9 @@ class ChatResponse(BaseModel):
 
     type: str
     content: str = ""
+    # T-440 (В1): reasoning-трейс отдельным полем — только если провайдер
+    # вернул рассуждения (OpenAI-совместимое reasoning_content).
+    reasoning_content: str | None = None
     conversation_id: str | None = None
     model: str | None = None
     usage: ChatUsage | None = None

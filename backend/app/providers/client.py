@@ -111,10 +111,13 @@ class ProviderClient:
         model: str,
         max_tokens: int | None = None,
         temperature: float = 0.7,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[dict[str, str], None]:
         """POST /v1/chat/completions с stream=true — потоковый режим.
 
-        Возвращает AsyncIterator[str] — токены по мере поступления.
+        Возвращает события по мере поступления:
+        {"type": "token", "v": ...} — токены ответа,
+        {"type": "reasoning", "v": ...} — reasoning-контент (T-440, Г1:
+        только OpenAI-совместимое поле дельты reasoning_content).
         Таймаут увеличен для потоковых запросов.
         """
         payload: dict[str, Any] = {
@@ -145,9 +148,12 @@ class ProviderClient:
                     try:
                         chunk = json.loads(data_str)
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
+                        reasoning = delta.get("reasoning_content") or ""
+                        if reasoning:
+                            yield {"type": "reasoning", "v": reasoning}
+                        content = delta.get("content") or ""
                         if content:
-                            yield content
+                            yield {"type": "token", "v": content}
                     except json.JSONDecodeError:
                         continue
         except Exception as exc:

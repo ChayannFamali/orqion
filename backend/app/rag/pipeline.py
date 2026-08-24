@@ -47,6 +47,8 @@ class RagState:
     context: str | None = None
     fragments_used: int = 0
     answer: str | None = None
+    # T-440: reasoning-трейс из generate (если провайдер вернул рассуждения)
+    reasoning_content: str | None = None
     degraded: bool = False
     errors: list[str] = field(default_factory=list)
     usage: dict[str, Any] | None = None
@@ -259,9 +261,13 @@ async def step_generate(state: RagState, ctx: RagContext) -> RagState:
         max_tokens=ctx.model.max_output_tokens,
         temperature=0.7,
     )
-    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    message = result.get("choices", [{}])[0].get("message", {})
+    content = message.get("content", "")
+    # T-440 (Г1): reasoning-трейс из OpenAI-совместимого поля, если есть.
+    reasoning = message.get("reasoning_content") or ""
     state.usage = result.get("usage")
     state.answer = content if content else None
+    state.reasoning_content = reasoning if reasoning else None
     if not state.answer:
         state.degraded = True
         state.errors.append("generate: empty response")

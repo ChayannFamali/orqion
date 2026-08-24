@@ -3947,6 +3947,17 @@
             "title": "Content",
             "default": ""
           },
+          "reasoning_content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Content"
+          },
           "conversation_id": {
             "anyOf": [
               {

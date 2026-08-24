@@ -105,7 +105,7 @@ def _patch_provider_client(monkeypatch: pytest.MonkeyPatch, response: str) -> No
         temperature: float = 0.7,
     ) -> Any:
         for word in response.split():
-            yield word + " "
+            yield {"type": "token", "v": word + " "}
 
     async def _stub_complete(
         self: ProviderClient,
@@ -277,7 +277,7 @@ async def test_provider_error_emitted_as_event(
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> Any:
-        yield "partial "
+        yield {"type": "token", "v": "partial "}
         raise RuntimeError("provider crashed")
 
     monkeypatch.setattr(ProviderClient, "stream", _error_stream)
@@ -512,7 +512,7 @@ async def test_stream_abort_closes_upstream(
     ) -> Any:
         try:
             for i in range(100):
-                yield f"token{i} "
+                yield {"type": "token", "v": f"token{i} "}
                 await asyncio.sleep(0.01)
             upstream_state["completed"] = True
         except GeneratorExit:

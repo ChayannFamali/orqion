@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { RotateCcw, Pencil, Check, X } from "lucide-react";
+import { RotateCcw, Pencil, Check, ChevronRight, X } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { SourceList } from "./SourceList";
 import { Button } from "./ui/button";
@@ -12,6 +12,8 @@ interface ChatMessagesProps {
   streamingContent: string;
   isStreaming: boolean;
   error: { code: string; message: string } | null;
+  /** T-440: reasoning-трейс активного/последнего ответа (если модель вернула) */
+  streamingReasoning?: string;
   /** Источники последнего RAG-ответа (T-306) */
   sources?: ChatSourceEntry[] | null;
   /** Признак деградации RAG последнего ответа */
@@ -36,9 +38,47 @@ function ResetDivider() {
   );
 }
 
+/** T-440: сворачиваемый блок «Рассуждение» — свёрнут по умолчанию. */
+function ReasoningBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="mb-2 rounded-md border border-border bg-muted/40"
+      data-testid="reasoning-block"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")}
+        />
+        Рассуждение
+      </button>
+      {open && (
+        <div
+          className="whitespace-pre-wrap break-words px-3 pb-2 text-sm text-muted-foreground"
+          data-testid="reasoning-content"
+        >
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** T-440: reasoning из meta сохранённого сообщения (неизвестные ключи — unknown). */
+function metaReasoning(meta: { [key: string]: unknown }): string {
+  const v = meta.reasoning_content;
+  return typeof v === "string" && v.length > 0 ? v : "";
+}
+
 export function ChatMessages({
   messages,
   streamingContent,
+  streamingReasoning,
   isStreaming,
   error,
   sources,
@@ -151,6 +191,7 @@ export function ChatMessages({
               </div>
             ) : msg.role === "assistant" ? (
               <>
+                {metaReasoning(msg.meta) && <ReasoningBlock content={metaReasoning(msg.meta)} />}
                 <MarkdownRenderer content={msg.content} />
                 {msg.meta?.sources && Array.isArray(msg.meta.sources) && msg.meta.sources.length > 0 && (
                   <SourceList sources={msg.meta.sources as ChatSourceEntry[]} />
@@ -178,6 +219,7 @@ export function ChatMessages({
         {streamingContent && (
           <div className="rounded-lg border border-border bg-background px-4 py-3">
             <div className="mb-1 text-xs font-medium text-muted-foreground">Ассистент</div>
+            {streamingReasoning && <ReasoningBlock content={streamingReasoning} />}
             <MarkdownRenderer content={streamingContent} />
             {isStreaming && (
               <span className="mt-1 inline-block h-4 w-2 animate-pulse bg-foreground/50" />

@@ -480,7 +480,7 @@ async def test_multi_corpus_empty_list_is_plain_chat(
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> Any:
-        yield "plain answer"
+        yield {"type": "token", "v": "plain answer"}
 
     monkeypatch.setattr(ProviderClient, "stream", _stub_stream)
 
