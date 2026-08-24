@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import httpx
@@ -137,13 +138,17 @@ async def _seed_corpus_with_chunks(
             iv_id = iv.id
 
             for i in range(num_chunks):
+                # BUG-018: значения обязаны влезать в VARCHAR(64) —
+                # PostgreSQL, в отличие от SQLite, длину контролирует.
+                # 32-символьный hex уникален и совместим с обоими диалектами.
+                blob_key = uuid.uuid4().hex
                 doc = Document(
                     workspace_id=workspace_id,
                     corpus_id=corpus.id,
-                    blob_uri=f"{name}-{i:060d}",
+                    blob_uri=blob_key,
                     filename=f"{name}-doc{i}.md",
                     mime="text/markdown",
-                    sha256=f"{name}-{i:060d}",
+                    sha256=blob_key,
                     source_type="upload",
                     status="indexed",
                 )

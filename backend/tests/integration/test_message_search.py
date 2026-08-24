@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import create_session
@@ -23,6 +25,17 @@ from app.search.message_search import search_messages
 from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
+
+# BUG-018: FTS5-поиск по диалогам — фича только SQLite (диалект-гейт
+# миграции 0024). На других диалектах роут честно отвечает 501
+# (FeatureNotSupported, BUG-017) — это проверено отдельным тестом с
+# патчем в test_fts_dialect_guard.py; тестам ниже нужен реально
+# работающий FTS5, поэтому на не-SQLite ноге они пропускаются.
+_db_url = os.environ.get("ORQION_DATABASE_URL", "")
+pytestmark = pytest.mark.skipif(
+    _db_url.startswith(("postgres://", "postgresql://")),
+    reason="FTS5-поиск по диалогам доступен только для SQLite",
+)
 
 
 async def _login_user(
