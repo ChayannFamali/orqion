@@ -16,6 +16,13 @@ import {
 } from "recharts";
 import { useAnalytics } from "../hooks/useAnalytics";
 import { useRoles } from "../hooks/useRoles";
+import {
+  MIN_FORECAST_DAYS,
+  forecastDimension,
+  forecastText,
+  monthProgress,
+  type MonthProgress,
+} from "../utils/budgetForecast";
 import type {
   AnalyticsResponse,
   UserBreakdown,
@@ -61,6 +68,7 @@ export function AnalyticsPage() {
 
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const today = new Date(now);
+  const month = monthProgress(now);
 
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -147,12 +155,14 @@ export function AnalyticsPage() {
             weekData={weekData}
             monthData={monthData}
             roles={rolesData?.roles ?? []}
+            month={month}
           />
         ) : (
           <UsersTab
             weekData={weekData}
             monthData={monthData}
             roles={rolesData?.roles ?? []}
+            month={month}
             selectedUser={selectedUser}
             onSelectUser={setSelectedUser}
           />
@@ -195,10 +205,12 @@ function OverviewTab({
   weekData,
   monthData,
   roles,
+  month,
 }: {
   weekData?: AnalyticsResponse;
   monthData?: AnalyticsResponse;
   roles: RoleResponse[];
+  month: MonthProgress;
 }) {
   const summary = weekData?.summary;
   const byDay = weekData?.by_day ?? [];
@@ -209,8 +221,8 @@ function OverviewTab({
   }, [weekData]);
 
   const budgetStatus = useMemo(() => {
-    return computeBudgetStatus(monthData?.by_user ?? [], roles);
-  }, [monthData, roles]);
+    return computeBudgetStatus(monthData?.by_user ?? [], roles, month);
+  }, [monthData, roles, month]);
 
   const modelChartData = byModel.map((m) => ({
     name: modelLabel(m),
@@ -366,6 +378,18 @@ function OverviewTab({
                 {budgetStatus.totalUsersWithoutBudget} без лимита
               </span>
             </div>
+            {/* T-441 (Б2): агрегированный прогноз — без имён. При < 3 дней
+                месяца прогноз не показывается вовсе (деградация А1). */}
+            {budgetStatus.forecastAvailable && (
+              <div className="flex items-center gap-2" data-testid="budget-forecast-overview">
+                <div className="h-3 w-3 rounded-full bg-amber-500" />
+                <span className="text-sm">
+                  по прогнозу исчерпают к концу месяца:{" "}
+                  {budgetStatus.usersProjectedToExhaust} из{" "}
+                  {budgetStatus.totalUsersWithBudget}
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -383,12 +407,14 @@ function UsersTab({
   weekData,
   monthData,
   roles,
+  month,
   selectedUser,
   onSelectUser,
 }: {
   weekData?: AnalyticsResponse;
   monthData?: AnalyticsResponse;
   roles: RoleResponse[];
+  month: MonthProgress;
   selectedUser: string | null;
   onSelectUser: (id: string | null) => void;
 }) {
@@ -398,8 +424,8 @@ function UsersTab({
   }, [byUser]);
 
   const budgetStatus = useMemo(() => {
-    return computeBudgetStatus(monthData?.by_user ?? [], roles);
-  }, [monthData, roles]);
+    return computeBudgetStatus(monthData?.by_user ?? [], roles, month);
+  }, [monthData, roles, month]);
 
   const selectedUserData = selectedUser
     ? monthData?.by_user?.find((u) => u.user_id === selectedUser)
@@ -408,6 +434,27 @@ function UsersTab({
   const selectedBudget = selectedUser
     ? findBudgetForUser(selectedUser, byUser, roles)
     : null;
+
+  // T-441 (Б2, В3): прогноз по выбранному пользователю, измерения
+  // независимо; вырожденные лимиты (<= 0) → прогноза по измерению нет.
+  const selectedTokensForecast =
+    selectedUserData && selectedBudget
+      ? forecastDimension(
+          selectedUserData.tokens_in + selectedUserData.tokens_out,
+          selectedBudget.tokensLimit > 0 ? selectedBudget.tokensLimit : null,
+          month.daysElapsed,
+          month.daysInMonth,
+        )
+      : null;
+  const selectedCostForecast =
+    selectedUserData && selectedBudget
+      ? forecastDimension(
+          selectedUserData.cost,
+          selectedBudget.costLimit,
+          month.daysElapsed,
+          month.daysInMonth,
+        )
+      : null;
 
   const dailyDataForSelected = useMemo(() => {
     if (!selectedUser) return [];
@@ -608,6 +655,25 @@ function UsersTab({
               </div>
             )}
 
+            {/* T-441 (Б2): прогноз по выбранному пользователю. При < 3 дней
+                месяца не показывается вовсе (деградация А1). */}
+            {month.daysElapsed >= MIN_FORECAST_DAYS &&
+              (selectedTokensForecast || selectedCostForecast) && (
+                <div data-testid="budget-forecast-user">
+                  <h4 className="mb-2 text-sm font-medium">
+                    Прогноз бюджета (текущий месяц)
+                  </h4>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {selectedTokensForecast && (
+                      <li>Токены: {forecastText(selectedTokensForecast)}</li>
+                    )}
+                    {selectedCostForecast && (
+                      <li>Стоимость: {forecastText(selectedCostForecast)}</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
             {/* Daily cost chart */}
             <div>
               <h4 className="mb-2 text-sm font-medium">Расход по дням</h4>
@@ -719,6 +785,8 @@ interface BudgetUserStatus {
   costLimit: number | null;
   tokensUsed: number;
   burnPercent: number;
+  /** T-441: прогноз исчерпания хотя бы по одному измерению. */
+  projectedToExhaust: boolean;
 }
 
 interface BudgetStatus {
@@ -726,11 +794,16 @@ interface BudgetStatus {
   usersNearLimit: number;
   totalUsersWithBudget: number;
   totalUsersWithoutBudget: number;
+  /** T-441: сколько пользователей по прогнозу исчерпают к концу месяца. */
+  usersProjectedToExhaust: number;
+  /** Достаточно ли данных для прогноза (>= 3 дней месяца, деградация А1). */
+  forecastAvailable: boolean;
 }
 
 function computeBudgetStatus(
   byUser: UserBreakdown[],
   roles: RoleResponse[],
+  month: MonthProgress,
 ): BudgetStatus {
   const roleBudgets = new Map<string, { tokens: number; cost: number | null }>();
   for (const role of roles) {
@@ -745,8 +818,11 @@ function computeBudgetStatus(
     }
   }
 
+  const forecastAvailable = month.daysElapsed >= MIN_FORECAST_DAYS;
+
   const users: BudgetUserStatus[] = [];
   let usersNearLimit = 0;
+  let usersProjectedToExhaust = 0;
   let totalWithoutBudget = 0;
 
   for (const u of byUser) {
@@ -766,6 +842,25 @@ function computeBudgetStatus(
 
     if (nearLimit) usersNearLimit++;
 
+    // T-441 (В3): измерения независимо; вырожденный лимит (<= 0) →
+    // прогноза по измерению нет (cost_month=0 ≠ «исчерпан»).
+    const tokensForecast = forecastDimension(
+      tokensUsed,
+      roleBudget.tokens > 0 ? roleBudget.tokens : null,
+      month.daysElapsed,
+      month.daysInMonth,
+    );
+    const costForecast = forecastDimension(
+      u.cost,
+      roleBudget.cost,
+      month.daysElapsed,
+      month.daysInMonth,
+    );
+    const exhausts =
+      (tokensForecast?.kind === "exhaustion" || costForecast?.kind === "exhaustion") ??
+      false;
+    if (exhausts) usersProjectedToExhaust++;
+
     users.push({
       userId: u.user_id,
       email: u.user_email,
@@ -774,6 +869,7 @@ function computeBudgetStatus(
       costLimit: roleBudget.cost,
       tokensUsed,
       burnPercent,
+      projectedToExhaust: exhausts,
     });
   }
 
@@ -782,6 +878,8 @@ function computeBudgetStatus(
     usersNearLimit,
     totalUsersWithBudget: users.length,
     totalUsersWithoutBudget: totalWithoutBudget,
+    usersProjectedToExhaust,
+    forecastAvailable,
   };
 }
 

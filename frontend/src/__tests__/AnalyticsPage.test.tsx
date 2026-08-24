@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { useAnalytics } from "../hooks/useAnalytics";
@@ -467,5 +467,141 @@ describe("AnalyticsPage", () => {
     // Model breakdown chart is on Overview tab (default)
     expect(screen.getByText("Разбивка по моделям (запросы)")).toBeInTheDocument();
     expect(document.querySelector(".recharts-responsive-container")).toBeTruthy();
+  });
+});
+
+describe("T-441: прогноз расхода бюджета на дашборде", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function monthDataWithAlice(tokensIn: number, tokensOut: number, cost: number) {
+    return makeAnalyticsData({
+      by_user: [
+        {
+          user_id: "u1",
+          user_email: "alice@test.com",
+          role_name: "developer",
+          team_name: null,
+          requests: 60,
+          tokens_in: tokensIn,
+          tokens_out: tokensOut,
+          cost,
+          errors: 1,
+        },
+        {
+          user_id: "u2",
+          user_email: "bob@test.com",
+          role_name: "admin",
+          team_name: null,
+          requests: 40,
+          tokens_in: 2000,
+          tokens_out: 1200,
+          cost: 0.6,
+          errors: 1,
+        },
+      ],
+    });
+  }
+
+  it("обзор: агрегированный счётчик «по прогнозу исчерпают» (25-й день месяца)", () => {
+    // 25 дней прошло из 31. Токены: 4.8M/25=192k/день → 5M/192k ≈ день 27 →
+    // исчерпание. Стоимость: 0.9/25=0.036/день → 10/0.036 ≈ день 278 → нет.
+    vi.setSystemTime(new Date(2026, 7, 25));
+    const data = monthDataWithAlice(3_000_000, 1_800_000, 0.9);
+    mockHooks(data, data, [
+      makeRole("developer", { tokens_month: 5_000_000, cost_month: 10 }),
+      makeRole("admin", null),
+    ]);
+
+    render(<AnalyticsPage />);
+
+    const forecast = screen.getByTestId("budget-forecast-overview");
+    expect(forecast.textContent).toContain("по прогнозу исчерпают к концу месяца:");
+    expect(forecast.textContent).toContain("1 из 1");
+  });
+
+  it("обзор: < 3 дней месяца — прогноз не показывается вовсе", () => {
+    vi.setSystemTime(new Date(2026, 7, 2));
+    const data = monthDataWithAlice(3_000_000, 1_800_000, 0.9);
+    mockHooks(data, data, [
+      makeRole("developer", { tokens_month: 5_000_000, cost_month: 10 }),
+      makeRole("admin", null),
+    ]);
+
+    render(<AnalyticsPage />);
+
+    // Карточка «Сгорание бюджета» есть, строки прогноза нет
+    expect(screen.getByText("Сгорание бюджета (текущий месяц)")).toBeInTheDocument();
+    expect(screen.queryByTestId("budget-forecast-overview")).not.toBeInTheDocument();
+  });
+
+  it("drill-down: текст «исчерпан к дню X» по токенам и «не исчерпается» по стоимости", () => {
+    vi.setSystemTime(new Date(2026, 7, 25));
+    const data = monthDataWithAlice(3_000_000, 1_800_000, 0.9);
+    mockHooks(data, data, [
+      makeRole("developer", { tokens_month: 5_000_000, cost_month: 10 }),
+      makeRole("admin", null),
+    ]);
+
+    render(<AnalyticsPage />);
+
+    fireEvent.click(screen.getByText("Пользователи"));
+    fireEvent.click(screen.getAllByText("alice@test.com")[0]);
+
+    const forecast = screen.getByTestId("budget-forecast-user");
+    expect(forecast.textContent).toContain(
+      "Токены: при текущем темпе лимит будет исчерпан к дню 27",
+    );
+    expect(forecast.textContent).toContain(
+      "Стоимость: при текущем темпе не исчерпается до конца месяца",
+    );
+  });
+
+  it("cost_month=0 — нет прогноза по стоимости (не «исчерпан сегодня»)", () => {
+    vi.setSystemTime(new Date(2026, 7, 25));
+    // Токены: 100k/25=4k/день → 5M/4k=1250 дней → не исчерпается.
+    const data = monthDataWithAlice(60_000, 40_000, 0.5);
+    mockHooks(data, data, [
+      makeRole("developer", { tokens_month: 5_000_000, cost_month: 0 }),
+      makeRole("admin", null),
+    ]);
+
+    render(<AnalyticsPage />);
+
+    // Обзор: никто не исчерпает
+    const overview = screen.getByTestId("budget-forecast-overview");
+    expect(overview.textContent).toContain("0 из 1");
+
+    // Drill-down: строки «Стоимость» нет вообще
+    fireEvent.click(screen.getByText("Пользователи"));
+    fireEvent.click(screen.getAllByText("alice@test.com")[0]);
+
+    const forecast = screen.getByTestId("budget-forecast-user");
+    expect(forecast.textContent).toContain("Токены:");
+    expect(forecast.textContent).not.toContain("Стоимость:");
+    expect(forecast.textContent).not.toContain("исчерпан");
+  });
+
+  it("budget=null — блока прогноза в персональном срезе нет", () => {
+    vi.setSystemTime(new Date(2026, 7, 25));
+    const data = monthDataWithAlice(3_000_000, 1_800_000, 0.9);
+    mockHooks(data, data, [
+      makeRole("developer", null),
+      makeRole("admin", null),
+    ]);
+
+    render(<AnalyticsPage />);
+
+    fireEvent.click(screen.getByText("Пользователи"));
+    fireEvent.click(screen.getAllByText("alice@test.com")[0]);
+
+    expect(screen.getByText(/Персональный срез/)).toBeInTheDocument();
+    expect(screen.queryByTestId("budget-forecast-user")).not.toBeInTheDocument();
   });
 });
