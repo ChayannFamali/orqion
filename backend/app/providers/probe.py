@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 from pydantic import BaseModel
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 from app.db.models import Model, Provider
 from app.providers.client import ProviderClient
 from app.providers.errors import normalize_error
+
+logger = logging.getLogger(__name__)
 
 PROBE_TIMEOUT = 15.0
 PROBE_MAX_TOKENS = 5
@@ -80,16 +83,42 @@ async def probe_provider(
         for m in models
     ]
 
-    first_available = next(
-        (m for m in models if m.upstream_name in available_ids),
-        None,
-    )
-
+    # BUG-022: измерять возможности по первой модели, реально способной
+    # ответить на чат-запрос. Если первая доступная модель чат не принимает
+    # (например, только эмбеддинги), пробуем следующую — иначе
+    # supports_streaming/max_parallel ложно false/0 при наличии рабочих моделей.
     supports_streaming = False
-    if first_available is not None:
-        supports_streaming = await _probe_streaming(client, first_available.upstream_name)
-
-    max_parallel = await _probe_parallel(client, first_available)
+    max_parallel = 0
+    for candidate in models:
+        if candidate.upstream_name not in available_ids:
+            continue
+        if await _probe_streaming(client, candidate.upstream_name):
+            supports_streaming = True
+            try:
+                max_parallel = await _probe_parallel(client, candidate)
+            except Exception:  # noqa: BLE001 — probe не должен падать
+                max_parallel = 0
+            break
+        # Стрим не прошёл: отвечает ли модель вообще (без стрима).
+        try:
+            await client.complete(
+                messages=PROBE_MESSAGES,
+                model=candidate.upstream_name,
+                max_tokens=PROBE_MAX_TOKENS,
+                temperature=0.0,
+            )
+        except Exception:
+            logger.debug(
+                "probe: модель %s отвергла чат-запрос, пробуем следующую",
+                candidate.upstream_name,
+                exc_info=True,
+            )
+            continue
+        try:
+            max_parallel = await _probe_parallel(client, candidate)
+        except Exception:  # noqa: BLE001
+            max_parallel = 0
+        break
 
     return ProbeResult(
         available_models=sorted(available_ids),

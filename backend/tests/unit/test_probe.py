@@ -163,3 +163,82 @@ async def test_probe_measures_streaming_and_parallel(
 
     assert result.supports_streaming is True
     assert result.max_parallel == 2
+
+
+@pytest.mark.asyncio
+async def test_probe_skips_non_chat_first_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BUG-022: первая доступная модель не принимает чат — проб идёт по следующей.
+
+    Регресс: эмбеддинг-модель первой в реестре давала 400 на чат-проб →
+    supports_streaming ложно красный, хотя чат-модель у провайдера есть.
+    """
+    provider = Provider(
+        workspace_id="ws-1",
+        kind="openai",
+        base_url="http://stub:1234/v1",
+        api_key_enc=encrypt_api_key("sk-test", "secret"),
+        enabled=True,
+        capabilities={},
+    )
+    provider.id = "prov-1"
+
+    embedding_model = Model(
+        workspace_id="ws-1",
+        provider_id="prov-1",
+        alias="text-embedding-bge-m3",
+        upstream_name="text-embedding-bge-m3",
+        locality="local",
+        enabled=True,
+    )
+    embedding_model.id = "model-emb"
+
+    chat_model = Model(
+        workspace_id="ws-1",
+        provider_id="prov-1",
+        alias="local/chat",
+        upstream_name="chat-model",
+        locality="local",
+        enabled=True,
+    )
+    chat_model.id = "model-chat"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "text-embedding-bge-m3"}, {"id": "chat-model"}]},
+            )
+        if request.url.path == "/v1/chat/completions":
+            body = json.loads(request.content)
+            if body["model"] == "text-embedding-bge-m3":
+                # Чат по эмбеддинг-модели сервер отвергает
+                return httpx.Response(400, json={"error": "Invalid model identifier"})
+            if body.get("stream"):
+                return httpx.Response(
+                    200,
+                    content=b'data: {"choices":[{"delta":{"content":"Hi"}}]}\ndata: [DONE]\n\n',
+                )
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]},
+            )
+        return httpx.Response(404)
+
+    mock_client = _make_client(provider, handler)
+
+    def _make_client_override(prov: Provider, key: str, timeout: float = 15.0) -> ProviderClient:
+        return mock_client
+
+    monkeypatch.setattr("app.providers.probe.ProviderClient", _make_client_override)
+
+    result = await probe_provider(provider, [embedding_model, chat_model], "secret")
+
+    assert result.error is None
+    # Обе модели доступны по /v1/models
+    assert result.model_statuses[0].status == "available"
+    assert result.model_statuses[1].status == "available"
+    # Возможности измерены по чат-модели, а не по эмбеддинговой
+    assert result.supports_streaming is True
+    assert result.max_parallel == 2
