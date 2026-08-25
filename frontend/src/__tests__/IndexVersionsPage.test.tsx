@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { IndexVersionsPage } from "../pages/IndexVersionsPage";
 import {
   useIndexVersions,
@@ -218,5 +218,40 @@ describe("IndexVersionsPage", () => {
     render(<IndexVersionsPage corpus={makeCorpus()} onBack={vi.fn()} />);
 
     expect(screen.getByText(/Embedding failed/)).toBeInTheDocument();
+  });
+
+  it("activate success with warning closes dialog and shows notice", async () => {
+    mockHooks({
+      versions: [makeVersion({ id: "v2", status: "completed" })],
+      total: 1,
+    });
+    const mutateAsync = vi.fn().mockResolvedValue({
+      active_version_id: "v2",
+      previous_version_id: null,
+      warning: "Нет успешного прогона оценки для этой версии индекса",
+    });
+    vi.mocked(useActivateIndexVersion).mockReturnValue({
+      isPending: false,
+      mutateAsync,
+    } as unknown as ReturnType<typeof useActivateIndexVersion>);
+
+    render(<IndexVersionsPage corpus={makeCorpus()} onBack={vi.fn()} />);
+
+    // Открываем диалог кнопкой в строке версии
+    fireEvent.click(screen.getByText("Активировать"));
+    expect(await screen.findByText("Активировать версию?")).toBeInTheDocument();
+
+    // Подтверждаем в диалоге (вторая кнопка с тем же текстом)
+    fireEvent.click(screen.getAllByText("Активировать")[1]);
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith("v2");
+    });
+    // Диалог закрывается даже при предупреждении, предупреждение — уведомлением
+    await waitFor(() => {
+      expect(screen.queryByText("Активировать версию?")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(/Версия активирована/)).toBeInTheDocument();
+    expect(screen.getByText(/Нет успешного прогона оценки/)).toBeInTheDocument();
   });
 });

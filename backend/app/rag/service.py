@@ -234,6 +234,14 @@ async def activate_index_version(
             constraint={"object": "index_version", "id": new_version_id},
             hint="Версия индекса не найдена",
         )
+    if new_version.status == "active":
+        raise BadRequest(
+            constraint={
+                "version_id": new_version_id,
+                "status": new_version.status,
+            },
+            hint="Эта версия индекса уже активна — повторная активация не нужна",
+        )
     if new_version.status != "completed":
         raise BadRequest(
             "Версия индекса не завершена и не может быть активирована",

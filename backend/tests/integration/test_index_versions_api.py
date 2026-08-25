@@ -166,6 +166,30 @@ async def test_activate_index_version(
 
 
 @pytest.mark.asyncio
+async def test_activate_already_active_version(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Повторная активация активной версии → 400 с понятным сообщением.
+
+    Регресс: раньше повторный клик давал «версия не завершена, дождитесь
+    сборки» — сообщение не про реальную причину (версия уже активна).
+    """
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture)
+
+    build_resp = await api_client.post(f"/api/corpora/{corpus_id}/index-versions")
+    version_id = build_resp.json()["index_version_id"]
+
+    first = await api_client.post(f"/api/corpora/{corpus_id}/index-versions/{version_id}/activate")
+    assert first.status_code == 200
+
+    second = await api_client.post(f"/api/corpora/{corpus_id}/index-versions/{version_id}/activate")
+    assert second.status_code == 400
+    assert "уже активна" in second.json()["hint"]
+
+
+@pytest.mark.asyncio
 async def test_activate_with_eval_run_no_warning(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,

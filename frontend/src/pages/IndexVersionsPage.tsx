@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Clock,
@@ -51,7 +50,9 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
   const [activateTarget, setActivateTarget] = useState<string | null>(null);
   const [showRollback, setShowRollback] = useState(false);
   const [showCleanup, setShowCleanup] = useState(false);
-  const [activateWarning, setActivateWarning] = useState<string | null>(null);
+  // Уведомление после успешной активации (например, что оценка качества
+  // для версии не запускалась). Показывается баннером, диалог закрывается.
+  const [activateNotice, setActivateNotice] = useState<string | null>(null);
 
   const versions = data?.versions ?? [];
   const hasCleanable = versions.some(
@@ -106,6 +107,19 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
         </div>
       </div>
 
+      {activateNotice && (
+        <div className="flex items-start justify-between gap-3 border-b border-border bg-yellow-500/10 px-4 py-2 text-xs text-yellow-700 dark:text-yellow-400">
+          <span>{activateNotice}</span>
+          <button
+            onClick={() => setActivateNotice(null)}
+            className="shrink-0 text-yellow-700/70 transition-colors hover:text-yellow-700 dark:text-yellow-400/70 dark:hover:text-yellow-400"
+            aria-label="Скрыть уведомление"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -145,7 +159,7 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
                       <button
                         onClick={() => {
                           setActivateTarget(v.id);
-                          setActivateWarning(null);
+                          setActivateNotice(null);
                         }}
                         className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
                       >
@@ -191,16 +205,18 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
           onConfirm={async () => {
             try {
               const result = await activateMutation.mutateAsync(activateTarget);
-              setActivateWarning(result.warning ?? null);
-              if (!result.warning) {
-                setActivateTarget(null);
-              }
+              // Успех: диалог закрывается безусловно; предупреждение
+              // (например, что оценка качества не запускалась) показывается
+              // уведомлением, а не удерживает диалог открытым.
+              setActivateTarget(null);
+              setActivateNotice(
+                result.warning ? `Версия активирована. ${result.warning}` : null,
+              );
             } catch {
               // toast via global onError
             }
           }}
           isPending={activateMutation.isPending}
-          warning={activateWarning}
         />
       )}
 
@@ -241,12 +257,10 @@ function ActivateConfirmDialog({
   onCancel,
   onConfirm,
   isPending,
-  warning,
 }: {
   onCancel: () => void;
   onConfirm: () => void;
   isPending: boolean;
-  warning: string | null;
 }) {
   return (
     <div
@@ -259,14 +273,8 @@ function ActivateConfirmDialog({
       >
         <h3 className="mb-2 text-lg font-semibold">Активировать версию?</h3>
         <p className="mb-4 text-sm text-muted-foreground">
-          Текущая активная версия будет переведена в retired.
+          Поиск перейдёт на эту версию; текущая активная будет помечена как заменённая.
         </p>
-        {warning && (
-          <div className="mb-4 flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
-            <p className="text-sm text-yellow-700">{warning}</p>
-          </div>
-        )}
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
@@ -308,8 +316,8 @@ function RollbackConfirmDialog({
       >
         <h3 className="mb-2 text-lg font-semibold">Откатить версию?</h3>
         <p className="mb-4 text-sm text-muted-foreground">
-          Текущая активная версия будет переведена в retired,
-          предыдущая — восстановлена как active.
+          Поиск вернётся к предыдущей версии; текущая активная будет помечена
+          как заменённая.
         </p>
         <div className="flex justify-end gap-2">
           <button
