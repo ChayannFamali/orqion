@@ -374,11 +374,16 @@ async def cleanup_retired_versions(
     corpus_id: str,
     actor_user_id: str,
 ) -> int:
-    """Удаление retired-версий: chunks + vectors + index_version.
+    """Удаление мёртвых версий (retired + interrupted): chunks + vectors + index_version.
+
+    retired: была активна, заменена — удаление делает откат на неё
+    невозможным (IndexVersionGone), осознанно.
+    interrupted: сборка прервана, версия никогда не была активна и ничего
+    не защищает — безусловный мусор (фикс вечного накопления прерванных
+    сборок, часть BUG-020).
 
     Отдельная транзакция от activate (требование приёмки).
     Не автоматический шаг после activate — вызывается явно администратором.
-    cleanup делает откат удалённой версии невозможным (IndexVersionGone).
 
     Returns:
         Количество удалённых версий.
@@ -387,7 +392,7 @@ async def cleanup_retired_versions(
         select(IndexVersion).where(
             IndexVersion.workspace_id == workspace_id,
             IndexVersion.corpus_id == corpus_id,
-            IndexVersion.status == "retired",
+            IndexVersion.status.in_(("retired", "interrupted")),
         )
     )
     retired_versions = list(result.scalars().all())

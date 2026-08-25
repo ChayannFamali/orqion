@@ -5,7 +5,7 @@ GET    /api/corpora/{corpus_id}/index-versions           — список вер
 GET    /api/corpora/{corpus_id}/index-versions/{id}      — детали версии (progress)
 POST   /api/corpora/{corpus_id}/index-versions/{id}/activate  — активация
 POST   /api/corpora/{corpus_id}/index-versions/rollback   — откат
-POST   /api/corpora/{corpus_id}/index-versions/cleanup    — удаление retired
+POST   /api/corpora/{corpus_id}/index-versions/cleanup    — удаление мёртвых версий (retired + interrupted)
 
 Доступ: manage_corpora (architect, admin) → 404 для остальных.
 Сборка запускается как background task (asyncio.create_task).
@@ -280,7 +280,11 @@ async def cleanup_retired_versions_endpoint(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ) -> CleanupResponse:
-    """Удаление retired-версий индекса (chunks + vectors + index_version)."""
+    """Удаление мёртвых версий индекса (chunks + vectors + index_version).
+
+    Чистит статусы retired (заменённые активные) и interrupted (прерванные
+    сборки, никогда не бывшие активными — безусловный мусор, часть BUG-020).
+    """
     workspace_id = request.app.state.workspace_id
     await _check_manage_corpora(session, user)
     await _load_corpus(session, corpus_id, workspace_id)

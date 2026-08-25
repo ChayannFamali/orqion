@@ -260,6 +260,56 @@ async def test_cleanup_retired_versions(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_interrupted_versions(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """BUG-020: cleanup удаляет interrupted-версии (мусор прерванных сборок).
+
+    Активная и completed версии остаются: interrupted никогда не была
+    активна и ничего не защищает, а активная/завершённая — рабочие.
+    """
+    await _login_with_role(api_client, app_fixture, role_name="admin")
+    corpus_id = await _create_corpus(app_fixture)
+
+    # Активная версия (через build + activate)
+    build = await api_client.post(f"/api/corpora/{corpus_id}/index-versions")
+    active_id = build.json()["index_version_id"]
+    await api_client.post(f"/api/corpora/{corpus_id}/index-versions/{active_id}/activate")
+
+    # Прерванные версии — прямой записью (эмуляция прерванной сборки)
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    interrupted_ids: list[str] = []
+    async with factory() as session:
+        for _ in range(2):
+            iv = IndexVersion(
+                workspace_id=workspace_id,
+                corpus_id=corpus_id,
+                embedding_model="test-embed",
+                chunker="doc",
+                chunker_version="v1",
+                status="interrupted",
+            )
+            session.add(iv)
+            await session.flush()
+            interrupted_ids.append(iv.id)
+        await session.commit()
+
+    resp = await api_client.post(f"/api/corpora/{corpus_id}/index-versions/cleanup")
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 2
+
+    # interrupted удалены, активная осталась
+    async with factory() as session:
+        for iv_id in interrupted_ids:
+            assert await session.get(IndexVersion, iv_id) is None
+        active = await session.get(IndexVersion, active_id)
+        assert active is not None
+        assert active.status == "active"
+
+
+@pytest.mark.asyncio
 async def test_access_denied_for_developer(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,

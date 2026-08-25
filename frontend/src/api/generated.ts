@@ -925,7 +925,10 @@ export interface paths {
         put?: never;
         /**
          * Cleanup Retired Versions Endpoint
-         * @description Удаление retired-версий индекса (chunks + vectors + index_version).
+         * @description Удаление мёртвых версий индекса (chunks + vectors + index_version).
+         *
+         *     Чистит статусы retired (заменённые активные) и interrupted (прерванные
+         *     сборки, никогда не бывшие активными — безусловный мусор, часть BUG-020).
          */
         post: operations["cleanup_retired_versions_endpoint_api_corpora__corpus_id__index_versions_cleanup_post"];
         delete?: never;
