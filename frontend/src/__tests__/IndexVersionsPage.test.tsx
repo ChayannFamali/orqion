@@ -84,8 +84,8 @@ describe("IndexVersionsPage", () => {
 
     render(<IndexVersionsPage corpus={makeCorpus()} onBack={vi.fn()} />);
 
-    expect(screen.getByText("active")).toBeInTheDocument();
-    expect(screen.getByText("completed")).toBeInTheDocument();
+    expect(screen.getByText("Активная")).toBeInTheDocument();
+    expect(screen.getByText("Собрана")).toBeInTheDocument();
     expect(screen.getAllByText(/BAAI\/bge-m3/)).toHaveLength(2);
     expect(screen.getAllByText(/mixed-v1/)).toHaveLength(2);
   });
@@ -163,7 +163,21 @@ describe("IndexVersionsPage", () => {
 
     render(<IndexVersionsPage corpus={makeCorpus()} onBack={vi.fn()} />);
 
-    expect(screen.getByText("Очистить retired")).toBeInTheDocument();
+    expect(screen.getByText("Удалить старые версии")).toBeInTheDocument();
+  });
+
+  it("shows cleanup button when only interrupted versions exist", () => {
+    mockHooks({
+      versions: [
+        makeVersion({ id: "v1", status: "active" }),
+        makeVersion({ id: "v2", status: "interrupted" }),
+      ],
+      total: 2,
+    });
+
+    render(<IndexVersionsPage corpus={makeCorpus()} onBack={vi.fn()} />);
+
+    expect(screen.getByText("Удалить старые версии")).toBeInTheDocument();
   });
 
   it("shows progress info for building version", () => {

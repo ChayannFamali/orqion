@@ -30,6 +30,16 @@ function statusBadge(status: string): string {
   return "bg-muted text-muted-foreground";
 }
 
+/** Пользовательские подписи статусов документа. */
+function statusLabel(status: string): string {
+  if (status === "ready") return "Готов";
+  if (status === "indexing") return "Индексируется";
+  if (status === "pending") return "В очереди";
+  if (status === "pending_deletion") return "К удалению";
+  if (status === "failed") return "Ошибка";
+  return status;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
@@ -147,7 +157,7 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
                       <span
                         className={"rounded px-1.5 py-0.5 text-xs " + statusBadge(doc.status)}
                       >
-                        {doc.status}
+                        {statusLabel(doc.status)}
                       </span>
                     </div>
                     {doc.error && (

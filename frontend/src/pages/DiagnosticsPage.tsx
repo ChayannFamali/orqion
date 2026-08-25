@@ -17,10 +17,6 @@ export function DiagnosticsPage() {
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <div>
           <h2 className="text-xl font-bold">Диагностика окружения</h2>
-          <p className="text-sm text-muted-foreground">
-            Только чтение: состояние хоста, на котором запущен orqion. Управление
-            драйверами и backend инференса выполняется вне orqion.
-          </p>
         </div>
 
         {isLoading && (

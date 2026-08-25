@@ -89,8 +89,8 @@ describe("DocumentsPage", () => {
 
     expect(screen.getByText("a.txt")).toBeInTheDocument();
     expect(screen.getByText("b.md")).toBeInTheDocument();
-    expect(screen.getByText("pending")).toBeInTheDocument();
-    expect(screen.getByText("ready")).toBeInTheDocument();
+    expect(screen.getByText("В очереди")).toBeInTheDocument();
+    expect(screen.getByText("Готов")).toBeInTheDocument();
   });
 
   it("shows empty state when no documents", () => {
@@ -107,7 +107,7 @@ describe("DocumentsPage", () => {
     expect(screen.getByText(/Нет документов/)).toBeInTheDocument();
   });
 
-  it("shows pending_deletion badge for deferred-delete documents (BUG-020)", () => {
+  it("shows deferred-delete badge for deferred-delete documents (BUG-020)", () => {
     mockHooks({
       documents: [makeDoc({ id: "d1", status: "pending_deletion" })],
       total: 1,
@@ -121,14 +121,14 @@ describe("DocumentsPage", () => {
       />,
     );
 
-    expect(screen.getByText("pending_deletion")).toBeInTheDocument();
+    expect(screen.getByText("К удалению")).toBeInTheDocument();
   });
 
   it("shows deferred delete notice when delete is postponed (BUG-020)", async () => {
     const mutateAsync = vi.fn().mockResolvedValue({
       deleted: false,
       status: "pending_deletion",
-      reason: "Документ помечен на удаление, но у него остаются чанки",
+      reason: "Документ будет удалён после пересборки индекса корпуса",
     });
     vi.mocked(useDocuments).mockReturnValue({
       data: { documents: [makeDoc({ id: "d1" })], total: 1 },
@@ -156,7 +156,7 @@ describe("DocumentsPage", () => {
     fireEvent.click(screen.getByText("Удалить", { selector: "button" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Документ помечен на удаление/)).toBeInTheDocument();
+      expect(screen.getByText(/Документ будет удалён после пересборки индекса/)).toBeInTheDocument();
     });
     expect(mutateAsync).toHaveBeenCalledWith("d1");
   });

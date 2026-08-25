@@ -27,6 +27,16 @@ function statusBadge(status: string): string {
   return "bg-muted text-muted-foreground";
 }
 
+/** Пользовательские подписи статусов версии индекса. */
+function statusLabel(status: string): string {
+  if (status === "active") return "Активная";
+  if (status === "completed") return "Собрана";
+  if (status === "building") return "Собирается";
+  if (status === "interrupted") return "Прервана";
+  if (status === "retired") return "Заменена";
+  return status;
+}
+
 interface IndexVersionsPageProps {
   corpus: CorpusResponse;
   onBack: () => void;
@@ -44,7 +54,9 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
   const [activateWarning, setActivateWarning] = useState<string | null>(null);
 
   const versions = data?.versions ?? [];
-  const hasRetired = versions.some((v) => v.status === "retired");
+  const hasCleanable = versions.some(
+    (v) => v.status === "retired" || v.status === "interrupted",
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -61,13 +73,13 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
           <h2 className="text-lg font-semibold">Версии индекса</h2>
         </div>
         <div className="flex items-center gap-2">
-          {hasRetired && (
+          {hasCleanable && (
             <button
               onClick={() => setShowCleanup(true)}
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
             >
               <Trash2 className="h-4 w-4" />
-              Очистить retired
+              Удалить старые версии
             </button>
           )}
           {corpus.active_index_version_id && (
@@ -119,7 +131,7 @@ export function IndexVersionsPage({ corpus, onBack }: IndexVersionsPageProps) {
                     <span
                       className={"rounded px-2 py-0.5 text-xs font-medium " + statusBadge(v.status)}
                     >
-                      {v.status}
+                      {statusLabel(v.status)}
                     </span>
                     {v.status === "active" && (
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -338,10 +350,10 @@ function CleanupConfirmDialog({
         className="w-full max-w-sm rounded-lg border border-border bg-background p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-2 text-lg font-semibold">Удалить retired-версии?</h3>
+        <h3 className="mb-2 text-lg font-semibold">Удалить старые версии индекса?</h3>
         <p className="mb-4 text-sm text-muted-foreground">
-          Retired-версии будут удалены вместе с чанками и векторами.
-          Откат к ним станет невозможен.
+          Неактивные версии (заменённые и прерванные сборки) будут удалены
+          вместе с их данными. Откат к ним станет невозможен.
         </p>
         <div className="flex justify-end gap-2">
           <button
