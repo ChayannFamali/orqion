@@ -4582,6 +4582,17 @@
             "type": "string",
             "title": "Sha256"
           },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
           "source_type": {
             "type": "string",
             "title": "Source Type"
@@ -4667,6 +4678,17 @@
           "blob_uri": {
             "type": "string",
             "title": "Blob Uri"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
           },
           "source_type": {
             "type": "string",

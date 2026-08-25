@@ -104,7 +104,8 @@ async def test_upload_document_success(
     await _login_with_role(api_client, app_fixture, role_name="developer")
     corpus_id = await _create_corpus(app_fixture)
 
-    resp = await _upload_file(api_client, corpus_id, content=b"Test content")
+    content = b"Test content"
+    resp = await _upload_file(api_client, corpus_id, content=content)
 
     assert resp.status_code == 201
     data = resp.json()
@@ -114,6 +115,8 @@ async def test_upload_document_success(
     assert data["sha256"]
     assert data["blob_uri"]
     assert data["source_type"] == "upload"
+    # Реальный размер файла в байтах (закрытие «0 B» в списке документов)
+    assert data["size_bytes"] == len(content)
 
     # Blob существует в blob store
     blob_store: LocalBlobStore = app_fixture.state.blob_store

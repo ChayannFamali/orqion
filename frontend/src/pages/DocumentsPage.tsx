@@ -139,7 +139,7 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
                       <div className="text-xs text-destructive">{doc.error}</div>
                     )}
                     <div className="text-xs text-muted-foreground">
-                      {formatBytes(doc.sha256.length > 0 ? 0 : 0)}
+                      {doc.size_bytes != null ? formatBytes(doc.size_bytes) : "размер неизвестен"}
                     </div>
                   </div>
                 </div>

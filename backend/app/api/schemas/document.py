@@ -14,6 +14,7 @@ class DocumentResponse(BaseModel):
     mime: str
     sha256: str
     blob_uri: str
+    size_bytes: int | None = None
     source_type: str
     status: str
     error: str | None = None
@@ -28,6 +29,7 @@ class DocumentDetailResponse(BaseModel):
     filename: str
     mime: str
     sha256: str
+    size_bytes: int | None = None
     source_type: str
     status: str
     error: str | None = None

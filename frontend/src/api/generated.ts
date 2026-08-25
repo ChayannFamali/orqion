@@ -1734,6 +1734,8 @@ export interface components {
             mime: string;
             /** Sha256 */
             sha256: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
             /** Source Type */
             source_type: string;
             /** Status */
@@ -1767,6 +1769,8 @@ export interface components {
             sha256: string;
             /** Blob Uri */
             blob_uri: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
             /** Source Type */
             source_type: string;
             /** Status */

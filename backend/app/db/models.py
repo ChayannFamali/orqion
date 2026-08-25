@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -481,6 +482,7 @@ class Document(Base, IdMixin, WorkspaceMixin):
         String(255), nullable=False, default="application/octet-stream"
     )
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, default="upload")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     error: Mapped[str | None] = mapped_column(String, nullable=True)

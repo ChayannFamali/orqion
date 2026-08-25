@@ -87,7 +87,7 @@ async def upload_document(
             hint=f"Документ уже загружен: {existing_doc.filename}",
         )
 
-    # 5. Создание Document
+    # 5. Создание Document (размер известен из BlobRef — put считает байты)
     document = Document(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
@@ -95,6 +95,7 @@ async def upload_document(
         filename=filename,
         mime=mime,
         sha256=blob_ref.sha256,
+        size_bytes=blob_ref.size,
         source_type=source_type,
         status="pending",
     )
