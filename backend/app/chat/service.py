@@ -106,6 +106,12 @@ class ChatContext:
     # T-440: reasoning-трейс накапливается отдельно от контента ответа
     # (биллинг не затрагивается — токены рассуждений уже в completion_tokens).
     accumulated_reasoning: list[str] = field(default_factory=list)
+    # T-445 (каркас): решение по режиму рассуждения (матрица А3) — пишется в
+    # мету ассистента в save_messages. reasoning_mode — эффективный режим
+    # ("off"/"on"/"auto"); reasoning_note — честная запись «модель не
+    # поддерживает переключение», если режим запрошен, но недоступен.
+    reasoning_mode: str | None = None
+    reasoning_note: str | None = None
     model_id: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
@@ -545,6 +551,11 @@ async def _save_messages_impl(
         reasoning_text = "".join(chat_ctx.accumulated_reasoning)
         if reasoning_text:
             assistant_meta["reasoning_content"] = reasoning_text
+        # T-445 (каркас): решение по режиму рассуждения + честная запись.
+        if chat_ctx.reasoning_mode is not None:
+            assistant_meta["reasoning_mode"] = chat_ctx.reasoning_mode
+        if chat_ctx.reasoning_note is not None:
+            assistant_meta["reasoning_note"] = chat_ctx.reasoning_note
         if sources:
             assistant_meta["sources"] = [
                 {

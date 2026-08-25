@@ -1506,6 +1506,8 @@ export interface components {
             corpus_names?: string[] | null;
             /** Task Type */
             task_type?: string | null;
+            /** Reasoning Mode */
+            reasoning_mode?: string | null;
         };
         /**
          * ChatResponse
@@ -2225,6 +2227,11 @@ export interface components {
              * @default false
              */
             supports_reasoning: boolean;
+            /**
+             * Reasoning Toggleable
+             * @default false
+             */
+            reasoning_toggleable: boolean;
             /** Cost In */
             cost_in?: number | null;
             /** Cost Out */
@@ -2268,6 +2275,8 @@ export interface components {
             max_output_tokens: number | null;
             /** Supports Reasoning */
             supports_reasoning: boolean;
+            /** Reasoning Toggleable */
+            reasoning_toggleable: boolean;
             /** Cost In */
             cost_in: number | null;
             /** Cost Out */
@@ -2289,6 +2298,8 @@ export interface components {
             max_output_tokens?: number | null;
             /** Supports Reasoning */
             supports_reasoning?: boolean | null;
+            /** Reasoning Toggleable */
+            reasoning_toggleable?: boolean | null;
             /** Cost In */
             cost_in?: number | null;
             /** Cost Out */
@@ -2806,6 +2817,11 @@ export interface components {
             is_active: boolean;
             /** Capabilities */
             capabilities: string[];
+            /**
+             * Reasoning
+             * @default off
+             */
+            reasoning: string;
             /**
              * Is Impersonating
              * @default false

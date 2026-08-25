@@ -15,6 +15,10 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     capabilities: list[str]
+    # Т-445 (каркас): режим рассуждения из политики роли — фронтенд гейтит
+    # им переключатель в чате (off/on = фиксированный режим,
+    # optional = переключатель виден).
+    reasoning: str = "off"
     is_impersonating: bool = False
     impersonated_by_email: str | None = None
     must_change_password: bool = False

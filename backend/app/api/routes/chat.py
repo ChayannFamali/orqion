@@ -70,6 +70,22 @@ def _is_adr12_violation(exc: DataClassViolation | NoRouteAvailable) -> bool:
     return "data_class" in constraint
 
 
+def _effective_reasoning_mode(policy_reasoning: str, requested: str | None) -> str:
+    """Т-445 (каркас), матрица А3: эффективный режим рассуждения.
+
+    ``off``/``on`` фиксируются политикой роли; при ``optional`` учитывается
+    выбор на уровне сообщения (Г1), по умолчанию ``"auto"`` (дефолт
+    модели/провайдера). Конкретный параметр запроса провайдеру в каркасе
+    не отправляется — решение только записывается.
+    """
+    if policy_reasoning in ("off", "on"):
+        return policy_reasoning
+    # optional
+    if requested in ("off", "on"):
+        return requested
+    return "auto"
+
+
 def _build_usage_record(
     chat_ctx: ChatContext,
     model: Model,
@@ -236,6 +252,15 @@ async def chat(
                 await session.commit()
             raise
         chat_ctx.trace_id = trace_ctx.trace_id
+
+    # Т-445 (каркас): решение по режиму рассуждения (матрица А3).
+    # Параметр провайдеру пока не отправляется — только записывается решение.
+    chat_ctx.reasoning_mode = _effective_reasoning_mode(policy.reasoning, body.reasoning_mode)
+    if chat_ctx.reasoning_mode in ("off", "on") and not model.reasoning_toggleable:
+        chat_ctx.reasoning_note = (
+            f"Запрошен режим рассуждения '{chat_ctx.reasoning_mode}'; "
+            "модель не поддерживает переключение режима, параметр не отправлен"
+        )
 
     # Флашим trace + prepare данные до возврата StreamingResponse,
     # иначе SQLite блокируется при записи в _stream_with_save.

@@ -274,4 +274,49 @@ describe("ChatPage", () => {
     const lastMsg = secondCallArgs.messages[secondCallArgs.messages.length - 1];
     expect(lastMsg.content).toBe("Edited question");
   });
+
+  it("reasoning toggle is hidden when policy fixes the mode (default off) — Т-445", async () => {
+    renderChatPage();
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Введите сообщение/)).toBeInTheDocument();
+    });
+    // apiGetMe мок возвращает пользователя без поля "раз в политике" → "off"
+    expect(screen.queryByTestId("reasoning-toggle")).not.toBeInTheDocument();
+  });
+
+  it("reasoning toggle visible under 'optional' policy and sends reasoning_mode — Т-445", async () => {
+    const { apiGetMe } = await import("../api/auth");
+    const { streamChat } = await import("../api/chat");
+    vi.mocked(apiGetMe).mockResolvedValue({
+      id: "u1",
+      email: "test@orqion.local",
+      is_active: true,
+      capabilities: ["chat"],
+      reasoning: "optional",
+    } as any);
+    const mockGen = async function* () {
+      yield { type: "token" as const, v: "With reasoning" };
+    };
+    vi.mocked(streamChat).mockReturnValue(mockGen() as any);
+
+    renderChatPage();
+
+    // Переключатель виден при политике "optional"
+    await waitFor(() => {
+      expect(screen.getByTestId("reasoning-toggle")).toBeInTheDocument();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("reasoning-toggle"));
+
+    // Отправляем сообщение — режим "on" уходит в запрос
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Think hard");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      expect(streamChat).toHaveBeenCalledTimes(1);
+    });
+    const request = vi.mocked(streamChat).mock.calls[0][0];
+    expect(request.reasoning_mode).toBe("on");
+  });
 });

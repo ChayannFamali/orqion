@@ -237,6 +237,7 @@ describe("ProvidersPage", () => {
       max_input_tokens: null,
       max_output_tokens: null,
       supports_reasoning: false,
+      reasoning_toggleable: false,
       cost_in: null,
       cost_out: null,
       enabled: true,

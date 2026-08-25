@@ -150,6 +150,7 @@ async def me(
         email=user.email,
         is_active=user.is_active,
         capabilities=policy.capabilities,
+        reasoning=policy.reasoning,
         is_impersonating=is_impersonating,
         impersonated_by_email=impersonated_by_email,
     )

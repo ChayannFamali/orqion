@@ -22,6 +22,8 @@ interface UseChatResult {
     conversationId?: string | null;
     /** T-439: мульти-корпусный RAG. Пустой/не заданный список = обычный чат. */
     corpusNames?: string[] | null;
+    /** Т-445 (каркас): режим рассуждения на уровне сообщения ("on"/"off"). */
+    reasoningMode?: string | null;
     onDone?: (
       fullContent: string,
       error: { code: string; message: string } | null,
@@ -66,7 +68,7 @@ export function useChat(): UseChatResult {
   }, []);
 
   const sendMessage = useCallback<UseChatResult["sendMessage"]>(
-    ({ messages, modelAlias, conversationId, corpusNames, onDone }) => {
+    ({ messages, modelAlias, conversationId, corpusNames, reasoningMode, onDone }) => {
       setError(null);
       setStreamingContent("");
       setStreamingReasoning("");
@@ -94,6 +96,7 @@ export function useChat(): UseChatResult {
                 temperature: 0.7,
                 stream: false,
                 corpus_names: corpusNames,
+                reasoning_mode: reasoningMode ?? null,
               },
               controller.signal,
             );
@@ -132,6 +135,7 @@ export function useChat(): UseChatResult {
               conversation_id: conversationId ?? null,
               temperature: 0.7,
               stream: true,
+              reasoning_mode: reasoningMode ?? null,
             },
             controller.signal,
           );

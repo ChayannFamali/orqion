@@ -76,6 +76,7 @@ describe("App", () => {
       email: "test@orqion.local",
       is_active: true,
       capabilities: ["chat"],
+      reasoning: "off",
       is_impersonating: false,
       must_change_password: false,
     });

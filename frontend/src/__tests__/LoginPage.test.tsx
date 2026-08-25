@@ -39,7 +39,7 @@ describe("LoginPage", () => {
 
   it("submits login form with email and password", async () => {
     vi.mocked(apiLogin).mockResolvedValue({
-      user: { id: "1", email: "test@orqion.local", is_active: true, capabilities: ["chat"], is_impersonating: false, must_change_password: false },
+      user: { id: "1", email: "test@orqion.local", is_active: true, capabilities: ["chat"], reasoning: "off", is_impersonating: false, must_change_password: false },
     });
 
     renderLoginPage();
@@ -123,7 +123,7 @@ describe("LoginPage", () => {
 
   it("clears error and transitions after successful login", async () => {
     vi.mocked(apiLogin).mockResolvedValue({
-      user: { id: "1", email: "test@orqion.local", is_active: true, capabilities: ["chat"], is_impersonating: false, must_change_password: false },
+      user: { id: "1", email: "test@orqion.local", is_active: true, capabilities: ["chat"], reasoning: "off", is_impersonating: false, must_change_password: false },
     });
 
     const client = renderLoginPage();

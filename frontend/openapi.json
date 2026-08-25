@@ -3997,6 +3997,17 @@
               }
             ],
             "title": "Task Type"
+          },
+          "reasoning_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Mode"
           }
         },
         "type": "object",
@@ -5760,6 +5771,11 @@
             "title": "Supports Reasoning",
             "default": false
           },
+          "reasoning_toggleable": {
+            "type": "boolean",
+            "title": "Reasoning Toggleable",
+            "default": false
+          },
           "cost_in": {
             "anyOf": [
               {
@@ -5886,6 +5902,10 @@
             "type": "boolean",
             "title": "Supports Reasoning"
           },
+          "reasoning_toggleable": {
+            "type": "boolean",
+            "title": "Reasoning Toggleable"
+          },
           "cost_in": {
             "anyOf": [
               {
@@ -5922,6 +5942,7 @@
           "max_input_tokens",
           "max_output_tokens",
           "supports_reasoning",
+          "reasoning_toggleable",
           "cost_in",
           "cost_out",
           "enabled"
@@ -5995,6 +6016,17 @@
               }
             ],
             "title": "Supports Reasoning"
+          },
+          "reasoning_toggleable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Toggleable"
           },
           "cost_in": {
             "anyOf": [
@@ -7448,6 +7480,11 @@
             },
             "type": "array",
             "title": "Capabilities"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": "off"
           },
           "is_impersonating": {
             "type": "boolean",

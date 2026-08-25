@@ -925,6 +925,7 @@ function CreateModelModal({
   const [maxInputTokens, setMaxInputTokens] = useState("");
   const [maxOutputTokens, setMaxOutputTokens] = useState("");
   const [supportsReasoning, setSupportsReasoning] = useState(false);
+  const [reasoningToggleable, setReasoningToggleable] = useState(false);
   const [costIn, setCostIn] = useState("");
   const [costOut, setCostOut] = useState("");
 
@@ -940,6 +941,7 @@ function CreateModelModal({
           max_input_tokens: maxInputTokens ? parseInt(maxInputTokens) : null,
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
           supports_reasoning: supportsReasoning,
+          reasoning_toggleable: reasoningToggleable,
           cost_in: costIn ? parseFloat(costIn) : null,
           cost_out: costOut ? parseFloat(costOut) : null,
           enabled: true,
@@ -977,6 +979,14 @@ function CreateModelModal({
             />
             Supports reasoning
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={reasoningToggleable}
+              onChange={(e) => setReasoningToggleable(e.target.checked)}
+            />
+            Рассуждение можно переключать
+          </label>
           <FormField label="Cost in (per 1K tokens)" value={costIn} onChange={setCostIn} type="number" placeholder="0.0" />
           <FormField label="Cost out (per 1K tokens)" value={costOut} onChange={setCostOut} type="number" placeholder="0.0" />
           <button
@@ -1011,6 +1021,9 @@ function EditModelModal({
     model.max_output_tokens?.toString() ?? "",
   );
   const [supportsReasoning, setSupportsReasoning] = useState(model.supports_reasoning);
+  const [reasoningToggleable, setReasoningToggleable] = useState(
+    model.reasoning_toggleable ?? false,
+  );
   const [costIn, setCostIn] = useState(model.cost_in?.toString() ?? "");
   const [costOut, setCostOut] = useState(model.cost_out?.toString() ?? "");
 
@@ -1026,6 +1039,7 @@ function EditModelModal({
           max_input_tokens: maxInputTokens ? parseInt(maxInputTokens) : null,
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
           supports_reasoning: supportsReasoning,
+          reasoning_toggleable: reasoningToggleable,
           cost_in: costIn ? parseFloat(costIn) : null,
           cost_out: costOut ? parseFloat(costOut) : null,
         },
@@ -1061,6 +1075,14 @@ function EditModelModal({
               onChange={(e) => setSupportsReasoning(e.target.checked)}
             />
             Supports reasoning
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={reasoningToggleable}
+              onChange={(e) => setReasoningToggleable(e.target.checked)}
+            />
+            Рассуждение можно переключать
           </label>
           <FormField label="Cost in (per 1K tokens)" value={costIn} onChange={setCostIn} type="number" />
           <FormField label="Cost out (per 1K tokens)" value={costOut} onChange={setCostOut} type="number" />

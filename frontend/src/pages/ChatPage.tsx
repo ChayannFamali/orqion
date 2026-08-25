@@ -10,6 +10,7 @@ import {
 import { useEnabledModels } from "../hooks/useModels";
 import { useAvailableCorpora } from "../hooks/useCorpora";
 import { useChat } from "../hooks/useChat";
+import { useCurrentUser } from "../hooks/useAuth";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
@@ -27,6 +28,14 @@ export function ChatPage() {
   const [newChatOpen, setNewChatOpen] = useState(false);
   // T-439: имена выбранных корпусов для RAG-запроса (мульти-режим)
   const [selectedCorpora, setSelectedCorpora] = useState<string[]>([]);
+  // Т-445 (каркас, Г1): режим рассуждения на уровне сообщения. Переключатель
+  // виден только при политике "optional"; выбор не запоминается на диалог —
+  // сбрасывается на дефолт (выключен = "авто") при новом диалоге.
+  const [reasoningOn, setReasoningOn] = useState(false);
+
+  const currentUser = useCurrentUser();
+  const reasoningPolicy = currentUser.data?.reasoning ?? "off";
+  const reasoningOptional = reasoningPolicy === "optional";
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
@@ -44,6 +53,15 @@ export function ChatPage() {
       setSelectedModel(models.data[0].alias);
     }
   }, [models.data, selectedModel]);
+
+  // Т-445: выбор рассуждения не запоминается на диалог — при смене диалога
+  // сброс на дефолт политики (для "optional" это "авто" = выключено).
+  useEffect(() => {
+    setReasoningOn(false);
+  }, [activeId]);
+
+  // Эффективный выбор на уровне сообщения: учитывается только при "optional".
+  const reasoningMode = reasoningOptional && reasoningOn ? "on" : null;
 
   const displayedMessages: MessageResponse[] = conversation.data?.messages ?? [];
 
@@ -91,6 +109,7 @@ export function ChatPage() {
         modelAlias: selectedModel,
         conversationId: activeId,
         corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+        reasoningMode,
         onDone: (fullContent) => {
           const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
           setLocalMessages(updated);
@@ -102,7 +121,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, chat, conversations, conversation],
   );
 
   const handleAbort = useCallback(() => {
@@ -163,6 +182,7 @@ export function ChatPage() {
       modelAlias: selectedModel,
       conversationId: activeId,
       corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+      reasoningMode,
       onDone: (fullContent) => {
         const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
         setLocalMessages(updated);
@@ -173,7 +193,7 @@ export function ChatPage() {
         }
       },
     });
-  }, [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation]);
+  }, [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, chat, conversations, conversation]);
 
   const handleEdit = useCallback(
     (messageIndex: number, newContent: string) => {
@@ -188,6 +208,7 @@ export function ChatPage() {
         modelAlias: selectedModel,
         conversationId: activeId,
         corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+        reasoningMode,
         onDone: (fullContent) => {
           const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
           setLocalMessages(updated);
@@ -199,7 +220,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, selectedCorpora, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, chat, conversations, conversation],
   );
 
   return (
@@ -246,6 +267,24 @@ export function ChatPage() {
             onChange={setSelectedModel}
             disabled={chat.isStreaming}
           />
+          {/* Т-445 (Г1): переключатель рассуждения виден только при политике
+              "optional"; при off/on режим фиксирован политикой. */}
+          {reasoningOptional && (
+            <label
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title="Режим рассуждения модели на это сообщение (политика роли: по выбору)"
+            >
+              <input
+                type="checkbox"
+                checked={reasoningOn}
+                onChange={(e) => setReasoningOn(e.target.checked)}
+                disabled={chat.isStreaming}
+                className="h-3.5 w-3.5"
+                data-testid="reasoning-toggle"
+              />
+              Рассуждение
+            </label>
+          )}
           {activeId && conversation.data && (
             <button
               onClick={handleResetContext}

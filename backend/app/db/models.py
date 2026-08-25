@@ -169,6 +169,10 @@ class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     max_input_tokens: Mapped[int | None] = mapped_column(nullable=True)
     max_output_tokens: Mapped[int | None] = mapped_column(nullable=True)
     supports_reasoning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Т-445 (каркас): провайдер умеет включать/выключать режим рассуждения.
+    # Ручной флаг по паттерну supports_reasoning; без него политика не знает,
+    # для какой модели пробовать переключение.
+    reasoning_toggleable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cost_in: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_out: Mapped[float | None] = mapped_column(Float, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
