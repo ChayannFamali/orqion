@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CorporaPage } from "../pages/CorporaPage";
-import { useCorpora, useCreateCorpus, useUpdateCorpus } from "../hooks/useCorpora";
+import {
+  useCorpora,
+  useCreateCorpus,
+  useUpdateCorpus,
+  useDeleteCorpus,
+} from "../hooks/useCorpora";
 import type { CorpusListResponse } from "../api/types";
 
 vi.mock("../hooks/useCorpora");
@@ -24,6 +29,7 @@ function makeCorpus(overrides: Partial<CorpusListResponse["corpora"][0]> = {}) {
 }
 
 const mockMutateAsync = vi.fn();
+const mockDeleteMutateAsync = vi.fn();
 
 function mockHooks(
   corporaData?: CorpusListResponse,
@@ -41,6 +47,10 @@ function mockHooks(
     isPending: false,
     mutateAsync: mockMutateAsync,
   } as unknown as ReturnType<typeof useUpdateCorpus>);
+  vi.mocked(useDeleteCorpus).mockReturnValue({
+    isPending: false,
+    mutateAsync: mockDeleteMutateAsync,
+  } as unknown as ReturnType<typeof useDeleteCorpus>);
 }
 
 describe("CorporaPage", () => {
@@ -252,6 +262,48 @@ describe("CorporaPage", () => {
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Не удалось изменить класс данных");
+    });
+  });
+
+  // --- Удаление корпуса ---
+
+  it("shows delete button when canManage and opens confirm modal", () => {
+    mockHooks({ corpora: [makeCorpus()] });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByLabelText("Удалить корпус"));
+
+    expect(screen.getByText("Удалить корпус")).toBeInTheDocument();
+    expect(
+      screen.getByText(/будут удалены безвозвратно/),
+    ).toBeInTheDocument();
+  });
+
+  it("hides delete button when cannot manage", () => {
+    mockHooks({ corpora: [makeCorpus()] });
+
+    render(<CorporaPage capabilities={["chat"]} />);
+
+    expect(screen.queryByLabelText("Удалить корпус")).not.toBeInTheDocument();
+  });
+
+  it("calls delete mutation and closes on confirm", async () => {
+    mockHooks({ corpora: [makeCorpus({ id: "c1" })] });
+    mockDeleteMutateAsync.mockResolvedValue({ deleted: true });
+
+    render(<CorporaPage capabilities={["*"]} />);
+
+    fireEvent.click(screen.getByLabelText("Удалить корпус"));
+
+    // Кнопка подтверждения в модалке
+    fireEvent.click(screen.getByText("Удалить", { selector: "button" }));
+
+    await waitFor(() => {
+      expect(mockDeleteMutateAsync).toHaveBeenCalledWith("c1");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(/будут удалены безвозвратно/)).not.toBeInTheDocument();
     });
   });
 });

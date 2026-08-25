@@ -2,6 +2,7 @@ import { apiFetch } from "./client";
 import type {
   AvailableCorporaResponse,
   CorpusCreate,
+  CorpusDeleteResponse,
   CorpusListResponse,
   CorpusResponse,
   CorpusUpdate,
@@ -30,5 +31,11 @@ export async function apiUpdateCorpus(
   return apiFetch<CorpusResponse>(`/api/corpora/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body),
+  });
+}
+
+export async function apiDeleteCorpus(id: string): Promise<CorpusDeleteResponse> {
+  return apiFetch<CorpusDeleteResponse>(`/api/corpora/${id}`, {
+    method: "DELETE",
   });
 }

@@ -537,7 +537,15 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Corpus
+         * @description Удаление корпуса со всем содержимым.
+         *
+         *     Удаляет документы, все версии индекса с чанками и векторами, наборы
+         *     оценки с вопросами и их прогонами. Файлы документов удаляются, только
+         *     если на них не ссылаются документы других корпусов.
+         */
+        delete: operations["delete_corpus_api_corpora__corpus_id__delete"];
         options?: never;
         head?: never;
         /** Update Corpus */
@@ -1690,6 +1698,14 @@ export interface components {
             data_class?: ("К0" | "К1" | "К2" | "К3") | null;
             /** Pinned Model Id */
             pinned_model_id?: string | null;
+        };
+        /**
+         * CorpusDeleteResponse
+         * @description Результат удаления корпуса.
+         */
+        CorpusDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
         };
         /**
          * CorpusListResponse
@@ -3666,6 +3682,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailableCorporaResponse"];
+                };
+            };
+        };
+    };
+    delete_corpus_api_corpora__corpus_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorpusDeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

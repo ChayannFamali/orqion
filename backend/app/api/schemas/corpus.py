@@ -58,3 +58,9 @@ class AvailableCorporaResponse(BaseModel):
     """Список корпусов, доступных пользователю для чата (T-439)."""
 
     corpora: list[AvailableCorpusEntry]
+
+
+class CorpusDeleteResponse(BaseModel):
+    """Результат удаления корпуса."""
+
+    deleted: bool

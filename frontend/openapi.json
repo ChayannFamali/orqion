@@ -1412,6 +1412,47 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "Delete Corpus",
+        "description": "Удаление корпуса со всем содержимым.\n\nУдаляет документы, все версии индекса с чанками и векторами, наборы\nоценки с вопросами и их прогонами. Файлы документов удаляются, только\nесли на них не ссылаются документы других корпусов.",
+        "operationId": "delete_corpus_api_corpora__corpus_id__delete",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorpusDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/diagnostics/environment": {
@@ -4471,6 +4512,20 @@
         ],
         "title": "CorpusCreate",
         "description": "Создание корпуса. data_class валидируется (К0–К3 или None)."
+      },
+      "CorpusDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "CorpusDeleteResponse",
+        "description": "Результат удаления корпуса."
       },
       "CorpusListResponse": {
         "properties": {

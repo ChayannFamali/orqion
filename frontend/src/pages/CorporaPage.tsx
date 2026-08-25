@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Loader2, Plus, X, Pencil, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, X, Pencil, AlertTriangle, Trash2 } from "lucide-react";
 import { useCorpora } from "../hooks/useCorpora";
 import { useCreateCorpus } from "../hooks/useCorpora";
 import { useUpdateCorpus } from "../hooks/useCorpora";
+import { useDeleteCorpus } from "../hooks/useCorpora";
 import { DocumentsPage } from "./DocumentsPage";
 import { toast } from "sonner";
 import type { CorpusResponse } from "../api/types";
@@ -58,6 +59,7 @@ export function CorporaPage({ capabilities }: { capabilities: string[] }) {
   const { data, isLoading, error } = useCorpora();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingCorpus, setEditingCorpus] = useState<CorpusResponse | null>(null);
+  const [deletingCorpus, setDeletingCorpus] = useState<CorpusResponse | null>(null);
   const [selectedCorpus, setSelectedCorpus] = useState<CorpusResponse | null>(null);
 
   if (selectedCorpus) {
@@ -118,6 +120,7 @@ export function CorporaPage({ capabilities }: { capabilities: string[] }) {
                 canManage={canManage}
                 onClick={() => setSelectedCorpus(corpus)}
                 onEdit={() => setEditingCorpus(corpus)}
+                onDelete={() => setDeletingCorpus(corpus)}
               />
             ))}
           </div>
@@ -131,6 +134,12 @@ export function CorporaPage({ capabilities }: { capabilities: string[] }) {
           onClose={() => setEditingCorpus(null)}
         />
       )}
+      {deletingCorpus && (
+        <DeleteCorpusModal
+          corpus={deletingCorpus}
+          onClose={() => setDeletingCorpus(null)}
+        />
+      )}
     </div>
   );
 }
@@ -140,11 +149,13 @@ function CorpusCard({
   canManage,
   onClick,
   onEdit,
+  onDelete,
 }: {
   corpus: CorpusResponse;
   canManage: boolean;
   onClick: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
@@ -169,16 +180,29 @@ function CorpusCard({
           </div>
         </div>
         {canManage && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="text-muted-foreground transition-colors hover:text-foreground"
-            title="Изменить класс данных"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title="Изменить класс данных"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              aria-label="Удалить корпус"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              title="Удалить корпус"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -396,6 +420,74 @@ function EditDataClassModal({
             {showConfirm && downgrade ? "Подтвердить понижение" : "Сохранить"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/** Подтверждение удаления корпуса со всем содержимым. */
+function DeleteCorpusModal({
+  corpus,
+  onClose,
+}: {
+  corpus: CorpusResponse;
+  onClose: () => void;
+}) {
+  const deleteMutation = useDeleteCorpus();
+
+  const handleConfirm = async () => {
+    try {
+      await deleteMutation.mutateAsync(corpus.id);
+      toast.success("Корпус удалён");
+      onClose();
+    } catch {
+      // Ошибка показывается через глобальный mutations.onError → toast
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Удалить корпус</h3>
+          <button onClick={onClose}>
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <p className="text-sm">
+            Удалить корпус <span className="font-medium">{corpus.name}</span>?
+          </p>
+          <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <p className="text-sm text-muted-foreground">
+              Все документы корпуса, индексы и наборы оценки будут удалены
+              безвозвратно. Действие будет записано в журнал аудита.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirm}
+              disabled={deleteMutation.isPending}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground transition-colors hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Удалить
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-md border border-border px-4 py-2 text-sm transition-colors hover:bg-accent"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

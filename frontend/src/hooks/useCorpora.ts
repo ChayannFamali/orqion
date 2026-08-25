@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   apiCreateCorpus,
+  apiDeleteCorpus,
   apiListAvailableCorpora,
   apiListCorpora,
   apiUpdateCorpus,
@@ -40,6 +41,18 @@ export function useUpdateCorpus() {
       apiUpdateCorpus(id, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.corpora.all });
+    },
+  });
+}
+
+/** Удаление корпуса со всем содержимым (документы, индексы, оценки). */
+export function useDeleteCorpus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiDeleteCorpus(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.corpora.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.corpora.available });
     },
   });
 }

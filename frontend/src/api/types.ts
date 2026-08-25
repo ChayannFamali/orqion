@@ -42,6 +42,8 @@ export type ModelDeleteResponse = components["schemas"]["ModelDeleteResponse"];
 /** Корпус, доступный пользователю для чата (T-439). */
 export type AvailableCorpusEntry = components["schemas"]["AvailableCorpusEntry"];
 export type AvailableCorporaResponse = components["schemas"]["AvailableCorporaResponse"];
+/** Результат удаления корпуса. */
+export type CorpusDeleteResponse = components["schemas"]["CorpusDeleteResponse"];
 /** Диагностика окружения хоста (T-444, только чтение). */
 export type EnvironmentDiagnosticsResponse =
   components["schemas"]["EnvironmentDiagnosticsResponse"];
