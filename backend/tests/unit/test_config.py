@@ -9,10 +9,16 @@ from pathlib import Path
 import pytest
 from app.config import Settings, get_or_create_secret_key
 
+from tests.fixtures.database import EnvFreeSettings
+
 
 def test_defaults_without_env() -> None:
-    """Settings() без переменных окружения даёт профиль minimal."""
-    settings = Settings()
+    """Settings() без переменных окружения даёт профиль minimal.
+
+    EnvFreeSettings (.env отключён): локальный .env разработчика не считается
+    окружением теста — дефолты проверяются в чистом виде.
+    """
+    settings = EnvFreeSettings()
     assert settings.app_name == "orqion"
     assert settings.profile == "minimal"
     assert settings.host == "127.0.0.1"

@@ -16,12 +16,24 @@ from app.config import Settings
 from app.db.base import Base
 from app.db.engine import create_engine
 from app.db.models import Workspace  # noqa: F401 — регистрация в metadata
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
 )
+
+
+class EnvFreeSettings(Settings):
+    """Settings с отключённым чтением .env.
+
+    Локальный .env разработчика (например, ORQION_EMBEDDINGS_BACKEND=provider
+    для разработки) не должен просачиваться в тесты: иначе фикстуры засевают
+    лишнего провайдера эмбеддингов и ассерты дефолтов ломаются.
+    """
+
+    model_config = SettingsConfigDict(env_file=None)
 
 
 def _get_test_database_url(tmp_path: Path) -> str:
@@ -39,8 +51,8 @@ def _get_test_database_url(tmp_path: Path) -> str:
 
 @pytest.fixture
 def test_settings(tmp_path: Path) -> Settings:
-    """Настройки с временной SQLite или PostgreSQL из env."""
-    return Settings(
+    """Настройки с временной SQLite или PostgreSQL из env (.env отключён)."""
+    return EnvFreeSettings(
         database_url=_get_test_database_url(tmp_path),
         blob_store_path=str(tmp_path / "blobs"),
         vector_store_path=str(tmp_path / "vec.db"),
