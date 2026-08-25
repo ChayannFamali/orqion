@@ -25,6 +25,7 @@ function statusBadge(status: string): string {
   if (status === "ready") return "bg-green-500/10 text-green-600";
   if (status === "indexing") return "bg-blue-500/10 text-blue-600";
   if (status === "pending") return "bg-yellow-500/10 text-yellow-600";
+  if (status === "pending_deletion") return "bg-orange-500/10 text-orange-600";
   if (status === "failed") return "bg-red-500/10 text-red-600";
   return "bg-muted text-muted-foreground";
 }
@@ -49,6 +50,7 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
   const [showEval, setShowEval] = useState(false);
+  const [deferredDeleteNotice, setDeferredDeleteNotice] = useState<string | null>(null);
 
   if (showVersions) {
     return <IndexVersionsPage corpus={corpus} onBack={() => setShowVersions(false)} />;
@@ -104,6 +106,19 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
         </div>
       </div>
 
+      {deferredDeleteNotice && (
+        <div className="flex items-start justify-between gap-3 border-b border-border bg-orange-500/10 px-4 py-2 text-xs text-orange-700 dark:text-orange-400">
+          <span>{deferredDeleteNotice}</span>
+          <button
+            onClick={() => setDeferredDeleteNotice(null)}
+            className="shrink-0 text-orange-700/70 transition-colors hover:text-orange-700 dark:text-orange-400/70 dark:hover:text-orange-400"
+            aria-label="Скрыть уведомление"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -154,6 +169,7 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
                   </a>
                   <button
                     onClick={() => setDeleteTarget(doc.id)}
+                    aria-label="Удалить документ"
                     className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -181,8 +197,14 @@ export function DocumentsPage({ corpus, capabilities, onBack }: DocumentsPagePro
           onCancel={() => setDeleteTarget(null)}
           onConfirm={async () => {
             try {
-              await deleteMutation.mutateAsync(deleteTarget);
+              const result = await deleteMutation.mutateAsync(deleteTarget);
               setDeleteTarget(null);
+              if (!result.deleted) {
+                // Отложенное удаление (у документа чанки в версиях индекса)
+                setDeferredDeleteNotice(
+                  result.reason ?? "Документ помечен на удаление",
+                );
+              }
             } catch {
               // toast via global onError
             }

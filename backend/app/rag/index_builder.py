@@ -122,12 +122,15 @@ async def build_index_version(
     await session.flush()
     index_version_id = index_version.id
 
-    # 3. Список документов
+    # 3. Список документов.
+    # Документы, помеченные на удаление (статусы, кроме указанных),
+    # исключаются из сборки — механизм отложенного удаления.
     result = await session.execute(
         select(Document)
         .where(
             Document.workspace_id == workspace_id,
             Document.corpus_id == corpus_id,
+            Document.status.in_(("pending", "indexing", "ready", "failed")),
         )
         .order_by(Document.uploaded_at)
     )

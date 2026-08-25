@@ -107,6 +107,60 @@ describe("DocumentsPage", () => {
     expect(screen.getByText(/Нет документов/)).toBeInTheDocument();
   });
 
+  it("shows pending_deletion badge for deferred-delete documents (BUG-020)", () => {
+    mockHooks({
+      documents: [makeDoc({ id: "d1", status: "pending_deletion" })],
+      total: 1,
+    });
+
+    render(
+      <DocumentsPage
+        corpus={makeCorpus()}
+        capabilities={["*"]}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("pending_deletion")).toBeInTheDocument();
+  });
+
+  it("shows deferred delete notice when delete is postponed (BUG-020)", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      deleted: false,
+      status: "pending_deletion",
+      reason: "Документ помечен на удаление, но у него остаются чанки",
+    });
+    vi.mocked(useDocuments).mockReturnValue({
+      data: { documents: [makeDoc({ id: "d1" })], total: 1 },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useDocuments>);
+    vi.mocked(useDeleteDocument).mockReturnValue({
+      isPending: false,
+      mutateAsync,
+    } as unknown as ReturnType<typeof useDeleteDocument>);
+
+    render(
+      <DocumentsPage
+        corpus={makeCorpus()}
+        capabilities={["*"]}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Удалить документ"));
+    await waitFor(() => {
+      expect(screen.getByText("Удалить документ?")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Удалить", { selector: "button" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Документ помечен на удаление/)).toBeInTheDocument();
+    });
+    expect(mutateAsync).toHaveBeenCalledWith("d1");
+  });
+
   it("shows error state", () => {
     mockHooks(undefined, new Error("fail"));
 

@@ -606,11 +606,15 @@ export interface paths {
         post?: never;
         /**
          * Delete Document Endpoint
-         * @description Удаление документа.
+         * @description Удаление документа (отложенное, фикс тупика BUG-020).
          *
-         *     Блокируется если документ имеет чанки в любой версии индекса
-         *     (active/building/retired) — удаление чанков ломает rollback (ADR-8).
-         *     Разрешено только для документов без чанков (status=pending/failed).
+         *     Если у документа есть чанки в версиях индекса (в любой — включая
+         *     активную) — физическое удаление НЕ выполняется: целостность снапшотов
+         *     нарушать нельзя, откат (ADR-8) должен восстанавливать версию как была.
+         *     Документ помечается ``status=pending_deletion`` и исключается из
+         *     будущих сборок индекса; повторный вызов удаляет его физически, как
+         *     только чанков не останется (естественный цикл: пересборка → активация
+         *     → очистка мёртвых версий).
          *
          *     Blob физически удаляется если нет других документов, ссылающихся на тот же
          *     sha256 (dedup — разные документы в разных корпусах могут делить blob).
@@ -1723,6 +1727,24 @@ export interface components {
             errors: number;
             /** Avg Latency Ms */
             avg_latency_ms: number | null;
+        };
+        /**
+         * DocumentDeleteResponse
+         * @description Результат удаления документа (механизм отложенного удаления, BUG-020).
+         *
+         *     deleted=True: физическое удаление выполнено.
+         *     deleted=False: документ помечен на удаление (у него есть чанки в
+         *     версиях индекса — целостность снапшотов по ADR-8 сохраняется); он
+         *     исключается из будущих сборок, физически удаляется повторным
+         *     вызовом, когда чанков не останется.
+         */
+        DocumentDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Status */
+            status: string;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * DocumentDetailResponse
@@ -3778,11 +3800,13 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentDeleteResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -682,3 +682,51 @@ async def test_document_status_failed_on_interruption(
     assert doc2.status == "failed"
     assert doc2.error is not None
     assert "Simulated interruption" in doc2.error
+
+
+@pytest.mark.asyncio
+async def test_build_excludes_pending_deletion_documents(
+    db_session: AsyncSession,
+    blob_store: LocalBlobStore,
+    vector_store: SQLiteVectorStore,
+    embedding_backend: StubEmbeddingBackend,
+) -> None:
+    """BUG-020: документ со статусом pending_deletion не попадает в новую сборку."""
+    workspace = Workspace(name="test")
+    db_session.add(workspace)
+    await db_session.flush()
+
+    corpus = await _make_corpus(db_session, workspace)
+    doc_keep = await _add_document(
+        db_session, blob_store, workspace, corpus, "keep.md", b"# Keep\nContent"
+    )
+    doc_gone = await _add_document(
+        db_session, blob_store, workspace, corpus, "gone.md", b"# Gone\nOther"
+    )
+    doc_gone.status = "pending_deletion"
+    await db_session.commit()
+
+    result = await build_index_version(
+        db_session,
+        blob_store,
+        vector_store,
+        embedding_backend,
+        workspace_id=workspace.id,
+        corpus_id=corpus.id,
+    )
+
+    assert result.documents_processed == 1
+
+    await db_session.refresh(doc_keep)
+    await db_session.refresh(doc_gone)
+    assert doc_keep.status == "ready"
+    # Помеченный документ не обрабатывался и не сменил статус
+    assert doc_gone.status == "pending_deletion"
+
+    # Чанки — только у неудалённого документа
+    chunks = await db_session.execute(
+        select(Chunk).where(Chunk.index_version_id == result.index_version_id)
+    )
+    chunk_docs = {c.document_id for c in chunks.scalars().all()}
+    assert doc_keep.id in chunk_docs
+    assert doc_gone.id not in chunk_docs

@@ -53,6 +53,7 @@ export type TraceListResponse = components["schemas"]["TraceListResponse"];
 export type TraceDetailResponse = components["schemas"]["TraceDetailResponse"];
 export type DocumentResponse = components["schemas"]["DocumentResponse"];
 export type DocumentDetailResponse = components["schemas"]["DocumentDetailResponse"];
+export type DocumentDeleteResponse = components["schemas"]["DocumentDeleteResponse"];
 export type DocumentListResponse = components["schemas"]["DocumentListResponse"];
 export type IndexVersionResponse = components["schemas"]["IndexVersionResponse"];
 export type IndexVersionListResponse = components["schemas"]["IndexVersionListResponse"];

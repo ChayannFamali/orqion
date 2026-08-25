@@ -1,13 +1,13 @@
 import { apiFetch } from "./client";
 import { parseError } from "./client";
-import type { DocumentListResponse, DocumentResponse } from "./types";
+import type { DocumentDeleteResponse, DocumentListResponse, DocumentResponse } from "./types";
 
 export async function apiListDocuments(corpusId: string): Promise<DocumentListResponse> {
   return apiFetch<DocumentListResponse>(`/api/corpora/${corpusId}/documents`);
 }
 
-export async function apiDeleteDocument(documentId: string): Promise<void> {
-  await apiFetch<void>(`/api/documents/${documentId}`, { method: "DELETE" });
+export async function apiDeleteDocument(documentId: string): Promise<DocumentDeleteResponse> {
+  return apiFetch<DocumentDeleteResponse>(`/api/documents/${documentId}`, { method: "DELETE" });
 }
 
 export interface UploadProgress {

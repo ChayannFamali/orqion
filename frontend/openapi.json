@@ -1576,7 +1576,7 @@
           "documents"
         ],
         "summary": "Delete Document Endpoint",
-        "description": "Удаление документа.\n\nБлокируется если документ имеет чанки в любой версии индекса\n(active/building/retired) — удаление чанков ломает rollback (ADR-8).\nРазрешено только для документов без чанков (status=pending/failed).\n\nBlob физически удаляется если нет других документов, ссылающихся на тот же\nsha256 (dedup — разные документы в разных корпусах могут делить blob).\nReference counting через SELECT count(*) (T-406a).",
+        "description": "Удаление документа (отложенное, фикс тупика BUG-020).\n\nЕсли у документа есть чанки в версиях индекса (в любой — включая\nактивную) — физическое удаление НЕ выполняется: целостность снапшотов\nнарушать нельзя, откат (ADR-8) должен восстанавливать версию как была.\nДокумент помечается ``status=pending_deletion`` и исключается из\nбудущих сборок индекса; повторный вызов удаляет его физически, как\nтолько чанков не останется (естественный цикл: пересборка → активация\n→ очистка мёртвых версий).\n\nBlob физически удаляется если нет других документов, ссылающихся на тот же\nsha256 (dedup — разные документы в разных корпусах могут делить blob).\nReference counting через SELECT count(*) (T-406a).",
         "operationId": "delete_document_endpoint_api_documents__document_id__delete",
         "parameters": [
           {
@@ -1590,8 +1590,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Successful Response"
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDeleteResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -4559,6 +4566,36 @@
         ],
         "title": "DailyBreakdown",
         "description": "Разбивка по дням."
+      },
+      "DocumentDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "status"
+        ],
+        "title": "DocumentDeleteResponse",
+        "description": "Результат удаления документа (механизм отложенного удаления, BUG-020).\n\ndeleted=True: физическое удаление выполнено.\ndeleted=False: документ помечен на удаление (у него есть чанки в\nверсиях индекса — целостность снапшотов по ADR-8 сохраняется); он\nисключается из будущих сборок, физически удаляется повторным\nвызовом, когда чанков не останется."
       },
       "DocumentDetailResponse": {
         "properties": {

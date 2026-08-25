@@ -19,6 +19,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.document import (
+    DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentResponse,
@@ -27,7 +28,7 @@ from app.auth.dependencies import current_user
 from app.config import Settings
 from app.db.models import Chunk, Corpus, Document, User
 from app.db.session import get_session
-from app.errors import BadRequest, NotFound
+from app.errors import NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.rag.service import get_document, list_documents, upload_document
@@ -318,18 +319,22 @@ async def get_document_content_endpoint(
     )
 
 
-@document_router.delete("/{document_id}", status_code=204)
+@document_router.delete("/{document_id}", response_model=DocumentDeleteResponse)
 async def delete_document_endpoint(
     document_id: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
-) -> None:
-    """Удаление документа.
+) -> DocumentDeleteResponse:
+    """Удаление документа (отложенное, фикс тупика BUG-020).
 
-    Блокируется если документ имеет чанки в любой версии индекса
-    (active/building/retired) — удаление чанков ломает rollback (ADR-8).
-    Разрешено только для документов без чанков (status=pending/failed).
+    Если у документа есть чанки в версиях индекса (в любой — включая
+    активную) — физическое удаление НЕ выполняется: целостность снапшотов
+    нарушать нельзя, откат (ADR-8) должен восстанавливать версию как была.
+    Документ помечается ``status=pending_deletion`` и исключается из
+    будущих сборок индекса; повторный вызов удаляет его физически, как
+    только чанков не останется (естественный цикл: пересборка → активация
+    → очистка мёртвых версий).
 
     Blob физически удаляется если нет других документов, ссылающихся на тот же
     sha256 (dedup — разные документы в разных корпусах могут делить blob).
@@ -340,13 +345,21 @@ async def delete_document_endpoint(
 
     has_chunks = await session.execute(select(exists().where(Chunk.document_id == document.id)))
     if has_chunks.scalar():
-        raise BadRequest(
-            "Документ участвует в версии индекса и не может быть удалён",
-            constraint={
-                "document_id": document.id,
-                "status": document.status,
-            },
-            hint="Удалите все версии индекса, содержащие этот документ, перед удалением",
+        # Отложенное удаление: пометка без физического удаления (идемпотентно).
+        if document.status != "pending_deletion":
+            document.status = "pending_deletion"
+            document.error = None
+            await session.commit()
+        return DocumentDeleteResponse(
+            deleted=False,
+            status="pending_deletion",
+            reason=(
+                "Документ помечен на удаление, но у него остаются чанки в версиях индекса — "
+                "они удаляются только вместе со снапшотом версии (откат по ADR-8 должен "
+                "восстанавливать версию как была). Документ исключён из будущих сборок. "
+                "Пересоберите индекс, активируйте новую версию и выполните очистку мёртвых "
+                "версий — затем повторите удаление."
+            ),
         )
 
     blob_uri = document.blob_uri
@@ -370,3 +383,5 @@ async def delete_document_endpoint(
     if ref_count == 0:
         blob_store = request.app.state.blob_store
         await blob_store.delete(blob_uri)
+
+    return DocumentDeleteResponse(deleted=True, status="deleted")

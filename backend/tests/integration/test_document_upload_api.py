@@ -508,7 +508,7 @@ async def test_delete_document_success(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
 ) -> None:
-    """DELETE /api/documents/{id} → 204 для документа без чанков."""
+    """DELETE /api/documents/{id} → 200 deleted=true для документа без чанков."""
     await _login_with_role(api_client, app_fixture, role_name="developer")
     corpus_id = await _create_corpus(app_fixture)
 
@@ -517,7 +517,8 @@ async def test_delete_document_success(
     document_id = upload_resp.json()["id"]
 
     resp = await api_client.delete(f"/api/documents/{document_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": True, "status": "deleted", "reason": None}
 
     # Документ больше не доступен
     resp_get = await api_client.get(f"/api/documents/{document_id}")
@@ -584,12 +585,12 @@ async def test_delete_document_denied_for_invisible_corpus(
 
 
 @pytest.mark.asyncio
-async def test_delete_document_blocked_when_has_chunks(
+async def test_delete_document_with_chunks_deferred(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,
 ) -> None:
-    """DELETE → 400 если документ имеет чанки в любой версии индекса."""
-    from app.db.models import Chunk, IndexVersion
+    """BUG-020: документ с чанками помечается на удаление (не 400, не физическое удаление)."""
+    from app.db.models import Chunk, Document, IndexVersion
 
     await _login_with_role(api_client, app_fixture, role_name="developer")
     corpus_id = await _create_corpus(app_fixture)
@@ -613,6 +614,7 @@ async def test_delete_document_blocked_when_has_chunks(
         )
         session.add(iv)
         await session.flush()
+        index_version_id = iv.id
 
         chunk = Chunk(
             workspace_id=workspace_id,
@@ -625,10 +627,40 @@ async def test_delete_document_blocked_when_has_chunks(
         session.add(chunk)
         await session.commit()
 
+    # Первый вызов: отложенное удаление
     resp = await api_client.delete(f"/api/documents/{document_id}")
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     data = resp.json()
-    assert data["error"] == "bad_request"
+    assert data["deleted"] is False
+    assert data["status"] == "pending_deletion"
+    assert data["reason"]
+
+    # Документ помечен, но физически существует
+    async with factory() as session:
+        doc = await session.get(Document, document_id)
+        assert doc is not None
+        assert doc.status == "pending_deletion"
+        assert doc.error is None
+
+    # Повторный вызов идемпотентен
+    resp2 = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp2.status_code == 200
+    assert resp2.json()["deleted"] is False
+
+    # Чанки ушли вместе со снапшотом версии (имитация очистки) →
+    # повторное удаление выполняется физически (ретрая-семантика)
+    async with factory() as session:
+        iv_obj = await session.get(IndexVersion, index_version_id)
+        assert iv_obj is not None
+        await session.delete(iv_obj)
+        await session.commit()
+
+    resp3 = await api_client.delete(f"/api/documents/{document_id}")
+    assert resp3.status_code == 200
+    assert resp3.json() == {"deleted": True, "status": "deleted", "reason": None}
+
+    async with factory() as session:
+        assert await session.get(Document, document_id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -662,7 +694,8 @@ async def test_delete_document_removes_blob_when_last_ref(
 
     # Удаляем документ
     resp = await api_client.delete(f"/api/documents/{document_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
 
     # Blob удалён — последний документ удалён
     assert not await blob_store.exists(blob_uri)
@@ -709,14 +742,16 @@ async def test_delete_document_keeps_blob_when_other_refs(
 
     # Удаляем первый документ
     resp = await api_client.delete(f"/api/documents/{doc1_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
 
     # Blob всё ещё существует — второй документ ссылается
     assert await blob_store.exists(blob_uri)
 
     # Удаляем второй документ
     resp = await api_client.delete(f"/api/documents/{doc2_id}")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
 
     # Теперь blob удалён — последний документ удалён
     assert not await blob_store.exists(blob_uri)
