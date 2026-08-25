@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 from collections.abc import AsyncIterator
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -45,6 +46,22 @@ def _corpus_visible(corpora_patterns: list[str], corpus_name: str) -> bool:
     if WILDCARD in corpora_patterns:
         return True
     return any(fnmatch.fnmatch(corpus_name, p) for p in corpora_patterns)
+
+
+def _inline_disposition(filename: str) -> str:
+    """Content-Disposition: inline с кодированием имени по RFC 6266/5987 (BUG-021).
+
+    HTTP-заголовки кодируются в latin-1: не-ASCII имя (кириллица и т.п.)
+    в голом filename= давал UnicodeEncodeError при отправке ответа → 500.
+    Даём оба параметра: латинизируемый фолбэк и полное имя в filename*.
+    """
+    ascii_fallback = (
+        filename.encode("ascii", "ignore").decode("ascii").replace('"', "").strip().strip(" -")
+    )
+    if not ascii_fallback:
+        ascii_fallback = "document"
+    encoded = quote(filename, safe="")
+    return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 async def _resolve_policy_and_check(
@@ -267,7 +284,9 @@ async def get_document_content_endpoint(
     """Потоковая отдача содержимого документа через BlobStore (T-306).
 
     Оригинал читается через абстракцию BlobStore (ADR-7),
-    не отдаёт blob_uri напрямую.
+    не отдаёт blob_uri напрямую. Имя файла в Content-Disposition
+    кодируется по RFC 6266/5987 — не-ASCII имена (кириллица) безопасны
+    для отправки (фикс BUG-021).
     """
     workspace_id = request.app.state.workspace_id
     document = await _load_document_with_corpus_check(session, user, document_id, workspace_id)
@@ -294,7 +313,7 @@ async def get_document_content_endpoint(
         content_iterator(),
         media_type=document.mime,
         headers={
-            "Content-Disposition": f'inline; filename="{document.filename}"',
+            "Content-Disposition": _inline_disposition(document.filename),
         },
     )
 

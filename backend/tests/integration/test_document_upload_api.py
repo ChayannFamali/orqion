@@ -409,6 +409,34 @@ async def test_document_content_denied_without_capability(
 
 
 @pytest.mark.asyncio
+async def test_document_content_cyrillic_filename(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """BUG-021: не-ASCII имя файла не ломает отдачу /content (раньше 500)."""
+    await _login_with_role(api_client, app_fixture, role_name="developer")
+    corpus_id = await _create_corpus(app_fixture)
+
+    cyrillic_name = "СОБЕСЕДОВАНИЕ - 2026-08-15_10-58-34.md"
+    content = "# Заголовок интервью".encode()
+    upload_resp = await _upload_file(
+        api_client, corpus_id, filename=cyrillic_name, content=content, content_type="text/markdown"
+    )
+    assert upload_resp.status_code == 201, upload_resp.text
+    assert upload_resp.json()["filename"] == cyrillic_name
+    document_id = upload_resp.json()["id"]
+
+    resp = await api_client.get(f"/api/documents/{document_id}/content")
+    assert resp.status_code == 200, resp.text
+    assert resp.content == content
+
+    disposition = resp.headers.get("content-disposition", "")
+    assert "filename*=UTF-8''" in disposition
+    # Заголовок обязан быть латинице-безопасным (корень бага — 500 на отправке)
+    disposition.encode("latin-1")
+
+
+@pytest.mark.asyncio
 async def test_document_detail_denied_for_invisible_corpus(
     api_client: httpx.AsyncClient,
     app_fixture: FastAPI,

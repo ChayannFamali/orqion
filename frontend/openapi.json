@@ -1612,7 +1612,7 @@
           "documents"
         ],
         "summary": "Get Document Content Endpoint",
-        "description": "Потоковая отдача содержимого документа через BlobStore (T-306).\n\nОригинал читается через абстракцию BlobStore (ADR-7),\nне отдаёт blob_uri напрямую.",
+        "description": "Потоковая отдача содержимого документа через BlobStore (T-306).\n\nОригинал читается через абстракцию BlobStore (ADR-7),\nне отдаёт blob_uri напрямую. Имя файла в Content-Disposition\nкодируется по RFC 6266/5987 — не-ASCII имена (кириллица) безопасны\nдля отправки (фикс BUG-021).",
         "operationId": "get_document_content_endpoint_api_documents__document_id__content_get",
         "parameters": [
           {

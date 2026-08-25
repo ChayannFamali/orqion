@@ -634,7 +634,9 @@ export interface paths {
          * @description Потоковая отдача содержимого документа через BlobStore (T-306).
          *
          *     Оригинал читается через абстракцию BlobStore (ADR-7),
-         *     не отдаёт blob_uri напрямую.
+         *     не отдаёт blob_uri напрямую. Имя файла в Content-Disposition
+         *     кодируется по RFC 6266/5987 — не-ASCII имена (кириллица) безопасны
+         *     для отправки (фикс BUG-021).
          */
         get: operations["get_document_content_endpoint_api_documents__document_id__content_get"];
         put?: never;
