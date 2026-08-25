@@ -2565,6 +2565,47 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Delete Provider Endpoint",
+        "description": "Удаление провайдера — только при отсутствии зарегистрированных моделей.\n\nОсновной путь «выключить» провайдера — PATCH enabled=false. Физическое\nудаление разрешено только без моделей (заметка к T-201, T-110):\nистория сообщений и расход привязаны к модели; при её удалении ссылки\nобнуляются/переносятся на сентинел (T-443, BUG-019), поэтому у\nпровайдера без моделей исторических ссылок не остаётся.\n\nПровайдер, владеющий моделью эмбеддингов из окружения, автоматически\nблокируется этим же правилом (у него есть модель).",
+        "operationId": "delete_provider_endpoint_api_providers__provider_id__delete",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/providers/{provider_id}/probe": {
@@ -6169,6 +6210,19 @@
           "base_url"
         ],
         "title": "ProviderCreate"
+      },
+      "ProviderDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "ProviderDeleteResponse"
       },
       "ProviderListResponse": {
         "properties": {

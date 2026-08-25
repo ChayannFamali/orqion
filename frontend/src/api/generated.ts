@@ -993,7 +993,20 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Provider Endpoint
+         * @description Удаление провайдера — только при отсутствии зарегистрированных моделей.
+         *
+         *     Основной путь «выключить» провайдера — PATCH enabled=false. Физическое
+         *     удаление разрешено только без моделей (заметка к T-201, T-110):
+         *     история сообщений и расход привязаны к модели; при её удалении ссылки
+         *     обнуляются/переносятся на сентинел (T-443, BUG-019), поэтому у
+         *     провайдера без моделей исторических ссылок не остаётся.
+         *
+         *     Провайдер, владеющий моделью эмбеддингов из окружения, автоматически
+         *     блокируется этим же правилом (у него есть модель).
+         */
+        delete: operations["delete_provider_endpoint_api_providers__provider_id__delete"];
         options?: never;
         head?: never;
         /** Update Provider */
@@ -2360,6 +2373,11 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+        };
+        /** ProviderDeleteResponse */
+        ProviderDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
         };
         /** ProviderListResponse */
         ProviderListResponse: {
@@ -4454,6 +4472,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_provider_endpoint_api_providers__provider_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderDeleteResponse"];
                 };
             };
             /** @description Validation Error */

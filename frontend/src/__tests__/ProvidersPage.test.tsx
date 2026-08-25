@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ProvidersPage } from "../pages/ProvidersPage";
-import { useProviders, useCreateProvider, useUpdateProvider, useProbeProvider, useCreateModel, useUpdateModel } from "../hooks/useProviders";
+import { useProviders, useCreateProvider, useUpdateProvider, useProbeProvider, useCreateModel, useUpdateModel, useDeleteProvider } from "../hooks/useProviders";
 import type { ProviderListResponse } from "../api/types";
 
 vi.mock("../hooks/useProviders");
@@ -279,5 +279,37 @@ describe("ProvidersPage", () => {
 
     // Модалка остаётся открытой (не закрылась из-за ошибки)
     expect(screen.getByText("Изменить модель")).toBeInTheDocument();
+  });
+
+  it("opens delete provider modal and calls delete mutation", async () => {
+    const provider = makeProvider({ id: "p1", kind: "ollama" });
+    vi.mocked(useProviders).mockReturnValue({
+      data: mockProvidersResponse([provider]),
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useProviders>);
+    vi.mocked(useCreateProvider).mockReturnValue({} as ReturnType<typeof useCreateProvider>);
+    vi.mocked(useUpdateProvider).mockReturnValue({} as ReturnType<typeof useUpdateProvider>);
+    vi.mocked(useProbeProvider).mockReturnValue({} as ReturnType<typeof useProbeProvider>);
+    vi.mocked(useCreateModel).mockReturnValue({} as ReturnType<typeof useCreateModel>);
+    vi.mocked(useUpdateModel).mockReturnValue({} as ReturnType<typeof useUpdateModel>);
+    const mutateAsync = vi.fn().mockResolvedValue({ deleted: true });
+    vi.mocked(useDeleteProvider).mockReturnValue({
+      isPending: false,
+      mutateAsync,
+    } as unknown as ReturnType<typeof useDeleteProvider>);
+
+    render(<ProvidersPage />);
+
+    fireEvent.click(screen.getByLabelText("Удалить провайдер"));
+    expect(screen.getByText("Удалить провайдер")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Возможно только при отсутствии зарегистрированных моделей/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Удалить", { selector: "button" }));
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith("p1");
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Plus, X, Zap, Key, Activity, CheckCircle, XCircle, Settings2, Download, Trash2 } from "lucide-react";
-import { isTerminalDownloadStatus, useCreateModel, useCreateProvider, useDeleteModel, useModelDownloadStatus, useProbeProvider, useProviders, useStartModelDownload, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
+import { isTerminalDownloadStatus, useCreateModel, useCreateProvider, useDeleteModel, useDeleteProvider, useModelDownloadStatus, useProbeProvider, useProviders, useStartModelDownload, useUpdateModel, useUpdateProvider } from "../hooks/useProviders";
 import type { DownloadStatusResponse, ModelResponse, ProbeResult, ProviderKind, ProviderResponse } from "../api/types";
 
 /** Канонические виды провайдеров для формы создания (валидация — на уровне API-схемы). */
@@ -24,6 +24,8 @@ export function ProvidersPage() {
     model: ModelResponse;
     providerKind: string;
   } | null>(null);
+  // Удаление провайдера (только без моделей — семантика 1, заметка к T-201)
+  const [deletingProvider, setDeletingProvider] = useState<ProviderResponse | null>(null);
 
   if (isLoading) {
     return (
@@ -77,6 +79,7 @@ export function ProvidersPage() {
                 onDeleteModel={(model) =>
                   setDeletingModel({ model, providerKind: provider.kind })
                 }
+                onDeleteProvider={() => setDeletingProvider(provider)}
               />
             ))}
           </div>
@@ -112,6 +115,12 @@ export function ProvidersPage() {
           onClose={() => setDeletingModel(null)}
         />
       )}
+      {deletingProvider && (
+        <DeleteProviderModal
+          provider={deletingProvider}
+          onClose={() => setDeletingProvider(null)}
+        />
+      )}
     </div>
   );
 }
@@ -124,6 +133,7 @@ function ProviderCard({
   onAddModel,
   onEditModel,
   onDeleteModel,
+  onDeleteProvider,
 }: {
   provider: ProviderResponse;
   probeResult?: ProbeResult;
@@ -132,6 +142,7 @@ function ProviderCard({
   onAddModel: (upstreamName?: string) => void;
   onEditModel: (model: ModelResponse) => void;
   onDeleteModel: (model: ModelResponse) => void;
+  onDeleteProvider: () => void;
 }) {
   const probeMutation = useProbeProvider();
   const updateMutation = useUpdateProvider();
@@ -216,6 +227,13 @@ function ProviderCard({
             className="rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
           >
             Изменить
+          </button>
+          <button
+            onClick={onDeleteProvider}
+            aria-label="Удалить провайдер"
+            className="rounded-md border border-border p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -663,6 +681,71 @@ function DeleteModelModal({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Удаление провайдера: только без моделей (иначе бэкенд отвечает 409). */
+function DeleteProviderModal({
+  provider,
+  onClose,
+}: {
+  provider: ProviderResponse;
+  onClose: () => void;
+}) {
+  const deleteMutation = useDeleteProvider();
+
+  const handleConfirm = async () => {
+    try {
+      await deleteMutation.mutateAsync(provider.id);
+      onClose();
+    } catch {
+      // 409 «есть модели» и прочие ошибки — через глобальный mutations.onError
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Удалить провайдер</h3>
+          <button onClick={onClose}>
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <p className="text-sm">
+            Удалить провайдер <span className="font-medium">{provider.kind}</span> (
+            {provider.base_url}) из orqion?
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Возможно только при отсутствии зарегистрированных моделей. Чтобы временно
+            выключить провайдер, используйте «Отключить».
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirm}
+              disabled={deleteMutation.isPending}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground transition-colors hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Удалить
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-md border border-border px-4 py-2 text-sm transition-colors hover:bg-accent"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

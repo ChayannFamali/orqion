@@ -1,8 +1,16 @@
 import { apiFetch } from "./client";
-import type { DownloadStatusResponse, ModelCreate, ModelDeleteResponse, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
+import type { DownloadStatusResponse, ModelCreate, ModelDeleteResponse, ModelResponse, ModelUpdate, ProbeResult, ProviderCreate, ProviderDeleteResponse, ProviderListResponse, ProviderResponse, ProviderUpdate } from "./types";
 
 export async function apiListProviders(): Promise<ProviderListResponse> {
   return apiFetch<ProviderListResponse>("/api/providers");
+}
+
+export async function apiDeleteProvider(
+  providerId: string,
+): Promise<ProviderDeleteResponse> {
+  return apiFetch<ProviderDeleteResponse>(`/api/providers/${providerId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function apiCreateProvider(body: ProviderCreate): Promise<ProviderResponse> {

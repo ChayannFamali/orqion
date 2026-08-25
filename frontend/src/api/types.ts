@@ -51,6 +51,7 @@ export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];
 export type TraceDetailResponse = components["schemas"]["TraceDetailResponse"];
+export type ProviderDeleteResponse = components["schemas"]["ProviderDeleteResponse"];
 export type DocumentResponse = components["schemas"]["DocumentResponse"];
 export type DocumentDetailResponse = components["schemas"]["DocumentDetailResponse"];
 export type DocumentDeleteResponse = components["schemas"]["DocumentDeleteResponse"];

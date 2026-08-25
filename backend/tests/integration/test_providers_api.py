@@ -469,3 +469,169 @@ async def test_update_provider_kind_canonical(
         json={"kind": "lm"},
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Удаление провайдера (семантика 1: только без моделей)
+# ---------------------------------------------------------------------------
+
+
+async def _login_with_role(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    role_name: str,
+    email: str,
+) -> None:
+    """Локальный логин под ролью (паттерн _login_as_admin, роль параметризована)."""
+    from app.policy.presets import BUILTIN_ROLES
+
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        ws = Workspace(name="test")
+        session.add(ws)
+        await session.flush()
+
+        role = Role(
+            workspace_id=ws.id,
+            name=role_name,
+            is_builtin=True,
+            policy=BUILTIN_ROLES[role_name].model_dump(),
+        )
+        session.add(role)
+        await session.flush()
+
+        user = User(
+            workspace_id=ws.id,
+            email=email,
+            password_hash=hash_password("password-123"),
+            role_id=role.id,
+        )
+        session.add(user)
+        await session.flush()
+
+        session_id = await create_session(session, user.id, ws.id, Settings())
+        await session.commit()
+
+    api_client.cookies.set(COOKIE_NAME, session_id)
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_without_models(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """DELETE провайдера без моделей → 200, провайдер исчезает."""
+    await _login_as_admin(api_client, app_fixture)
+
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "ollama", "base_url": "http://localhost:11434"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    resp = await api_client.delete(f"/api/providers/{provider_id}")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": True}
+
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        from app.db.models import Provider
+
+        assert await session.get(Provider, provider_id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_with_models_conflict(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """DELETE провайдера с моделями → 409 (семантика 1, заметка к T-201)."""
+    await _login_as_admin(api_client, app_fixture)
+
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "external", "base_url": "http://localhost:1234/v1"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    model_resp = await api_client.post(
+        f"/api/providers/{provider_id}/models",
+        json={"alias": "m1", "upstream_name": "upstream-m1"},
+    )
+    assert model_resp.status_code == 201
+
+    resp = await api_client.delete(f"/api/providers/{provider_id}")
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["error"] == "conflict"
+    assert body["constraint"]["reason"] == "has_models"
+    assert body["constraint"]["models_count"] == 1
+    assert body["hint"]
+
+    # Провайдер на месте
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        from app.db.models import Provider
+
+        assert await session.get(Provider, provider_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_after_models_removed(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """После удаления всех моделей провайдер удаляется."""
+    await _login_as_admin(api_client, app_fixture)
+
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "external", "base_url": "http://localhost:1234/v1"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    model_resp = await api_client.post(
+        f"/api/providers/{provider_id}/models",
+        json={"alias": "m1", "upstream_name": "upstream-m1"},
+    )
+    model_id = model_resp.json()["id"]
+
+    assert (await api_client.delete(f"/api/providers/{provider_id}")).status_code == 409
+
+    del_model = await api_client.delete(f"/api/providers/models/{model_id}")
+    assert del_model.status_code == 200
+
+    resp = await api_client.delete(f"/api/providers/{provider_id}")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_denied_without_capability(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    """Не-админ (без manage_providers) → 404."""
+    await _login_as_admin(api_client, app_fixture)
+
+    create_resp = await api_client.post(
+        "/api/providers",
+        json={"kind": "ollama", "base_url": "http://localhost:11434"},
+    )
+    provider_id = create_resp.json()["id"]
+
+    await _login_with_role(api_client, app_fixture, "developer", "dev@orqion.local")
+
+    resp = await api_client.delete(f"/api/providers/{provider_id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_not_found(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+) -> None:
+    await _login_as_admin(api_client, app_fixture)
+
+    resp = await api_client.delete("/api/providers/nonexistent-provider-id")
+    assert resp.status_code == 404

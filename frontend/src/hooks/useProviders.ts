@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiCreateModel, apiCreateProvider, apiDeleteModel, apiGetModelDownloadStatus, apiListProviders, apiProbeProvider, apiStartModelDownload, apiUpdateModel, apiUpdateProvider } from "../api/providers";
+import { apiCreateModel, apiCreateProvider, apiDeleteModel, apiDeleteProvider, apiGetModelDownloadStatus, apiListProviders, apiProbeProvider, apiStartModelDownload, apiUpdateModel, apiUpdateProvider } from "../api/providers";
 import { queryKeys } from "../api/query-keys";
 import type { DownloadStatusResponse, ModelCreate, ModelUpdate, ProviderCreate, ProviderUpdate } from "../api/types";
 
@@ -49,6 +49,17 @@ export function useProbeProvider() {
   return useMutation({
     mutationFn: ({ providerId, deep = false }: { providerId: string; deep?: boolean }) =>
       apiProbeProvider(providerId, deep),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.providers.all });
+    },
+  });
+}
+
+/** Удаление провайдера (только без моделей — семантика 1, заметка к T-201). */
+export function useDeleteProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (providerId: string) => apiDeleteProvider(providerId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.providers.all });
     },

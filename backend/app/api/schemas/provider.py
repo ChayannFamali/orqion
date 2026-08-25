@@ -30,6 +30,10 @@ class ProviderUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class ProviderDeleteResponse(BaseModel):
+    deleted: bool
+
+
 class DownloadModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=512)
 

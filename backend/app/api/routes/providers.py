@@ -18,6 +18,7 @@ from app.api.schemas.provider import (
     ModelResponse,
     ModelUpdate,
     ProviderCreate,
+    ProviderDeleteResponse,
     ProviderListResponse,
     ProviderResponse,
     ProviderUpdate,
@@ -212,6 +213,64 @@ async def update_provider(
     await session.refresh(provider, ["models"])
 
     return _provider_to_response(provider)
+
+
+@router.delete("/{provider_id}", response_model=ProviderDeleteResponse)
+async def delete_provider_endpoint(
+    provider_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_user),
+) -> ProviderDeleteResponse:
+    """Удаление провайдера — только при отсутствии зарегистрированных моделей.
+
+    Основной путь «выключить» провайдера — PATCH enabled=false. Физическое
+    удаление разрешено только без моделей (заметка к T-201, T-110):
+    история сообщений и расход привязаны к модели; при её удалении ссылки
+    обнуляются/переносятся на сентинел (T-443, BUG-019), поэтому у
+    провайдера без моделей исторических ссылок не остаётся.
+
+    Провайдер, владеющий моделью эмбеддингов из окружения, автоматически
+    блокируется этим же правилом (у него есть модель).
+    """
+    if not await _check_manage_providers(session, user):
+        raise NotFound(
+            constraint={"object": "providers", "reason": "manage_providers required"},
+            hint="Нет права на управление провайдерами",
+        )
+
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Provider).where(Provider.id == provider_id, Provider.workspace_id == workspace_id)
+    )
+    provider = result.scalar_one_or_none()
+    if provider is None:
+        raise NotFound(
+            constraint={"object": "provider", "id": provider_id},
+            hint="Провайдер не найден",
+        )
+
+    models_count = await session.scalar(
+        select(func.count()).select_from(Model).where(Model.provider_id == provider_id)
+    )
+    if models_count:
+        raise Conflict(
+            "У провайдера есть зарегистрированные модели — удаление заблокировано",
+            constraint={
+                "object": "provider",
+                "id": provider_id,
+                "reason": "has_models",
+                "models_count": models_count,
+            },
+            hint=(
+                "Удалите модели провайдера и повторите; основной путь временного "
+                "отключения — кнопка «Отключить»"
+            ),
+        )
+
+    await session.delete(provider)
+    await session.commit()
+    return ProviderDeleteResponse(deleted=True)
 
 
 @router.post("/{provider_id}/probe")
