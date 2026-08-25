@@ -136,13 +136,20 @@ async def test_chat_save_skips_fts_dual_write_when_unavailable(
 
     factory = app_fixture.state.db_session_factory
     async with factory() as session:
-        count = (
-            await session.execute(
-                sa_text("SELECT COUNT(*) FROM fts_messages WHERE conversation_id = :cid"),
-                {"cid": conv_id},
-            )
-        ).scalar_one()
-    assert count == 0
+        # BUG-018 (догоняющий фикс): COUNT проверяется только там, где
+        # таблица физически существует (диалект-гейт фикстуры — на
+        # SQLite она создана). На остальных диалектах само успешное
+        # сохранение есть доказательство скипа: попытка записи в
+        # несуществующую таблицу уронила бы сам чат.
+        bind = session.bind
+        if bind is not None and bind.dialect.name == "sqlite":
+            count = (
+                await session.execute(
+                    sa_text("SELECT COUNT(*) FROM fts_messages WHERE conversation_id = :cid"),
+                    {"cid": conv_id},
+                )
+            ).scalar_one()
+            assert count == 0
 
 
 @pytest.mark.asyncio
