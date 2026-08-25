@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -72,8 +73,49 @@ async def provider_api_client(app_provider_fixture: FastAPI) -> AsyncIterator[ht
         yield client
 
 
-async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
+@pytest_asyncio.fixture
+async def app_migrated_fixture(tmp_path: Path) -> AsyncIterator[FastAPI]:
+    """BUG-019: приложение со схемой из alembic-миграций (не create_all).
+
+    create_all строит таблицы из models.py и не воспроизводит расхождения
+    реальной схемы миграций (пережившие FK, виртуальные таблицы). Тесты
+    регрессии схемы должны идти против мигрированной БД.
+
+    URL — по паттерну tests.fixtures.database: ORQION_DATABASE_URL из env
+    (PostgreSQL-нога) либо файл в tmp_path. In-memory не годится: миграции
+    и приложение открывают разные соединения, а каждый :memory: — пустая БД.
+    """
+    from tests.fixtures.database import EnvFreeSettings, _get_test_database_url
+
+    settings = EnvFreeSettings(
+        database_url=_get_test_database_url(tmp_path),
+        blob_store_path=str(tmp_path / "blobs"),
+        vector_store_path=str(tmp_path / "vec.db"),
+        log_level="WARNING",
+    )
+    async for app in _build_app(settings, migrated=True):
+        yield app
+
+
+@pytest_asyncio.fixture
+async def migrated_api_client(
+    app_migrated_fixture: FastAPI,
+) -> AsyncIterator[httpx.AsyncClient]:
+    """BUG-019: тестовый клиент для app_migrated_fixture."""
+    transport = httpx.ASGITransport(app=app_migrated_fixture)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        yield client
+
+
+async def _build_app(settings: Settings, *, migrated: bool = False) -> AsyncIterator[FastAPI]:
     """Общая логика app_fixture — вызывается с разными settings.
+
+    migrated=False: схема через create_all (быстро, подавляющее большинство
+    тестов). migrated=True: схема через alembic upgrade head (BUG-019 —
+    реальная схема миграций со всеми диалект-особенностями).
 
     embeddings_backend=provider → resolve_embedding_backend (реальный
     ProviderEmbeddingBackend через alias-резолв, как в lifespan).
@@ -88,20 +130,26 @@ async def _build_app(settings: Settings) -> AsyncIterator[FastAPI]:
 
     from app.db.base import Base
     from app.db.models import Workspace  # noqa: F401
-    from sqlalchemy import text as sa_text
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # T-436: FTS5 virtual table — не входит в Base.metadata, создаём явно.
-        # BUG-017: только для SQLite — на PostgreSQL синтаксиса fts5 нет
-        # (диалект-гейт миграции 0024, прецедент BUG-005/0013).
-        if conn.dialect.name == "sqlite":
-            await conn.execute(
-                sa_text(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages "
-                    "USING fts5(content, conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED)"
+    if migrated:
+        from app.db.migrate import run_migrations_sync
+
+        await asyncio.to_thread(run_migrations_sync, settings.database_url)
+    else:
+        from sqlalchemy import text as sa_text
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # T-436: FTS5 virtual table — не входит в Base.metadata, создаём явно.
+            # BUG-017: только для SQLite — на PostgreSQL синтаксиса fts5 нет
+            # (диалект-гейт миграции 0024, прецедент BUG-005/0013).
+            if conn.dialect.name == "sqlite":
+                await conn.execute(
+                    sa_text(
+                        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages "
+                        "USING fts5(content, conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED)"
+                    )
                 )
-            )
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)

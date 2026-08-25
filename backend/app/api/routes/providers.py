@@ -24,12 +24,13 @@ from app.api.schemas.provider import (
 )
 from app.auth.dependencies import current_user
 from app.crypto.service import decrypt_api_key, encrypt_api_key
-from app.db.models import Corpus, Message, Model, Provider, UsageEvent, User
+from app.db.models import Corpus, Message, Model, Provider, UsageDaily, UsageEvent, User
 from app.db.session import get_session
 from app.errors import BadRequest, Conflict, NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.providers.client import normalize_base_url
+from app.usage.constants import NIL_ID
 
 router = APIRouter(
     prefix="/api/providers", tags=["providers"], dependencies=[Depends(current_user)]
@@ -40,6 +41,49 @@ async def _check_manage_providers(session: AsyncSession, user: User) -> bool:
     """True если admin (через *). Иначе — NotFound (не раскрываем существование)."""
     policy = await resolve_policy(session, user)
     return WILDCARD in policy.capabilities or "manage_providers" in policy.capabilities
+
+
+async def _reassign_usage_daily(session: AsyncSession, model_id: str) -> None:
+    """BUG-019: строки usage_daily удаляемой модели переводятся на сентинел NIL_ID.
+
+    usage_daily хранится бессрочно (§5.3, ADR-16): агрегат обязан переживать
+    удаление первичных данных, а обнулить model_id нельзя — он часть
+    составного PK. Если сентинел-строка (тот же workspace/date/user) уже
+    существует — счётчики мерджатся в неё. Та же семантика «записи о расходе
+    сохраняются, модель отвязывается», что для message/usage_event (T-443).
+    """
+    rows = (
+        (await session.execute(select(UsageDaily).where(UsageDaily.model_id == model_id)))
+        .scalars()
+        .all()
+    )
+    for row in rows:
+        existing = await session.get(UsageDaily, (row.workspace_id, row.date, row.user_id, NIL_ID))
+        if existing is not None:
+            existing.requests += row.requests
+            existing.tokens_in += row.tokens_in
+            existing.tokens_out += row.tokens_out
+            existing.cost += row.cost
+            existing.errors += row.errors
+            # avg_latency_ms: среднее по выборке; взвешенный пересчёт не
+            # выполняется — остаётся значение существующей сентинел-строки.
+            await session.delete(row)
+        else:
+            await session.delete(row)
+            session.add(
+                UsageDaily(
+                    workspace_id=row.workspace_id,
+                    date=row.date,
+                    user_id=row.user_id,
+                    model_id=NIL_ID,
+                    requests=row.requests,
+                    tokens_in=row.tokens_in,
+                    tokens_out=row.tokens_out,
+                    cost=row.cost,
+                    errors=row.errors,
+                    avg_latency_ms=row.avg_latency_ms,
+                )
+            )
 
 
 def _provider_to_response(provider: Provider) -> ProviderResponse:
@@ -379,6 +423,9 @@ async def delete_model(
     Ссылки из истории (message.model_id, usage_event.model_id) обнуляются —
     прецедент usage_event «при удалении диалога связи становятся NULL»:
     записи о сообщениях и расходе сохраняются, модель отвязывается.
+    Строки бессрочного агрегата usage_daily переводятся на сентинел NIL_ID
+    (BUG-019): обнуление невозможно (model_id в составе PK), удаление
+    противоречило бы §5.3 — агрегат переживает первичные данные.
     """
     if not await _check_manage_providers(session, user):
         raise NotFound(
@@ -451,6 +498,7 @@ async def delete_model(
     await session.execute(
         update(UsageEvent).where(UsageEvent.model_id == model.id).values(model_id=None)
     )
+    await _reassign_usage_daily(session, model.id)
     await session.delete(model)
     await session.commit()
 

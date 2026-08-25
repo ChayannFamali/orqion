@@ -15,7 +15,9 @@ from tests.fixtures.blob import blob_store, blob_store_factory  # noqa: F401
 from tests.fixtures.client import (  # noqa: F401
     api_client,
     app_fixture,
+    app_migrated_fixture,
     app_provider_fixture,
+    migrated_api_client,
     provider_api_client,
     provider_settings,
 )

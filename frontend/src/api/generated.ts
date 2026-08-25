@@ -1059,6 +1059,9 @@ export interface paths {
          *     Ссылки из истории (message.model_id, usage_event.model_id) обнуляются —
          *     прецедент usage_event «при удалении диалога связи становятся NULL»:
          *     записи о сообщениях и расходе сохраняются, модель отвязывается.
+         *     Строки бессрочного агрегата usage_daily переводятся на сентинел NIL_ID
+         *     (BUG-019): обнуление невозможно (model_id в составе PK), удаление
+         *     противоречило бы §5.3 — агрегат переживает первичные данные.
          */
         delete: operations["delete_model_api_providers_models__model_id__delete"];
         options?: never;
