@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -16,6 +16,15 @@ import { AuditLogPage } from "../pages/AuditLogPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
+/** Допустимые ключи разделов (из реестра навигации). */
+const SECTION_KEYS = new Set(navItems.map((item) => item.key));
+
+/** Раздел из адресной строки (#/corpora → "corpora"); неизвестный/пустой → "chat". */
+export function sectionFromHash(): string {
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  return SECTION_KEYS.has(raw) ? raw : "chat";
+}
+
 interface AppLayoutProps {
   email: string;
   capabilities: string[];
@@ -30,11 +39,38 @@ export function AppLayout({
   impersonatedByEmail,
 }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [activeSection, setActiveSection] = useState("chat");
+  // Раздел сохраняется в адресе страницы (#/corpora): после обновления
+  // пользователь остаётся там, где был, и работают кнопки браузера
+  // назад/вперёд и прямые ссылки на разделы.
+  const [activeSection, setActiveSection] = useState(sectionFromHash);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
 
-  const visibleItems = navItems.filter((item) => isNavVisible(item, capabilities));
+  const visibleItems = useMemo(
+    () => navItems.filter((item) => isNavVisible(item, capabilities)),
+    [capabilities],
+  );
   const activeItem = visibleItems.find((item) => item.key === activeSection);
+
+  // Реакция на навигацию браузера (назад/вперёд, прямой ввод адреса)
+  useEffect(() => {
+    const onHashChange = () => setActiveSection(sectionFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Запись текущего раздела в адрес
+  useEffect(() => {
+    if (window.location.hash !== `#/${activeSection}`) {
+      window.location.hash = `/${activeSection}`;
+    }
+  }, [activeSection]);
+
+  // Раздел из адреса может быть недоступен пользователю — возврат в чат
+  useEffect(() => {
+    if (!visibleItems.some((item) => item.key === activeSection)) {
+      setActiveSection("chat");
+    }
+  }, [visibleItems, activeSection]);
 
   const renderContent = () => {
     if (activeSection === "chat") {
