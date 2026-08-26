@@ -7,7 +7,7 @@ name = "orqion"
 version = "0.1.0"
 description = "Open-source LLM application: chat, provider routing, RAG, role-based access control"
 requires-python = ">=3.12"
-license = {text = "Apache-2.0"}
+license = {text = "BUSL-1.1"}
 
 dependencies = [
     "fastapi==0.141.1",
