@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import ForceGraph2D from "react-force-graph-2d";
+import { useEffect, useRef, useState } from "react";
+import cytoscape from "cytoscape";
+import fcose from "cytoscape-fcose";
+import type { Core, ElementDefinition } from "cytoscape";
 import { Loader2 } from "lucide-react";
 import { useCorpora } from "../hooks/useCorpora";
 import { useCodeGraph } from "../hooks/useCodeGraph";
@@ -12,54 +14,189 @@ import type { CodeGraphResponse } from "../api/types";
  * узлы — символы/файлы/импортируемые модули, рёбра — «символ → родитель»
  * и «чанк → модуль». Усечение по числу узлов — только явное: при
  * превышении лимита показывается «показано N из M узлов».
+ *
+ * Визуализация — на базе графовой библиотеки с геометрическим поиском
+ * узла под курсором и перетаскиванием из коробки; физика разлёта —
+ * плагин силовой раскладки.
  */
 
-interface GraphNode {
-  id: string;
-  name: string;
-  kind: string;
-  file?: string | null;
-  language?: string | null;
-}
-
-interface GraphLink {
-  source: string;
-  target: string;
-  kind: string;
-}
-
-const NODE_COLORS: Record<string, string> = {
-  symbol: "#3b82f6",
-  file: "#94a3b8",
-  module: "#f59e0b",
+const KIND_LABELS: Record<string, string> = {
+  symbol: "символ",
+  file: "файл",
+  module: "импортируемый модуль",
 };
 
-const LINK_COLORS: Record<string, string> = {
-  parent: "#93c5fd",
-  import: "#fcd34d",
-};
+const STYLESHEET = [
+  {
+    selector: "node",
+    style: {
+      "background-color": "#64748b",
+      label: "data(name)",
+      "font-size": 10,
+      color: "#94a3b8",
+      "text-valign": "bottom",
+      "text-margin-y": 4,
+      width: 14,
+      height: 14,
+      "border-width": 1,
+      "border-color": "#1e293b",
+      "overlay-opacity": 0,
+    },
+  },
+  { selector: "node.symbol", style: { "background-color": "#3b82f6" } },
+  { selector: "node.file", style: { "background-color": "#94a3b8" } },
+  { selector: "node.module", style: { "background-color": "#f59e0b" } },
+  {
+    selector: "edge",
+    style: {
+      width: 1,
+      "line-color": "#cbd5e1",
+      "target-arrow-shape": "triangle",
+      "target-arrow-color": "#cbd5e1",
+      "arrow-scale": 0.8,
+      "curve-style": "bezier",
+      opacity: 0.6,
+    },
+  },
+  {
+    selector: "edge.parent",
+    style: { "line-color": "#93c5fd", "target-arrow-color": "#93c5fd" },
+  },
+  {
+    selector: "edge.import",
+    style: { "line-color": "#fcd34d", "target-arrow-color": "#fcd34d" },
+  },
+] as cytoscape.StylesheetJson;
 
-function toGraphData(graph: CodeGraphResponse) {
-  const nodes: GraphNode[] = graph.nodes.map((n) => ({
-    id: n.id,
-    name: n.label,
-    kind: n.kind,
-    file: n.file,
-    language: n.language,
-  }));
-  const links: GraphLink[] = graph.edges.map((e) => ({
-    source: e.source,
-    target: e.target,
-    kind: e.kind,
-  }));
-  return { nodes, links };
+let fcoseRegistered = false;
+
+function registerFcose(): void {
+  if (!fcoseRegistered) {
+    cytoscape.use(fcose);
+    fcoseRegistered = true;
+  }
 }
 
-function nodeLabel(node: GraphNode): string {
-  const parts = [node.name];
-  if (node.kind === "module") parts.push("импортируемый модуль");
-  if (node.file) parts.push(node.file);
-  return parts.join("\n");
+function buildElements(graph: CodeGraphResponse): ElementDefinition[] {
+  const nodeIds = new Set(graph.nodes.map((n) => n.id));
+  const elements: ElementDefinition[] = graph.nodes.map((n) => ({
+    data: {
+      id: n.id,
+      name: n.label,
+      kind: n.kind,
+      file: n.file ?? "",
+    },
+    classes: n.kind,
+  }));
+  // Защита от рёбер на отсутствующие узлы (библиотека на таких падает).
+  graph.edges.forEach((e, i) => {
+    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) return;
+    elements.push({
+      data: { id: `edge-${i}`, source: e.source, target: e.target },
+      classes: e.kind,
+    });
+  });
+  return elements;
+}
+
+interface TooltipState {
+  x: number;
+  y: number;
+  lines: string[];
+}
+
+function CodeGraphCanvas({ graph }: { graph: CodeGraphResponse }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    registerFcose();
+    const cy: Core = cytoscape({
+      container: el,
+      elements: buildElements(graph),
+      style: STYLESHEET,
+      wheelSensitivity: 0.2,
+      minZoom: 0.2,
+      maxZoom: 3,
+    });
+
+    cy.layout({
+      name: "fcose",
+      animate: true,
+      animationDuration: 400,
+      fit: true,
+      padding: 30,
+      nodeRepulsion: 6500,
+      idealEdgeLength: 70,
+      randomize: true,
+    } as unknown as cytoscape.LayoutOptions).run();
+
+    const onOver = (event: cytoscape.EventObject) => {
+      const data = event.target.data() as {
+        name?: string;
+        kind?: string;
+        file?: string;
+      };
+      const lines: string[] = [data.name ?? ""];
+      if (data.kind && KIND_LABELS[data.kind]) lines.push(KIND_LABELS[data.kind]);
+      if (data.file) lines.push(data.file);
+      const pos = event.renderedPosition;
+      setTooltip({ x: pos.x + 12, y: pos.y + 12, lines });
+    };
+    const onOut = () => setTooltip(null);
+
+    cy.on("mouseover", "node", onOver);
+    cy.on("mouseout", "node", onOut);
+    cy.on("pan zoom", onOut);
+
+    return () => {
+      cy.destroy();
+      setTooltip(null);
+    };
+  }, [graph]);
+
+  return (
+    <div className="relative min-h-0 flex-1" data-testid="code-graph-canvas">
+      <div ref={containerRef} className="absolute inset-0" />
+      {tooltip && (
+        <div
+          className="pointer-events-none absolute z-10 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground shadow"
+          style={{ left: tooltip.x, top: tooltip.y }}
+          data-testid="code-graph-tooltip"
+        >
+          {tooltip.lines.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
+      <div className="pointer-events-none absolute bottom-2 left-2 flex gap-3 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
+        <span>
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: "#3b82f6" }}
+          />{" "}
+          символ
+        </span>
+        <span>
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: "#94a3b8" }}
+          />{" "}
+          файл
+        </span>
+        <span>
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: "#f59e0b" }}
+          />{" "}
+          модуль
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function CodeGraphPage() {
@@ -75,7 +212,7 @@ export function CodeGraphPage() {
 
   const { data: graph, isLoading: graphLoading, isError } = useCodeGraph(selectedCorpusId);
 
-  const graphData = useMemo(() => (graph ? toGraphData(graph) : null), [graph]);
+  const hasContent = graph !== undefined && graph.nodes.length > 0;
 
   return (
     <div className="flex h-full flex-col overflow-hidden p-6">
@@ -119,7 +256,7 @@ export function CodeGraphPage() {
         <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
           Нет корпусов — создайте корпус и соберите индекс.
         </div>
-      ) : graph && graph.nodes.length === 0 ? (
+      ) : graph && !hasContent ? (
         <div
           className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
           data-testid="code-graph-empty"
@@ -128,28 +265,9 @@ export function CodeGraphPage() {
             ? "Для корпуса нет активной версии индекса."
             : "В активной версии индекса нет кодовых фрагментов."}
         </div>
-      ) : graphData ? (
-        <div className="relative min-h-0 flex-1 rounded-lg border border-border bg-card" data-testid="code-graph-canvas">
-          <ForceGraph2D
-            graphData={graphData}
-            nodeLabel={nodeLabel}
-            nodeColor={(n) => NODE_COLORS[(n as GraphNode).kind] ?? "#64748b"}
-            linkColor={(l) => LINK_COLORS[(l as GraphLink).kind] ?? "#cbd5e1"}
-            nodeRelSize={5}
-            linkDirectionalArrowLength={4}
-            cooldownTicks={100}
-          />
-          <div className="pointer-events-none absolute bottom-2 left-2 flex gap-3 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
-            <span>
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: NODE_COLORS.symbol }} /> символ
-            </span>
-            <span>
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: NODE_COLORS.file }} /> файл
-            </span>
-            <span>
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: NODE_COLORS.module }} /> модуль
-            </span>
-          </div>
+      ) : graph && hasContent ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-card">
+          <CodeGraphCanvas graph={graph} />
         </div>
       ) : null}
     </div>
