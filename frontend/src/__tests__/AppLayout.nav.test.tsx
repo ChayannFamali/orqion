@@ -17,6 +17,7 @@ vi.mock("../pages/AuditLogPage", () => ({ AuditLogPage: () => <div>AUDIT_PAGE</d
 vi.mock("../pages/TraceListPage", () => ({ TraceListPage: () => <div>TRACES_PAGE</div> }));
 vi.mock("../pages/TraceDetailPage", () => ({ TraceDetailPage: () => <div>TRACE_DETAIL</div> }));
 vi.mock("../pages/SettingsPage", () => ({ SettingsPage: () => <div>SETTINGS_PAGE</div> }));
+vi.mock("../pages/CodeGraphPage", () => ({ CodeGraphPage: () => <div>CODE_GRAPH_PAGE</div> }));
 vi.mock("../pages/PlaceholderPage", () => ({ PlaceholderPage: () => <div>PLACEHOLDER</div> }));
 vi.mock("../components/Topbar", () => ({ Topbar: () => <div>TOPBAR</div> }));
 vi.mock("../hooks/useUsers", () => ({
@@ -93,5 +94,17 @@ describe("AppLayout navigation persistence", () => {
     window.location.hash = "#/settings";
     renderLayout(["chat"]);
     expect(screen.getByText("SETTINGS_PAGE")).toBeInTheDocument();
+  });
+
+  it("T-504: граф кода недоступен без способности и доступен через *", () => {
+    window.location.hash = "#/code-graph";
+    const { unmount } = renderLayout(["chat", "upload"]);
+    expect(screen.queryByText("CODE_GRAPH_PAGE")).not.toBeInTheDocument();
+    expect(screen.getByText("CHAT_PAGE")).toBeInTheDocument();
+    unmount();
+
+    window.location.hash = "#/code-graph";
+    renderLayout(["*"]);
+    expect(screen.getByText("CODE_GRAPH_PAGE")).toBeInTheDocument();
   });
 });

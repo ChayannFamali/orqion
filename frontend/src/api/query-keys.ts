@@ -68,4 +68,7 @@ export const queryKeys = {
   ragSettings: {
     all: ["rag-settings"] as const,
   },
+  codeGraph: {
+    byCorpus: (corpusId: string) => ["code-graph", corpusId] as const,
+  },
 } as const;

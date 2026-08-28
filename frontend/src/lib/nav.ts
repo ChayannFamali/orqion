@@ -9,6 +9,7 @@ import {
   ScrollText,
   Shield,
   Cpu,
+  GitBranch,
   Settings,
 } from "lucide-react";
 
@@ -52,6 +53,9 @@ export const navItems: NavItem[] = [
   { key: "audit", label: "Аудит", icon: ScrollText, capability: "view_audit" },
   // T-444: только чтение; по умолчанию лишь admin через "*" (не в пресетах)
   { key: "diagnostics", label: "Диагностика", icon: Cpu, capability: "view_diagnostics" },
+  // T-504: read-only визуализация графа связей кода; способность не в
+  // посевных пресетах — выдаётся через "*" или правкой политики роли.
+  { key: "code-graph", label: "Граф кода", icon: GitBranch, capability: "view_code_graph" },
   // T-506: общие настройки (поиск по документам); видны всем, право на
   // изменение проверяется внутри. Будущие вкладки темы/языка — сюда же.
   { key: "settings", label: "Настройки", icon: Settings, capability: undefined },

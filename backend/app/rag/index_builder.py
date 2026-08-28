@@ -284,6 +284,12 @@ async def _process_document(
                 "parent": c.parent,
                 "signature": c.signature,
             }
+            # Т-504: импорты чанка — рёбра графа связей кода. Чанкер
+            # извлекал их всегда; в метаданные не писались. Старые версии
+            # индекса поля не имеют — для них рёбра импортов не
+            # показываются (без принудительной пересборки).
+            if c.imports:
+                extra_meta["imports"] = list(c.imports)
         elif isinstance(c, SqlChunk):
             extra_meta = {
                 "operation": c.operation,

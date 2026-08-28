@@ -86,3 +86,7 @@ export type AuditActionsResponse = components["schemas"]["AuditActionsResponse"]
 /** Настройки RAG-поиска уровня рабочей области (Т-506). */
 export type RagSettingsResponse = components["schemas"]["RagSettingsResponse"];
 export type RagSettingsUpdate = components["schemas"]["RagSettingsUpdate"];
+/** Граф связей кода (Т-504). */
+export type CodeGraphNode = components["schemas"]["CodeGraphNode"];
+export type CodeGraphEdge = components["schemas"]["CodeGraphEdge"];
+export type CodeGraphResponse = components["schemas"]["CodeGraphResponse"];

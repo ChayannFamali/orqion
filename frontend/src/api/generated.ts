@@ -341,6 +341,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpora/{corpus_id}/code-graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Code Graph */
+        get: operations["get_code_graph_api_corpora__corpus_id__code_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/export": {
         parameters: {
             query?: never;
@@ -1617,6 +1634,45 @@ export interface components {
         CleanupResponse: {
             /** Deleted Count */
             deleted_count: number;
+        };
+        /** CodeGraphEdge */
+        CodeGraphEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Kind */
+            kind: string;
+        };
+        /** CodeGraphNode */
+        CodeGraphNode: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** File */
+            file?: string | null;
+            /** Language */
+            language?: string | null;
+        };
+        /** CodeGraphResponse */
+        CodeGraphResponse: {
+            /** Corpus Id */
+            corpus_id: string;
+            /** Index Version Id */
+            index_version_id: string | null;
+            /** Nodes */
+            nodes: components["schemas"]["CodeGraphNode"][];
+            /** Edges */
+            edges: components["schemas"]["CodeGraphEdge"][];
+            /** Total Nodes */
+            total_nodes: number;
+            /** Shown Nodes */
+            shown_nodes: number;
+            /** Truncated */
+            truncated: boolean;
         };
         /**
          * ConfigExportResponse
@@ -3352,6 +3408,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_code_graph_api_corpora__corpus_id__code_graph_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeGraphResponse"];
                 };
             };
             /** @description Validation Error */

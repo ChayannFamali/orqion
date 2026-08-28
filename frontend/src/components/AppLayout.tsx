@@ -13,6 +13,7 @@ import { UsersPage } from "../pages/UsersPage";
 import { CorporaPage } from "../pages/CorporaPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { AuditLogPage } from "../pages/AuditLogPage";
+import { CodeGraphPage } from "../pages/CodeGraphPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
@@ -97,6 +98,9 @@ export function AppLayout({
     }
     if (activeSection === "diagnostics") {
       return <DiagnosticsPage />;
+    }
+    if (activeSection === "code-graph") {
+      return <CodeGraphPage />;
     }
     if (activeSection === "settings") {
       return <SettingsPage capabilities={capabilities} />;

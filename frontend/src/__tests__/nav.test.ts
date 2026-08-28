@@ -38,6 +38,7 @@ describe("isNavVisible", () => {
       "users",
       "audit",
       "diagnostics",
+      "code-graph",
       "settings",
     ]);
   });
@@ -48,6 +49,15 @@ describe("isNavVisible", () => {
     expect(isNavVisible(item, ["*"])).toBe(true);
     expect(isNavVisible(item, ["view_diagnostics"])).toBe(true);
     expect(isNavVisible(item, ["chat", "manage_providers"])).toBe(false);
+    expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("T-504: граф кода виден только с view_code_graph или *", () => {
+    const item = navItems.find((i) => i.key === "code-graph")!;
+    expect(item.capability).toBe("view_code_graph");
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    expect(isNavVisible(item, ["view_code_graph"])).toBe(true);
+    expect(isNavVisible(item, ["chat", "view_diagnostics"])).toBe(false);
     expect(isNavVisible(item, [])).toBe(false);
   });
 

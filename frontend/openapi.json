@@ -859,6 +859,48 @@
         }
       }
     },
+    "/api/corpora/{corpus_id}/code-graph": {
+      "get": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "Get Code Graph",
+        "operationId": "get_code_graph_api_corpora__corpus_id__code_graph_get",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeGraphResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config/export": {
       "get": {
         "tags": [
@@ -4329,6 +4371,130 @@
         ],
         "title": "CleanupResponse",
         "description": "Результат очистки retired-версий."
+      },
+      "CodeGraphEdge": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "kind"
+        ],
+        "title": "CodeGraphEdge"
+      },
+      "CodeGraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind"
+        ],
+        "title": "CodeGraphNode"
+      },
+      "CodeGraphResponse": {
+        "properties": {
+          "corpus_id": {
+            "type": "string",
+            "title": "Corpus Id"
+          },
+          "index_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Version Id"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CodeGraphNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/CodeGraphEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "total_nodes": {
+            "type": "integer",
+            "title": "Total Nodes"
+          },
+          "shown_nodes": {
+            "type": "integer",
+            "title": "Shown Nodes"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "corpus_id",
+          "index_version_id",
+          "nodes",
+          "edges",
+          "total_nodes",
+          "shown_nodes",
+          "truncated"
+        ],
+        "title": "CodeGraphResponse"
       },
       "ConfigExportResponse": {
         "properties": {

@@ -4,6 +4,7 @@ from app.api.routes.analytics import router as analytics_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
+from app.api.routes.code_graph import router as code_graph_router
 from app.api.routes.config import router as config_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.corpora import router as corpora_router
@@ -25,6 +26,7 @@ __all__ = [
     "audit_router",
     "auth_router",
     "chat_router",
+    "code_graph_router",
     "config_router",
     "conversations_router",
     "corpora_router",
