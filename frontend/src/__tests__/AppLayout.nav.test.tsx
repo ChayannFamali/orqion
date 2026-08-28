@@ -16,6 +16,7 @@ vi.mock("../pages/AnalyticsPage", () => ({ AnalyticsPage: () => <div>ANALYTICS_P
 vi.mock("../pages/AuditLogPage", () => ({ AuditLogPage: () => <div>AUDIT_PAGE</div> }));
 vi.mock("../pages/TraceListPage", () => ({ TraceListPage: () => <div>TRACES_PAGE</div> }));
 vi.mock("../pages/TraceDetailPage", () => ({ TraceDetailPage: () => <div>TRACE_DETAIL</div> }));
+vi.mock("../pages/SettingsPage", () => ({ SettingsPage: () => <div>SETTINGS_PAGE</div> }));
 vi.mock("../pages/PlaceholderPage", () => ({ PlaceholderPage: () => <div>PLACEHOLDER</div> }));
 vi.mock("../components/Topbar", () => ({ Topbar: () => <div>TOPBAR</div> }));
 vi.mock("../hooks/useUsers", () => ({
@@ -86,5 +87,11 @@ describe("AppLayout navigation persistence", () => {
     renderLayout(["chat", "upload"]);
     expect(screen.queryByText("DIAGNOSTICS_PAGE")).not.toBeInTheDocument();
     expect(screen.getByText("CHAT_PAGE")).toBeInTheDocument();
+  });
+
+  it("T-506: настройки доступны всем без специального права", () => {
+    window.location.hash = "#/settings";
+    renderLayout(["chat"]);
+    expect(screen.getByText("SETTINGS_PAGE")).toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ from app.api.routes.eval import router as eval_router
 from app.api.routes.index_versions import router as index_versions_router
 from app.api.routes.models import router as models_router
 from app.api.routes.providers import router as providers_router
+from app.api.routes.rag_settings import router as rag_settings_router
 from app.api.routes.roles import router as roles_router
 from app.api.routes.routing import router as routing_router
 from app.api.routes.traces import router as traces_router
@@ -34,6 +35,7 @@ __all__ = [
     "index_versions_router",
     "models_router",
     "providers_router",
+    "rag_settings_router",
     "roles_router",
     "routing_router",
     "traces_router",

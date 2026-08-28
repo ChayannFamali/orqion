@@ -1144,6 +1144,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rag-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Settings */
+        get: operations["get_rag_settings_api_rag_settings_get"];
+        /** Update Rag Settings */
+        put: operations["update_rag_settings_api_rag_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/roles": {
         parameters: {
             query?: never;
@@ -2441,6 +2459,20 @@ export interface components {
             api_key?: string | null;
             /** Enabled */
             enabled?: boolean | null;
+        };
+        /** RagSettingsResponse */
+        RagSettingsResponse: {
+            /** Relevance Threshold */
+            relevance_threshold: number;
+            /** Max Fragments */
+            max_fragments: number;
+        };
+        /** RagSettingsUpdate */
+        RagSettingsUpdate: {
+            /** Relevance Threshold */
+            relevance_threshold: number;
+            /** Max Fragments */
+            max_fragments: number;
         };
         /**
          * RoleCreate
@@ -4806,6 +4838,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DownloadStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_settings_api_rag_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_rag_settings_api_rag_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSettingsResponse"];
                 };
             };
             /** @description Validation Error */

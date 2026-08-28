@@ -21,13 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.db.models import Chunk, Model, Provider
+from app.db.models import Chunk, Model, Provider, RagSettings
 from app.providers.client import ProviderClient
 from app.rag.context_builder import ContextOutput, build_context
 from app.rag.embeddings import EmbeddingBackend
 from app.rag.hybrid_search import HybridResult, HybridSearchOutput, hybrid_search, rrf
 from app.rag.query_rewrite import maybe_rewrite_query
-from app.rag.reranker import RerankOutput, create_reranker, rerank
+from app.rag.reranker import RerankOutput, RerankResult, create_reranker, rerank
 from app.rag.sources import SourceEntry, build_sources
 from app.rag.vector_store import VectorStore
 from app.trace.service import TraceContext, span
@@ -58,6 +58,11 @@ class RagState:
     # T-307: данные для панели трассировки
     search_candidates: list[dict[str, object]] = field(default_factory=list)
     rerank_results: list[dict[str, object]] = field(default_factory=list)
+    # T-506: настройки поиска, действовавшие в прогоне
+    search_threshold_percent: int = 0
+    search_threshold_applied: bool = False
+    search_threshold_skipped_degraded: bool = False
+    search_max_fragments: int = 8
 
 
 # T-439: потолок объединённого списка после второго RRF перед реранком.
@@ -90,6 +95,31 @@ class RagContext:
 
 
 RagStep = Callable[[RagState, RagContext], Awaitable[RagState]]
+
+
+def apply_search_settings(
+    results: Sequence[RerankResult],
+    threshold_percent: int,
+    max_fragments: int,
+) -> list[RerankResult]:
+    """T-506: порог релевантности и максимум фрагментов после реранкера.
+
+    ``threshold_percent`` = 0 — явный сентинел «фильтр выключен»: шаг
+    фильтрации не выполняется вообще. При включённом пороге скор реранкера
+    (0–1) сравнивается в процентах: ``score * 100 >= порога``.
+    """
+    if threshold_percent > 0:
+        kept: list[RerankResult] = [r for r in results if r.score * 100.0 >= threshold_percent]
+    else:
+        kept = list(results)
+    return kept[:max_fragments]
+
+
+async def _load_rag_settings(session: AsyncSession, workspace_id: str) -> RagSettings | None:
+    result = await session.execute(
+        select(RagSettings).where(RagSettings.workspace_id == workspace_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def step_rewrite(state: RagState, ctx: RagContext) -> RagState:
@@ -183,7 +213,13 @@ async def step_search(state: RagState, ctx: RagContext) -> RagState:
 
 
 async def step_rerank(state: RagState, ctx: RagContext) -> RagState:
-    """Реранкинг (T-217)."""
+    """Реранкинг (T-217).
+
+    T-506: после реранкера применяются настройки поиска — порог
+    релевантности (только когда реранкер реально отработал; в деградации
+    шкала скора другая, порог пропускается с фиксацией факта) и максимум
+    фрагментов (срез сверху, контракт «50→8» и токен-лимит не меняются).
+    """
     reranker = ctx.reranker
     if reranker is None:
         reranker = create_reranker()
@@ -193,7 +229,29 @@ async def step_rerank(state: RagState, ctx: RagContext) -> RagState:
         reranker=reranker,
         top_k=8,
     )
-    state.reranked = output.results
+
+    settings_row = await _load_rag_settings(ctx.session, ctx.workspace_id)
+    threshold_percent = settings_row.relevance_threshold if settings_row else 0
+    max_fragments = settings_row.max_fragments if settings_row else 8
+    state.search_threshold_percent = threshold_percent
+    state.search_max_fragments = max_fragments
+
+    results = output.results
+    if output.degraded:
+        if threshold_percent > 0:
+            state.search_threshold_skipped_degraded = True
+            logger.info(
+                "Relevance threshold %d%% skipped: reranker degraded",
+                threshold_percent,
+            )
+    else:
+        results = apply_search_settings(results, threshold_percent, max_fragments)
+        state.search_threshold_applied = threshold_percent > 0
+
+    if output.degraded:
+        results = results[:max_fragments]
+
+    state.reranked = results
     # T-307: результаты реранкинга для панели трассировки
     state.rerank_results = [
         {
@@ -201,7 +259,7 @@ async def step_rerank(state: RagState, ctx: RagContext) -> RagState:
             "score": r.score,
             "original_rank": r.original_rank,
         }
-        for r in output.results
+        for r in state.reranked
     ]
     if output.degraded:
         state.degraded = True
@@ -319,6 +377,11 @@ async def run_pipeline(
         elif step_name == "step_rerank":
             span_payload["reranked_count"] = len(state.rerank_results)
             span_payload["reranked"] = state.rerank_results
+            # T-506: какие настройки поиска действовали в прогоне
+            span_payload["threshold_percent"] = state.search_threshold_percent
+            span_payload["threshold_applied"] = state.search_threshold_applied
+            span_payload["threshold_skipped_degraded"] = state.search_threshold_skipped_degraded
+            span_payload["max_fragments"] = state.search_max_fragments
 
     return state
 

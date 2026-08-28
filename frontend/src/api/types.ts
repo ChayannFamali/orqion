@@ -83,3 +83,6 @@ export type UserBreakdown = components["schemas"]["UserBreakdown"];
 export type AuditLogResponse = components["schemas"]["AuditLogResponse"];
 export type AuditLogListResponse = components["schemas"]["AuditLogListResponse"];
 export type AuditActionsResponse = components["schemas"]["AuditActionsResponse"];
+/** Настройки RAG-поиска уровня рабочей области (Т-506). */
+export type RagSettingsResponse = components["schemas"]["RagSettingsResponse"];
+export type RagSettingsUpdate = components["schemas"]["RagSettingsUpdate"];

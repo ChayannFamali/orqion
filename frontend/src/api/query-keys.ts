@@ -65,4 +65,7 @@ export const queryKeys = {
   diagnostics: {
     environment: ["diagnostics", "environment"] as const,
   },
+  ragSettings: {
+    all: ["rag-settings"] as const,
+  },
 } as const;

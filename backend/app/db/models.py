@@ -29,6 +29,28 @@ class Workspace(Base, IdMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
+class RagSettings(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Настройки RAG-поиска уровня рабочей области (Т-506).
+
+    Одна строка на workspace (уникальность по workspace_id). Область
+    действия — глобально, без привязки к корпусу; путь для будущего
+    переопределения на корпус — отдельная таблица по образцу
+    ``Corpus.pinned_model_id``, схема это допускает без переделки.
+
+    ``relevance_threshold`` — проценты 0–100; 0 = сентинел «фильтр
+    выключен» (шаг фильтрации не выполняется). Применяется к скорам
+    реранкера (0–1), только когда реранкер реально отработал.
+    ``max_fragments`` — ограничение сверху 1–8, срез после реранкера
+    до токен-лимита сборки контекста.
+    """
+
+    __tablename__ = "rag_settings"
+    __table_args__ = (UniqueConstraint("workspace_id", name="uq_rag_settings_workspace"),)
+
+    relevance_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_fragments: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+
+
 class Role(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Роль: name, is_builtin, policy (JSON). Источник правды для resolve_policy."""
 

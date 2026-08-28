@@ -14,6 +14,7 @@ import { CorporaPage } from "../pages/CorporaPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { AuditLogPage } from "../pages/AuditLogPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
 /** Допустимые ключи разделов (из реестра навигации). */
@@ -96,6 +97,9 @@ export function AppLayout({
     }
     if (activeSection === "diagnostics") {
       return <DiagnosticsPage />;
+    }
+    if (activeSection === "settings") {
+      return <SettingsPage capabilities={capabilities} />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {

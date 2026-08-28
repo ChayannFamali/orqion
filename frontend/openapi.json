@@ -2964,6 +2964,66 @@
         }
       }
     },
+    "/api/rag-settings": {
+      "get": {
+        "tags": [
+          "rag-settings"
+        ],
+        "summary": "Get Rag Settings",
+        "operationId": "get_rag_settings_api_rag_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "rag-settings"
+        ],
+        "summary": "Update Rag Settings",
+        "operationId": "update_rag_settings_api_rag_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/roles": {
       "get": {
         "tags": [
@@ -6423,6 +6483,46 @@
         },
         "type": "object",
         "title": "ProviderUpdate"
+      },
+      "RagSettingsResponse": {
+        "properties": {
+          "relevance_threshold": {
+            "type": "integer",
+            "title": "Relevance Threshold"
+          },
+          "max_fragments": {
+            "type": "integer",
+            "title": "Max Fragments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "relevance_threshold",
+          "max_fragments"
+        ],
+        "title": "RagSettingsResponse"
+      },
+      "RagSettingsUpdate": {
+        "properties": {
+          "relevance_threshold": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Relevance Threshold"
+          },
+          "max_fragments": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Fragments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "relevance_threshold",
+          "max_fragments"
+        ],
+        "title": "RagSettingsUpdate"
       },
       "RoleCreate": {
         "properties": {

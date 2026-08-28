@@ -211,6 +211,7 @@ def create_app() -> FastAPI:
         index_versions_router,
         models_router,
         providers_router,
+        rag_settings_router,
         roles_router,
         routing_router,
         traces_router,
@@ -236,6 +237,7 @@ def create_app() -> FastAPI:
     app.include_router(models_router)
     app.include_router(providers_router)
     app.include_router(model_download_router)
+    app.include_router(rag_settings_router)
     app.include_router(roles_router)
     app.include_router(routing_router)
     app.include_router(traces_router)

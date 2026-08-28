@@ -2,28 +2,28 @@ import { describe, it, expect } from "vitest";
 import { navItems, isNavVisible } from "../lib/nav";
 
 describe("isNavVisible", () => {
-  it("shows only items without capability requirement when capabilities is empty", () => {
+  it("shows items without capability requirement when capabilities is empty", () => {
     const visible = navItems.filter((item) => isNavVisible(item, []));
-    expect(visible.map((i) => i.key)).toEqual(["chat"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "settings"]);
   });
 
-  it("shows only chat for support-level capabilities", () => {
+  it("shows only chat and settings for support-level capabilities", () => {
     const visible = navItems.filter((item) => isNavVisible(item, ["chat"]));
-    expect(visible.map((i) => i.key)).toEqual(["chat"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "settings"]);
   });
 
-  it("shows chat and corpora for architect-level capabilities", () => {
+  it("shows chat, corpora and settings for architect-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "manage_corpora", "share"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "settings"]);
   });
 
-  it("shows chat, corpora and analytics for manager-level capabilities", () => {
+  it("shows chat, corpora, analytics and settings for manager-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "view_analytics"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "analytics"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "analytics", "settings"]);
   });
 
   it("shows all items for admin wildcard capabilities", () => {
@@ -38,17 +38,26 @@ describe("isNavVisible", () => {
       "users",
       "audit",
       "diagnostics",
+      "settings",
     ]);
   });
 
-  it("T-444: диагностика — последний раздел, видна только с view_diagnostics", () => {
-    const item = navItems[navItems.length - 1];
-    expect(item.key).toBe("diagnostics");
+  it("T-444: диагностика видна только с view_diagnostics", () => {
+    const item = navItems.find((i) => i.key === "diagnostics")!;
     expect(item.capability).toBe("view_diagnostics");
     expect(isNavVisible(item, ["*"])).toBe(true);
     expect(isNavVisible(item, ["view_diagnostics"])).toBe(true);
     expect(isNavVisible(item, ["chat", "manage_providers"])).toBe(false);
     expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("T-506: настройки — последний раздел, видны всем без права", () => {
+    const item = navItems[navItems.length - 1];
+    expect(item.key).toBe("settings");
+    expect(item.capability).toBeUndefined();
+    expect(isNavVisible(item, [])).toBe(true);
+    expect(isNavVisible(item, ["chat"])).toBe(true);
+    expect(isNavVisible(item, ["*"])).toBe(true);
   });
 
   it("does not show item when capability is missing from list", () => {
