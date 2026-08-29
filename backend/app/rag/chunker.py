@@ -6,6 +6,11 @@
 
 Для fallback-документов (PDF без ML, нет заголовков) — путь заголовков пустой
 с явной пометкой heading_path_source: "none".
+
+Секция, состоящая из одного заголовка (под ним нет текста — сразу идёт
+следующий заголовок), чанк не создаёт: пустой чанк-заголовок засорял топ-к
+выдачи, вытесняя содержательные чанки. Заголовок при этом не теряется — он
+сохранён в heading_path последующих секций.
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ from dataclasses import dataclass, field
 
 import tiktoken
 
-CHUNKER_VERSION = "1.0"
+CHUNKER_VERSION = "1.1"
 
 # Целевые размеры в токенах
 MIN_TOKENS = 400
@@ -335,6 +340,11 @@ def chunk_document(
 
     for heading_path, section_text in sections:
         if not section_text.strip():
+            continue
+
+        # Секция с заголовком начинается со строки этого заголовка. Если тела
+        # под заголовком нет — секция пропускается (см. докстринг модуля).
+        if heading_path and not section_text.partition("\n")[2].strip():
             continue
 
         section_chunks = _split_section(

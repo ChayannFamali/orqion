@@ -9,6 +9,7 @@
 - Версия чанкера в meta
 - Крупная секция разбивается по параграфам
 - Пустой документ → пустой список
+- Секция из одного заголовка без тела чанк не создаёт (регрессия осиротевших чанков)
 """
 
 from __future__ import annotations
@@ -223,3 +224,50 @@ def test_direct_no_headings_source_none() -> None:
     for chunk in chunks:
         assert chunk.meta["heading_path"] == []
         assert chunk.meta["heading_path_source"] == "none"
+
+
+def test_heading_only_section_creates_no_chunk(encoder: tiktoken.Encoding) -> None:
+    """Секция из одного заголовка (без тела) не создаёт чанк.
+
+    Регрессия: осиротевшие чанки-заголовки засоряли топ-к выдачи,
+    вытесняя содержательные чанки.
+    """
+    md = """# Document
+
+## Список навыков
+
+### S-01
+
+Описание навыка S-01.
+
+### S-02
+
+Описание навыка S-02.
+"""
+    chunks = chunk_document(md, parser="direct")
+
+    texts = [c.text.strip() for c in chunks]
+    assert "# Document" not in texts
+    assert "## Список навыков" not in texts
+    assert len(chunks) == 2
+
+    # Заголовки не потеряны — они в heading_path содержательных чанков
+    paths = [c.meta["heading_path"] for c in chunks]
+    assert ["Document", "Список навыков", "S-01"] in paths
+    assert ["Document", "Список навыков", "S-02"] in paths
+
+
+def test_trailing_heading_only_section_creates_no_chunk(encoder: tiktoken.Encoding) -> None:
+    """Заголовок без тела в конце документа тоже не создаёт чанк."""
+    md = "# Title\n\nContent of the document.\n\n## Пустой раздел в конце\n"
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 1
+    assert "Content of the document." in chunks[0].text
+    assert chunks[0].meta["heading_path"] == ["Title"]
+
+
+def test_headings_only_document_creates_no_chunks() -> None:
+    """Документ из одних заголовков (без текста) — ноль чанков."""
+    md = "# A\n\n## B\n\n### C\n"
+    assert chunk_document(md, parser="direct") == []
