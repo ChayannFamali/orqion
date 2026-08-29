@@ -10,6 +10,8 @@
 - Крупная секция разбивается по параграфам
 - Пустой документ → пустой список
 - Секция из одного заголовка без тела чанк не создаёт (регрессия осиротевших чанков)
+- Реальные формы секций без тела: заголовок + разделитель, заголовок + одна
+  таблица, заголовок + пустое ограждение код-блока
 """
 
 from __future__ import annotations
@@ -271,3 +273,80 @@ def test_headings_only_document_creates_no_chunks() -> None:
     """Документ из одних заголовков (без текста) — ноль чанков."""
     md = "# A\n\n## B\n\n### C\n"
     assert chunk_document(md, parser="direct") == []
+
+
+@pytest.mark.parametrize("separator", ["---", "***", "___", "- - -"])
+def test_heading_with_only_separator_creates_no_chunk(
+    encoder: tiktoken.Encoding, separator: str
+) -> None:
+    """Реальная форма осиротевшего чанка: заголовок, под ним только разделитель.
+
+    В живых документах после заголовка часто идёт тематический разделитель,
+    и чанкер 1.1 создавал из такой секции чанк-одиночку.
+    """
+    md = f"# SKILLS.md — навыки\n\n{separator}\n\n## Часть I\n\nСодержание части.\n"
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 1
+    assert "Содержание части." in chunks[0].text
+    # Заголовок пропущенной секции сохранён в пути последующей
+    assert chunks[0].meta["heading_path"] == ["SKILLS.md — навыки", "Часть I"]
+
+
+def test_heading_with_only_table_creates_only_table_chunk(
+    encoder: tiktoken.Encoding,
+) -> None:
+    """Реальная форма: заголовок, чьё единственное содержимое — таблица.
+
+    Таблица уходит отдельным чанком; текстовый чанк из одного заголовка
+    не создаётся.
+    """
+    md = "## 12. Риски\n\n| Риск | Уровень |\n|---|---|\n| Низкое качество RAG | критическое |\n"
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 1
+    assert chunks[0].meta.get("is_table") is True
+    assert "Низкое качество RAG" in chunks[0].text
+    assert chunks[0].meta["heading_path"] == ["12. Риски"]
+
+
+def test_heading_path_survives_skipped_table_section(
+    encoder: tiktoken.Encoding,
+) -> None:
+    """Путь заголовков последующих секций не теряет заголовок, чья секция
+    не создала текстового чанка (единственным содержимым была таблица).
+    """
+    md = (
+        "# Архитектура\n\n"
+        "| ID | Цель |\n|---|---|\n| F-1 | Одна цель |\n"
+        "\n## Раздел два\n\nТекст второго раздела.\n"
+    )
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 2
+    assert chunks[0].meta.get("is_table") is True
+    assert chunks[0].meta["heading_path"] == ["Архитектура"]
+    assert chunks[1].meta["heading_path"] == ["Архитектура", "Раздел два"]
+
+
+def test_heading_with_empty_code_fence_creates_no_chunk(
+    encoder: tiktoken.Encoding,
+) -> None:
+    """Реальная форма: заголовок, под ним только пустое ограждение код-блока."""
+    md = "## Глоссарий\n\n```\n\n## Следующий раздел\n\nТекст.\n"
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 1
+    assert "Текст." in chunks[0].text
+    assert chunks[0].meta["heading_path"] == ["Глоссарий", "Следующий раздел"]
+
+
+def test_section_with_content_and_separator_kept(
+    encoder: tiktoken.Encoding,
+) -> None:
+    """Разделитель в секции с текстом не лишает её чанка (ложное срабатывание)."""
+    md = "## Раздел\n\nСодержательный текст.\n\n---\n"
+    chunks = chunk_document(md, parser="direct")
+
+    assert len(chunks) == 1
+    assert "Содержательный текст." in chunks[0].text

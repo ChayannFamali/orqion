@@ -7,10 +7,14 @@
 Для fallback-документов (PDF без ML, нет заголовков) — путь заголовков пустой
 с явной пометкой heading_path_source: "none".
 
-Секция, состоящая из одного заголовка (под ним нет текста — сразу идёт
-следующий заголовок), чанк не создаёт: пустой чанк-заголовок засорял топ-к
-выдачи, вытесняя содержательные чанки. Заголовок при этом не теряется — он
-сохранён в heading_path последующих секций.
+Секция без содержательного тела чанк не создаёт. Телом не считаются пустые
+строки, тематические разделители (---, ***, ___) и строки-ограждения
+код-блоков: в реальных документах после заголовка часто идут именно они,
+и секция «заголовок + разделитель» становилась чанком-одиночкой, который
+засорял топ-к выдачи, вытесняя содержательные чанки. Если единственное
+содержимое секции — таблица, она уходит отдельным чанком, а текстовый чанк
+из одного заголовка не создаётся. Заголовок при этом не теряется — он
+сохранён в heading_path последующих секций и в метаданных табличного чанка.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from dataclasses import dataclass, field
 
 import tiktoken
 
-CHUNKER_VERSION = "1.1"
+CHUNKER_VERSION = "1.2"
 
 # Целевые размеры в токенах
 MIN_TOKENS = 400
@@ -41,6 +45,29 @@ class DocChunk:
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 _TABLE_RE = re.compile(r"^\|.+\|$", re.MULTILINE)
 _TABLE_SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$", re.MULTILINE)
+_THEMATIC_BREAK_RE = re.compile(r"^\s*([-_*])\s*(?:\1\s*){2,}$")
+
+
+def _is_noise_line(line: str) -> bool:
+    """Строка без самостоятельного содержания.
+
+    Пустые строки, тематические разделители (---, ***, ___) и ограждения
+    код-блоков (```, ~~~) телом секции не считаются.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return True
+    if _THEMATIC_BREAK_RE.match(stripped):
+        return True
+    return stripped.startswith(("```", "~~~"))
+
+
+def _has_body(text: str, has_heading: bool) -> bool:
+    """Есть ли в секции содержание помимо строки заголовка и шумовых строк."""
+    lines = text.split("\n")
+    if has_heading and lines:
+        lines = lines[1:]
+    return any(not _is_noise_line(line) for line in lines)
 
 
 def _count_tokens(text: str, encoder: tiktoken.Encoding) -> int:
@@ -143,6 +170,8 @@ def _split_section(
     Таблица крупнее MAX_TOKENS остаётся одним чанком целиком —
     осознанный компромисс: целостность таблицы важнее равномерности размера
     (аналог ADR-9 для кода: функция/класс целиком).
+    Если после выделения таблиц содержательного текста не остаётся,
+    возвращаются только табличные чанки.
     """
     # Выделение таблиц из секции — таблицы отдельными чанками
     table_blocks, text_blocks = _extract_tables(section_text)
@@ -162,9 +191,10 @@ def _split_section(
             )
         )
 
-    # Оставшийся текст (без таблиц)
+    # Оставшийся текст (без таблиц). Если кроме заголовка и шумовых строк
+    # ничего нет — секция представлена только табличными чанками.
     remaining_text = "\n\n".join(text_blocks)
-    if not remaining_text.strip():
+    if not _has_body(remaining_text, bool(heading_path)):
         return chunks
 
     token_count = _count_tokens(remaining_text, encoder)
@@ -342,9 +372,9 @@ def chunk_document(
         if not section_text.strip():
             continue
 
-        # Секция с заголовком начинается со строки этого заголовка. Если тела
-        # под заголовком нет — секция пропускается (см. докстринг модуля).
-        if heading_path and not section_text.partition("\n")[2].strip():
+        # Секция без содержательного тела (заголовок + шумовые строки)
+        # чанк не создаёт — см. докстринг модуля.
+        if heading_path and not _has_body(section_text, has_heading=True):
             continue
 
         section_chunks = _split_section(

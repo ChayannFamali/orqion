@@ -114,7 +114,7 @@ async def build_index_version(
         corpus_id=corpus_id,
         embedding_model=model_name,
         chunker=CHUNKER_LABEL,
-        chunker_version="1.1",
+        chunker_version="1.2",
         status="building",
         stats=BuildProgress(status="building").to_dict(),
     )
