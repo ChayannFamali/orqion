@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     allowed_upload_extensions: str = ".pdf,.docx,.pptx,.xlsx,.py,.cpp,.ts,.go,.java,.sql,.md,.txt"
 
+    # Библиотека сохранённых промптов (T-507). Лимиты на личные шаблоны.
+    prompt_templates_max_per_user: int = 100
+    prompt_template_max_chars: int = 8192
+
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""

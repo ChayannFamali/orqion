@@ -71,4 +71,7 @@ export const queryKeys = {
   codeGraph: {
     byCorpus: (corpusId: string) => ["code-graph", corpusId] as const,
   },
+  promptTemplates: {
+    all: ["prompt-templates"] as const,
+  },
 } as const;

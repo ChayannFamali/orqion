@@ -11,6 +11,7 @@ import { useEnabledModels } from "../hooks/useModels";
 import { useAvailableCorpora } from "../hooks/useCorpora";
 import { useChat } from "../hooks/useChat";
 import { useCurrentUser } from "../hooks/useAuth";
+import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
@@ -36,6 +37,13 @@ export function ChatPage() {
   const currentUser = useCurrentUser();
   const reasoningPolicy = currentUser.data?.reasoning ?? "off";
   const reasoningOptional = reasoningPolicy === "optional";
+
+  // Т-507: личные шаблоны промптов — выбор у поля ввода. Запрос идёт
+  // только при наличии способности; без неё списка не существует (404).
+  const capabilities = currentUser.data?.capabilities ?? [];
+  const canPrompts =
+    capabilities.includes("*") || capabilities.includes("custom_prompts");
+  const promptTemplates = usePromptTemplates(canPrompts);
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
@@ -341,6 +349,7 @@ export function ChatPage() {
           isStreaming={chat.isStreaming}
           disabled={models.data?.length === 0}
           contextUsage={contextUsage}
+          templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
         />
       </main>
 

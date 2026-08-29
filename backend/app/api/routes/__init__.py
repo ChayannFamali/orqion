@@ -14,6 +14,7 @@ from app.api.routes.documents import router as documents_router
 from app.api.routes.eval import router as eval_router
 from app.api.routes.index_versions import router as index_versions_router
 from app.api.routes.models import router as models_router
+from app.api.routes.prompt_templates import router as prompt_templates_router
 from app.api.routes.providers import router as providers_router
 from app.api.routes.rag_settings import router as rag_settings_router
 from app.api.routes.roles import router as roles_router
@@ -36,6 +37,7 @@ __all__ = [
     "eval_router",
     "index_versions_router",
     "models_router",
+    "prompt_templates_router",
     "providers_router",
     "rag_settings_router",
     "roles_router",

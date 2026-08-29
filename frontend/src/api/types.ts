@@ -90,3 +90,8 @@ export type RagSettingsUpdate = components["schemas"]["RagSettingsUpdate"];
 export type CodeGraphNode = components["schemas"]["CodeGraphNode"];
 export type CodeGraphEdge = components["schemas"]["CodeGraphEdge"];
 export type CodeGraphResponse = components["schemas"]["CodeGraphResponse"];
+/** Библиотека сохранённых промптов (Т-507). */
+export type PromptTemplateResponse = components["schemas"]["PromptTemplateResponse"];
+export type PromptTemplateListResponse = components["schemas"]["PromptTemplateListResponse"];
+export type PromptTemplateCreate = components["schemas"]["PromptTemplateCreate"];
+export type PromptTemplateUpdate = components["schemas"]["PromptTemplateUpdate"];

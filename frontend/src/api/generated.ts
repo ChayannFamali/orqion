@@ -1161,6 +1161,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prompt-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Prompt Templates */
+        get: operations["list_prompt_templates_api_prompt_templates_get"];
+        put?: never;
+        /** Create Prompt Template */
+        post: operations["create_prompt_template_api_prompt_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Prompt Template */
+        put: operations["update_prompt_template_api_prompt_templates__template_id__put"];
+        post?: never;
+        /** Delete Prompt Template */
+        delete: operations["delete_prompt_template_api_prompt_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rag-settings": {
         parameters: {
             query?: never;
@@ -2457,6 +2493,39 @@ export interface components {
              * @default []
              */
             gpus: components["schemas"]["GpuInfo"][];
+        };
+        /** PromptTemplateCreate */
+        PromptTemplateCreate: {
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+        };
+        /** PromptTemplateListResponse */
+        PromptTemplateListResponse: {
+            /** Templates */
+            templates: components["schemas"]["PromptTemplateResponse"][];
+        };
+        /** PromptTemplateResponse */
+        PromptTemplateResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PromptTemplateUpdate */
+        PromptTemplateUpdate: {
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
         };
         /** ProviderCreate */
         ProviderCreate: {
@@ -4926,6 +4995,123 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DownloadStatusResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_templates_api_prompt_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateListResponse"];
+                };
+            };
+        };
+    };
+    create_prompt_template_api_prompt_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_prompt_template_api_prompt_templates__template_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_prompt_template_api_prompt_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

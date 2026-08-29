@@ -51,6 +51,32 @@ class RagSettings(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     max_fragments: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
 
 
+class PromptTemplate(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Личный сохранённый промпт пользователя (Т-507).
+
+    Первая версия — только личные шаблоны: владелец ``user_id``, CRUD
+    только у владельца. В схеме оставлен путь к общим шаблонам рабочей
+    области (решение дизайн-ревью Т-507, по образцу Т-506): общий шаблон
+    позже = ``user_id`` пусто + отдельное правило редактирования.
+
+    ``title`` — до 200 символов (ограничение колонки). ``body`` — текст
+    шаблона без плейсхолдеров; предельная длина проверяется по настройке
+    ``prompt_template_max_chars``.
+    """
+
+    __tablename__ = "prompt_template"
+    __table_args__ = (Index("ix_prompt_template_ws_user", "workspace_id", "user_id"),)
+
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class Role(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Роль: name, is_builtin, policy (JSON). Источник правды для resolve_policy."""
 
