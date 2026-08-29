@@ -15,6 +15,7 @@ import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { AuditLogPage } from "../pages/AuditLogPage";
 import { CodeGraphPage } from "../pages/CodeGraphPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
+import { DocumentGraphPage } from "../pages/DocumentGraphPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
@@ -101,6 +102,9 @@ export function AppLayout({
     }
     if (activeSection === "code-graph") {
       return <CodeGraphPage />;
+    }
+    if (activeSection === "document-graph") {
+      return <DocumentGraphPage />;
     }
     if (activeSection === "settings") {
       return <SettingsPage capabilities={capabilities} />;

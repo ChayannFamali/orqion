@@ -18,6 +18,9 @@ vi.mock("../pages/TraceListPage", () => ({ TraceListPage: () => <div>TRACES_PAGE
 vi.mock("../pages/TraceDetailPage", () => ({ TraceDetailPage: () => <div>TRACE_DETAIL</div> }));
 vi.mock("../pages/SettingsPage", () => ({ SettingsPage: () => <div>SETTINGS_PAGE</div> }));
 vi.mock("../pages/CodeGraphPage", () => ({ CodeGraphPage: () => <div>CODE_GRAPH_PAGE</div> }));
+vi.mock("../pages/DocumentGraphPage", () => ({
+  DocumentGraphPage: () => <div>DOCUMENT_GRAPH_PAGE</div>,
+}));
 vi.mock("../pages/PlaceholderPage", () => ({ PlaceholderPage: () => <div>PLACEHOLDER</div> }));
 vi.mock("../components/Topbar", () => ({ Topbar: () => <div>TOPBAR</div> }));
 vi.mock("../hooks/useUsers", () => ({
@@ -106,5 +109,17 @@ describe("AppLayout navigation persistence", () => {
     window.location.hash = "#/code-graph";
     renderLayout(["*"]);
     expect(screen.getByText("CODE_GRAPH_PAGE")).toBeInTheDocument();
+  });
+
+  it("Т-505: граф документов недоступен без способности и доступен через *", () => {
+    window.location.hash = "#/document-graph";
+    const { unmount } = renderLayout(["chat", "upload"]);
+    expect(screen.queryByText("DOCUMENT_GRAPH_PAGE")).not.toBeInTheDocument();
+    expect(screen.getByText("CHAT_PAGE")).toBeInTheDocument();
+    unmount();
+
+    window.location.hash = "#/document-graph";
+    renderLayout(["*"]);
+    expect(screen.getByText("DOCUMENT_GRAPH_PAGE")).toBeInTheDocument();
   });
 });

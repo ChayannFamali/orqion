@@ -233,6 +233,47 @@ class QdrantVectorStore:
             ),
         )
 
+    async def fetch_dense_all(self, index_version_id: str) -> list[tuple[str, list[float]]]:
+        """Выгрузка всех плотных векторов версии: пары (chunk_id, вектор).
+
+        Штатный scroll по фильтру версии индекса, постранично.
+        Точки без плотного вектора (только разреженный) пропускаются.
+        """
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        await self._ensure_collection()
+
+        results: list[tuple[str, list[float]]] = []
+        offset: int | str | None = None
+        while True:
+            points, next_offset = await self._client.scroll(
+                collection_name=self._collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="index_version_id",
+                            match=MatchValue(value=index_version_id),
+                        )
+                    ]
+                ),
+                limit=256,
+                offset=offset,
+                with_payload=False,
+                with_vectors=["dense"],
+            )
+            for point in points:
+                vector_data = point.vector
+                if not isinstance(vector_data, dict):
+                    continue
+                dense = vector_data.get("dense")
+                if not isinstance(dense, list):
+                    continue
+                results.append((str(point.id), [float(v) for v in dense]))
+            if next_offset is None:
+                break
+            offset = next_offset
+        return results
+
     async def close(self) -> None:
         """Закрытие клиента."""
         await self._client.close()

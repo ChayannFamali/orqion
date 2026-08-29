@@ -42,6 +42,9 @@ class RagSettings(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     реранкера (0–1), только когда реранкер реально отработал.
     ``max_fragments`` — ограничение сверху 1–8, срез после реранкера
     до токен-лимита сборки контекста.
+    ``cluster_count`` — число групп графа связей документов 2–20
+    (Т-505); задаёт администратор, автоподбор и автоназвания не
+    предусмотрены.
     """
 
     __tablename__ = "rag_settings"
@@ -49,6 +52,7 @@ class RagSettings(Base, IdMixin, TimestampMixin, WorkspaceMixin):
 
     relevance_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_fragments: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    cluster_count: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
 
 
 class PromptTemplate(Base, IdMixin, TimestampMixin, WorkspaceMixin):

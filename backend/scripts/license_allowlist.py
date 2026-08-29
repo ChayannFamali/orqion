@@ -124,7 +124,10 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/networkx/networkx/blob/main/LICENSE",
         "2026-08-15",
     ),
-    "numpy": ("BSD-3-Clause", "https://github.com/numpy/numpy/blob/main/LICENSE.txt", "2026-08-15"),
+    # Прямая зависимость (экстра orqion[graph], Т-505). PyPI PEP 639:
+    # «BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0» — ядро BSD-3-Clause,
+    # остальные лицензии вшитых вспомогательных файлов, все пермиссивные.
+    "numpy": ("BSD-3-Clause", "https://github.com/numpy/numpy/blob/main/LICENSE.txt", "2026-08-30"),
     "openapi-spec-validator": (
         "Apache-2.0",
         "https://github.com/python-openapi/openapi-spec-validator/blob/main/LICENSE",

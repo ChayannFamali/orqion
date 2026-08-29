@@ -586,6 +586,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpora/{corpus_id}/document-graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Graph */
+        get: operations["get_document_graph_api_corpora__corpus_id__document_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpora/{corpus_id}/documents": {
         parameters: {
             query?: never;
@@ -1916,6 +1933,75 @@ export interface components {
              */
             uploaded_at: string;
         };
+        /** DocumentGraphEdge */
+        DocumentGraphEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "member";
+        };
+        /** DocumentGraphNode */
+        DocumentGraphNode: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cluster" | "document";
+            /** Document Id */
+            document_id?: string | null;
+        };
+        /** DocumentGraphResponse */
+        DocumentGraphResponse: {
+            /** Corpus Id */
+            corpus_id: string;
+            /** Index Version Id */
+            index_version_id: string | null;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Nodes
+             * @default []
+             */
+            nodes: components["schemas"]["DocumentGraphNode"][];
+            /**
+             * Edges
+             * @default []
+             */
+            edges: components["schemas"]["DocumentGraphEdge"][];
+            /**
+             * Total Documents
+             * @default 0
+             */
+            total_documents: number;
+            /**
+             * Shown Documents
+             * @default 0
+             */
+            shown_documents: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Cluster Count */
+            cluster_count?: number | null;
+            /**
+             * From Cache
+             * @default false
+             */
+            from_cache: boolean;
+        };
         /** DocumentListResponse */
         DocumentListResponse: {
             /** Documents */
@@ -2591,6 +2677,8 @@ export interface components {
             relevance_threshold: number;
             /** Max Fragments */
             max_fragments: number;
+            /** Cluster Count */
+            cluster_count: number;
         };
         /** RagSettingsUpdate */
         RagSettingsUpdate: {
@@ -2598,6 +2686,8 @@ export interface components {
             relevance_threshold: number;
             /** Max Fragments */
             max_fragments: number;
+            /** Cluster Count */
+            cluster_count: number;
         };
         /**
          * RoleCreate
@@ -3956,6 +4046,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentDiagnosticsResponse"];
+                };
+            };
+        };
+    };
+    get_document_graph_api_corpora__corpus_id__document_graph_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                corpus_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

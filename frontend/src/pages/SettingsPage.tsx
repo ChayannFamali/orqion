@@ -73,11 +73,13 @@ function RagSearchSettings({ canManage }: { canManage: boolean }) {
 
   const [threshold, setThreshold] = useState("");
   const [maxFragments, setMaxFragments] = useState("");
+  const [clusterCount, setClusterCount] = useState("");
 
   useEffect(() => {
     if (data) {
       setThreshold(String(data.relevance_threshold));
       setMaxFragments(String(data.max_fragments));
+      setClusterCount(String(data.cluster_count));
     }
   }, [data]);
 
@@ -100,11 +102,13 @@ function RagSearchSettings({ canManage }: { canManage: boolean }) {
 
   const dirty =
     Number(threshold) !== data.relevance_threshold ||
-    Number(maxFragments) !== data.max_fragments;
+    Number(maxFragments) !== data.max_fragments ||
+    Number(clusterCount) !== data.cluster_count;
 
   const handleSave = () => {
     const t = Number(threshold);
     const m = Number(maxFragments);
+    const c = Number(clusterCount);
     if (!Number.isInteger(t) || t < 0 || t > 100) {
       toast.error("Порог релевантности — целое число от 0 до 100");
       return;
@@ -113,8 +117,12 @@ function RagSearchSettings({ canManage }: { canManage: boolean }) {
       toast.error("Максимум фрагментов — целое число от 1 до 8");
       return;
     }
+    if (!Number.isInteger(c) || c < 2 || c > 20) {
+      toast.error("Число групп графа документов — целое число от 2 до 20");
+      return;
+    }
     updateMutation.mutate(
-      { relevance_threshold: t, max_fragments: m },
+      { relevance_threshold: t, max_fragments: m, cluster_count: c },
       {
         onSuccess: () => toast.success("Настройки поиска сохранены"),
         onError: () => toast.error("Не удалось сохранить настройки поиска"),
@@ -175,6 +183,31 @@ function RagSearchSettings({ canManage }: { canManage: boolean }) {
             data-testid="rag-max-fragments-input"
           />
           <span className="text-sm text-muted-foreground">шт.</span>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="rag-cluster-count" className="text-sm font-medium">
+          Число групп графа документов
+        </label>
+        <p className="text-xs text-muted-foreground">
+          На сколько семантических групп делить документы на графе связей
+          (от 2 до 20). Названия групп не генерируются автоматически.
+        </p>
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            id="rag-cluster-count"
+            type="number"
+            min={2}
+            max={20}
+            step={1}
+            value={clusterCount}
+            disabled={!canManage}
+            onChange={(e) => setClusterCount(e.target.value)}
+            className={inputClass}
+            data-testid="rag-cluster-count-input"
+          />
+          <span className="text-sm text-muted-foreground">групп</span>
         </div>
       </div>
 

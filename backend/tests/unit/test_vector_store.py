@@ -412,6 +412,51 @@ async def test_chunk_id_mapping_roundtrip(
 
 
 # ---------------------------------------------------------------------------
+# fetch_dense_all (Т-505)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_dense_all_returns_vectors_of_version(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """Массовая выгрузка: все чанки версии, векторы читаемы, другие версии не попадают."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+    await store.upsert(
+        "ver-002", [_make_chunk(0, "other version", _make_unit_vec(EMBEDDING_DIM, 9))]
+    )
+
+    pairs = await store.fetch_dense_all(version)
+    assert len(pairs) == 3
+    by_id = dict(pairs)
+    assert set(by_id.keys()) == {"chunk-0000-uuid", "chunk-0001-uuid", "chunk-0002-uuid"}
+    # float32 pack/unpack сохраняет значения единичных векторов точно
+    assert by_id["chunk-0000-uuid"][0] == pytest.approx(1.0)
+    assert by_id["chunk-0001-uuid"][1] == pytest.approx(1.0)
+    assert by_id["chunk-0002-uuid"][2] == pytest.approx(1.0)
+    assert all(len(vec) == EMBEDDING_DIM for vec in by_id.values())
+
+
+@pytest.mark.asyncio
+async def test_fetch_dense_all_empty_version(store: SQLiteVectorStore) -> None:
+    pairs = await store.fetch_dense_all("ver-missing")
+    assert pairs == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_dense_all_after_drop_version(
+    store: SQLiteVectorStore, chunks: list[EmbeddedChunk]
+) -> None:
+    """После удаления версии выгрузка пуста."""
+    version = "ver-001"
+    await store.upsert(version, chunks)
+    await store.drop_version(version)
+
+    assert await store.fetch_dense_all(version) == []
+
+
+# ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
 

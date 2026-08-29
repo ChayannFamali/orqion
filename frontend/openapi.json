@@ -1518,6 +1518,48 @@
         }
       }
     },
+    "/api/corpora/{corpus_id}/document-graph": {
+      "get": {
+        "tags": [
+          "corpora"
+        ],
+        "summary": "Get Document Graph",
+        "operationId": "get_document_graph_api_corpora__corpus_id__document_graph_get",
+        "parameters": [
+          {
+            "name": "corpus_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Corpus Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentGraphResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corpora/{corpus_id}/documents": {
       "post": {
         "tags": [
@@ -5147,6 +5189,156 @@
         "title": "DocumentDetailResponse",
         "description": "Метаданные документа без внутреннего blob_uri (T-306)."
       },
+      "DocumentGraphEdge": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "kind": {
+            "type": "string",
+            "const": "member",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "kind"
+        ],
+        "title": "DocumentGraphEdge"
+      },
+      "DocumentGraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cluster",
+              "document"
+            ],
+            "title": "Kind"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind"
+        ],
+        "title": "DocumentGraphNode"
+      },
+      "DocumentGraphResponse": {
+        "properties": {
+          "corpus_id": {
+            "type": "string",
+            "title": "Corpus Id"
+          },
+          "index_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Version Id"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentGraphNode"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentGraphEdge"
+            },
+            "type": "array",
+            "title": "Edges",
+            "default": []
+          },
+          "total_documents": {
+            "type": "integer",
+            "title": "Total Documents",
+            "default": 0
+          },
+          "shown_documents": {
+            "type": "integer",
+            "title": "Shown Documents",
+            "default": 0
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "cluster_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Count"
+          },
+          "from_cache": {
+            "type": "boolean",
+            "title": "From Cache",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "corpus_id",
+          "index_version_id",
+          "available"
+        ],
+        "title": "DocumentGraphResponse"
+      },
       "DocumentListResponse": {
         "properties": {
           "documents": {
@@ -6891,12 +7083,17 @@
           "max_fragments": {
             "type": "integer",
             "title": "Max Fragments"
+          },
+          "cluster_count": {
+            "type": "integer",
+            "title": "Cluster Count"
           }
         },
         "type": "object",
         "required": [
           "relevance_threshold",
-          "max_fragments"
+          "max_fragments",
+          "cluster_count"
         ],
         "title": "RagSettingsResponse"
       },
@@ -6913,12 +7110,19 @@
             "maximum": 8.0,
             "minimum": 1.0,
             "title": "Max Fragments"
+          },
+          "cluster_count": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Cluster Count"
           }
         },
         "type": "object",
         "required": [
           "relevance_threshold",
-          "max_fragments"
+          "max_fragments",
+          "cluster_count"
         ],
         "title": "RagSettingsUpdate"
       },

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 /**
  * T-506: настройки RAG-поиска уровня рабочей области.
+ * Т-505 добавила третье поле — число групп графа документов (2–20).
  *
  * Приёмка: чтение для всех; изменение только с правом управления корпусами;
  * формулировки «Порог релевантности после реранкинга» и «Максимум фрагментов
@@ -38,11 +39,12 @@ const updateMutate = vi.fn();
 const deleteMutate = vi.fn();
 
 function mockHooks(
-  data?: { relevance_threshold: number; max_fragments: number },
+  data?: { relevance_threshold: number; max_fragments: number; cluster_count?: number },
   opts?: { isLoading?: boolean; isError?: boolean },
 ) {
+  const settings = data ? { cluster_count: 8, ...data } : undefined;
   vi.mocked(useRagSettings).mockReturnValue({
-    data,
+    data: settings,
     isLoading: opts?.isLoading ?? false,
     isError: opts?.isError ?? false,
   } as unknown as ReturnType<typeof useRagSettings>);
@@ -101,11 +103,12 @@ describe("SettingsPage (T-506)", () => {
   });
 
   it("подставляет текущие значения в поля", () => {
-    mockHooks({ relevance_threshold: 40, max_fragments: 5 });
+    mockHooks({ relevance_threshold: 40, max_fragments: 5, cluster_count: 12 });
     render(<SettingsPage capabilities={ADMIN} />);
 
     expect(screen.getByTestId("rag-threshold-input")).toHaveValue(40);
     expect(screen.getByTestId("rag-max-fragments-input")).toHaveValue(5);
+    expect(screen.getByTestId("rag-cluster-count-input")).toHaveValue(12);
   });
 
   it("для роли без права управления корпусами — только чтение", () => {
@@ -114,6 +117,7 @@ describe("SettingsPage (T-506)", () => {
 
     expect(screen.getByTestId("rag-threshold-input")).toBeDisabled();
     expect(screen.getByTestId("rag-max-fragments-input")).toBeDisabled();
+    expect(screen.getByTestId("rag-cluster-count-input")).toBeDisabled();
     expect(screen.getByTestId("rag-settings-readonly")).toBeInTheDocument();
     expect(screen.queryByTestId("rag-settings-save")).not.toBeInTheDocument();
   });
@@ -139,7 +143,7 @@ describe("SettingsPage (T-506)", () => {
     fireEvent.click(save);
 
     expect(mutateAsync).toHaveBeenCalledWith(
-      { relevance_threshold: 50, max_fragments: 4 },
+      { relevance_threshold: 50, max_fragments: 4, cluster_count: 8 },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
   });
@@ -171,6 +175,39 @@ describe("SettingsPage (T-506)", () => {
 
     expect(mutateAsync).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith("Максимум фрагментов — целое число от 1 до 8");
+  });
+
+  it("отклоняет число групп вне диапазона 2–20", () => {
+    mockHooks({ relevance_threshold: 0, max_fragments: 8 });
+    render(<SettingsPage capabilities={ADMIN} />);
+
+    fireEvent.change(screen.getByTestId("rag-cluster-count-input"), {
+      target: { value: "25" },
+    });
+    fireEvent.click(screen.getByTestId("rag-settings-save"));
+
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Число групп графа документов — целое число от 2 до 20",
+    );
+  });
+
+  it("сохраняет изменённое число групп", () => {
+    mockHooks({ relevance_threshold: 0, max_fragments: 8, cluster_count: 8 });
+    render(<SettingsPage capabilities={MANAGER} />);
+
+    fireEvent.change(screen.getByTestId("rag-cluster-count-input"), {
+      target: { value: "6" },
+    });
+
+    const save = screen.getByTestId("rag-settings-save");
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      { relevance_threshold: 0, max_fragments: 8, cluster_count: 6 },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
   });
 
   it("показывает сообщение при ошибке загрузки", () => {

@@ -90,6 +90,10 @@ export type RagSettingsUpdate = components["schemas"]["RagSettingsUpdate"];
 export type CodeGraphNode = components["schemas"]["CodeGraphNode"];
 export type CodeGraphEdge = components["schemas"]["CodeGraphEdge"];
 export type CodeGraphResponse = components["schemas"]["CodeGraphResponse"];
+/** Граф связей документов — семантические кластеры (Т-505). */
+export type DocumentGraphNode = components["schemas"]["DocumentGraphNode"];
+export type DocumentGraphEdge = components["schemas"]["DocumentGraphEdge"];
+export type DocumentGraphResponse = components["schemas"]["DocumentGraphResponse"];
 /** Библиотека сохранённых промптов (Т-507). */
 export type PromptTemplateResponse = components["schemas"]["PromptTemplateResponse"];
 export type PromptTemplateListResponse = components["schemas"]["PromptTemplateListResponse"];

@@ -39,6 +39,7 @@ describe("isNavVisible", () => {
       "audit",
       "diagnostics",
       "code-graph",
+      "document-graph",
       "settings",
     ]);
   });
@@ -58,6 +59,15 @@ describe("isNavVisible", () => {
     expect(isNavVisible(item, ["*"])).toBe(true);
     expect(isNavVisible(item, ["view_code_graph"])).toBe(true);
     expect(isNavVisible(item, ["chat", "view_diagnostics"])).toBe(false);
+    expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("Т-505: граф документов виден только с view_document_graph или *", () => {
+    const item = navItems.find((i) => i.key === "document-graph")!;
+    expect(item.capability).toBe("view_document_graph");
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    expect(isNavVisible(item, ["view_document_graph"])).toBe(true);
+    expect(isNavVisible(item, ["chat", "view_code_graph"])).toBe(false);
     expect(isNavVisible(item, [])).toBe(false);
   });
 

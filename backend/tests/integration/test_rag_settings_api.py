@@ -2,8 +2,11 @@
 
 GET /api/rag-settings — чтение для всех авторизованных.
 PUT /api/rag-settings — изменение с правом управления корпусами;
-пишет одно действие аудита ``rag_settings.changed`` со старым/новым по обоим
+пишет одно действие аудита ``rag_settings.changed`` со старым/новым по всем
 полям; сохранение без изменений запись не создаёт (no-op).
+
+Т-505 добавила третье поле — ``cluster_count`` (число групп графа связей
+документов, 2–20, дефолт 8); контракт теста обновлён под три поля.
 """
 
 from __future__ import annotations
@@ -87,7 +90,7 @@ async def test_get_returns_defaults_when_no_row(
 
     resp = await api_client.get("/api/rag-settings")
     assert resp.status_code == 200
-    assert resp.json() == {"relevance_threshold": 0, "max_fragments": 8}
+    assert resp.json() == {"relevance_threshold": 0, "max_fragments": 8, "cluster_count": 8}
 
 
 @pytest.mark.asyncio
@@ -108,23 +111,32 @@ async def test_put_updates_and_writes_audit(
     await _login_as_admin(api_client, app_fixture)
 
     resp = await api_client.put(
-        "/api/rag-settings", json={"relevance_threshold": 60, "max_fragments": 4}
+        "/api/rag-settings",
+        json={"relevance_threshold": 60, "max_fragments": 4, "cluster_count": 6},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"relevance_threshold": 60, "max_fragments": 4}
+    assert resp.json() == {"relevance_threshold": 60, "max_fragments": 4, "cluster_count": 6}
 
     # Значения сохранены
     resp = await api_client.get("/api/rag-settings")
-    assert resp.json() == {"relevance_threshold": 60, "max_fragments": 4}
+    assert resp.json() == {"relevance_threshold": 60, "max_fragments": 4, "cluster_count": 6}
 
-    # Одно действие аудита со старым/новым по обоим полям
+    # Одно действие аудита со старым/новым по всем полям
     factory = app_fixture.state.db_session_factory
     async with factory() as session:
         rows = (await session.execute(select(AuditLog))).scalars().all()
     changed = [r for r in rows if r.action == "rag_settings.changed"]
     assert len(changed) == 1
-    assert changed[0].meta["old"] == {"relevance_threshold": 0, "max_fragments": 8}
-    assert changed[0].meta["new"] == {"relevance_threshold": 60, "max_fragments": 4}
+    assert changed[0].meta["old"] == {
+        "relevance_threshold": 0,
+        "max_fragments": 8,
+        "cluster_count": 8,
+    }
+    assert changed[0].meta["new"] == {
+        "relevance_threshold": 60,
+        "max_fragments": 4,
+        "cluster_count": 6,
+    }
 
 
 @pytest.mark.asyncio
@@ -134,10 +146,14 @@ async def test_put_noop_does_not_write_audit(
     await _login_as_admin(api_client, app_fixture)
 
     # Первое изменение — создаёт строку и пишет аудит
-    await api_client.put("/api/rag-settings", json={"relevance_threshold": 60, "max_fragments": 4})
+    await api_client.put(
+        "/api/rag-settings",
+        json={"relevance_threshold": 60, "max_fragments": 4, "cluster_count": 6},
+    )
     # Повтор с теми же значениями — no-op, аудита не прибавляется
     resp = await api_client.put(
-        "/api/rag-settings", json={"relevance_threshold": 60, "max_fragments": 4}
+        "/api/rag-settings",
+        json={"relevance_threshold": 60, "max_fragments": 4, "cluster_count": 6},
     )
     assert resp.status_code == 200
 
@@ -156,14 +172,15 @@ async def test_put_noop_does_not_write_audit(
 
 
 @pytest.mark.asyncio
-async def test_put_partial_change_records_both_fields(
+async def test_put_partial_change_records_all_fields(
     api_client: httpx.AsyncClient, app_fixture: FastAPI
 ) -> None:
-    """Меняется одно поле — в аудите всё равно старое/новое по обоим."""
+    """Меняется одно поле — в аудите всё равно старое/новое по всем."""
     await _login_as_admin(api_client, app_fixture)
 
     resp = await api_client.put(
-        "/api/rag-settings", json={"relevance_threshold": 30, "max_fragments": 8}
+        "/api/rag-settings",
+        json={"relevance_threshold": 30, "max_fragments": 8, "cluster_count": 8},
     )
     assert resp.status_code == 200
 
@@ -179,7 +196,7 @@ async def test_put_partial_change_records_both_fields(
             .all()
         )
     assert len(row) == 1
-    assert row[0].meta["new"] == {"relevance_threshold": 30, "max_fragments": 8}
+    assert row[0].meta["new"] == {"relevance_threshold": 30, "max_fragments": 8, "cluster_count": 8}
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +212,8 @@ async def test_put_forbidden_without_manage_corpora(
     await _login_as_role(api_client, app_fixture, "developer")
 
     resp = await api_client.put(
-        "/api/rag-settings", json={"relevance_threshold": 50, "max_fragments": 4}
+        "/api/rag-settings",
+        json={"relevance_threshold": 50, "max_fragments": 4, "cluster_count": 8},
     )
     assert resp.status_code == 404
 
@@ -219,7 +237,8 @@ async def test_put_allowed_for_architect(
     await _login_as_role(api_client, app_fixture, "architect")
 
     resp = await api_client.put(
-        "/api/rag-settings", json={"relevance_threshold": 20, "max_fragments": 6}
+        "/api/rag-settings",
+        json={"relevance_threshold": 20, "max_fragments": 6, "cluster_count": 8},
     )
     assert resp.status_code == 200
 
@@ -236,10 +255,12 @@ async def test_put_rejects_out_of_range(
     await _login_as_admin(api_client, app_fixture)
 
     for body in (
-        {"relevance_threshold": 101, "max_fragments": 4},
-        {"relevance_threshold": -1, "max_fragments": 4},
-        {"relevance_threshold": 50, "max_fragments": 0},
-        {"relevance_threshold": 50, "max_fragments": 9},
+        {"relevance_threshold": 101, "max_fragments": 4, "cluster_count": 8},
+        {"relevance_threshold": -1, "max_fragments": 4, "cluster_count": 8},
+        {"relevance_threshold": 50, "max_fragments": 0, "cluster_count": 8},
+        {"relevance_threshold": 50, "max_fragments": 9, "cluster_count": 8},
+        {"relevance_threshold": 50, "max_fragments": 4, "cluster_count": 1},
+        {"relevance_threshold": 50, "max_fragments": 4, "cluster_count": 21},
     ):
         resp = await api_client.put("/api/rag-settings", json=body)
         assert resp.status_code == 422, body
@@ -252,8 +273,14 @@ async def test_unique_row_per_workspace(
     """Несколько сохранений не создают дублей — одна строка на область."""
     await _login_as_admin(api_client, app_fixture)
 
-    await api_client.put("/api/rag-settings", json={"relevance_threshold": 10, "max_fragments": 3})
-    await api_client.put("/api/rag-settings", json={"relevance_threshold": 20, "max_fragments": 5})
+    await api_client.put(
+        "/api/rag-settings",
+        json={"relevance_threshold": 10, "max_fragments": 3, "cluster_count": 8},
+    )
+    await api_client.put(
+        "/api/rag-settings",
+        json={"relevance_threshold": 20, "max_fragments": 5, "cluster_count": 10},
+    )
 
     factory = app_fixture.state.db_session_factory
     ws_id = app_fixture.state.workspace_id
@@ -266,3 +293,4 @@ async def test_unique_row_per_workspace(
     assert len(rows) == 1
     assert rows[0].relevance_threshold == 20
     assert rows[0].max_fragments == 5
+    assert rows[0].cluster_count == 10

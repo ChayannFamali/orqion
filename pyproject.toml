@@ -40,6 +40,9 @@ dependencies = [
 full = [
     "FlagEmbedding==1.4.0",
 ]
+graph = [
+    "numpy==2.5.2",
+]
 vector-qdrant = [
     "qdrant-client==1.19.0",
 ]
@@ -174,6 +177,12 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "prometheus_client.*"
+ignore_missing_imports = true
+
+# Опциональная зависимость (экстра orqion[graph], Т-505); с установленным
+# numpy mypy берёт его собственные типы, оверрайд действует только без него.
+[[tool.mypy.overrides]]
+module = "numpy"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

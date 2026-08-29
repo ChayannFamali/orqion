@@ -10,6 +10,7 @@ import {
   Shield,
   Cpu,
   GitBranch,
+  Network,
   Settings,
 } from "lucide-react";
 
@@ -56,6 +57,14 @@ export const navItems: NavItem[] = [
   // T-504: read-only визуализация графа связей кода; способность не в
   // посевных пресетах — выдаётся через "*" или правкой политики роли.
   { key: "code-graph", label: "Граф кода", icon: GitBranch, capability: "view_code_graph" },
+  // Т-505: граф связей документов (семантические кластеры). Отдельная
+  // способность по паттерну Т-504 — не в посевных пресетах.
+  {
+    key: "document-graph",
+    label: "Граф документов",
+    icon: Network,
+    capability: "view_document_graph",
+  },
   // T-506: общие настройки (поиск по документам); видны всем, право на
   // изменение проверяется внутри. Будущие вкладки темы/языка — сюда же.
   { key: "settings", label: "Настройки", icon: Settings, capability: undefined },

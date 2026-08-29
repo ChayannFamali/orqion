@@ -1,14 +1,15 @@
 """GET /api/rag-settings, PUT /api/rag-settings.
 
 Настройки RAG-поиска уровня рабочей области (Т-506): порог релевантности
-после реранкинга и максимум фрагментов контекста. Одна запись на рабочую
-область; до первого изменения действуют значения по умолчанию (8 и 0),
-поведение поиска не меняется.
+после реранкинга, максимум фрагментов контекста и число групп графа
+связей документов (Т-505). Одна запись на рабочую область; до первого
+изменения действуют значения по умолчанию (0, 8 и 8), поведение поиска
+не меняется.
 
 Доступ: чтение — всем авторизованным; изменение — право ``manage_corpora``
 (паттерн других разделов управления корпусами: без права → 404).
 Изменение пишется в журнал аудита одним действием ``rag_settings.changed``
-со старым и новым значением обоих полей; сохранение без изменений запись
+со старым и новым значением всех полей; сохранение без изменений запись
 не создаёт.
 """
 
@@ -35,6 +36,7 @@ router = APIRouter(
 
 DEFAULT_RELEVANCE_THRESHOLD = 0
 DEFAULT_MAX_FRAGMENTS = 8
+DEFAULT_CLUSTER_COUNT = 8
 
 
 async def _check_manage_corpora(session: AsyncSession, user: User) -> bool:
@@ -59,10 +61,12 @@ async def get_rag_settings(
         return RagSettingsResponse(
             relevance_threshold=DEFAULT_RELEVANCE_THRESHOLD,
             max_fragments=DEFAULT_MAX_FRAGMENTS,
+            cluster_count=DEFAULT_CLUSTER_COUNT,
         )
     return RagSettingsResponse(
         relevance_threshold=row.relevance_threshold,
         max_fragments=row.max_fragments,
+        cluster_count=row.cluster_count,
     )
 
 
@@ -86,11 +90,17 @@ async def update_rag_settings(
     row = result.scalar_one_or_none()
     old_threshold = row.relevance_threshold if row else DEFAULT_RELEVANCE_THRESHOLD
     old_max = row.max_fragments if row else DEFAULT_MAX_FRAGMENTS
+    old_clusters = row.cluster_count if row else DEFAULT_CLUSTER_COUNT
 
-    if body.relevance_threshold == old_threshold and body.max_fragments == old_max:
+    if (
+        body.relevance_threshold == old_threshold
+        and body.max_fragments == old_max
+        and body.cluster_count == old_clusters
+    ):
         return RagSettingsResponse(
             relevance_threshold=old_threshold,
             max_fragments=old_max,
+            cluster_count=old_clusters,
         )
 
     if row is None:
@@ -98,11 +108,13 @@ async def update_rag_settings(
             workspace_id=workspace_id,
             relevance_threshold=body.relevance_threshold,
             max_fragments=body.max_fragments,
+            cluster_count=body.cluster_count,
         )
         session.add(row)
     else:
         row.relevance_threshold = body.relevance_threshold
         row.max_fragments = body.max_fragments
+        row.cluster_count = body.cluster_count
 
     await write_audit(
         session,
@@ -115,10 +127,12 @@ async def update_rag_settings(
             "old": {
                 "relevance_threshold": old_threshold,
                 "max_fragments": old_max,
+                "cluster_count": old_clusters,
             },
             "new": {
                 "relevance_threshold": body.relevance_threshold,
                 "max_fragments": body.max_fragments,
+                "cluster_count": body.cluster_count,
             },
         },
     )
@@ -127,4 +141,5 @@ async def update_rag_settings(
     return RagSettingsResponse(
         relevance_threshold=body.relevance_threshold,
         max_fragments=body.max_fragments,
+        cluster_count=body.cluster_count,
     )

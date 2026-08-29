@@ -9,6 +9,7 @@ from app.api.routes.config import router as config_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.corpora import router as corpora_router
 from app.api.routes.diagnostics import router as diagnostics_router
+from app.api.routes.document_graph import router as document_graph_router
 from app.api.routes.documents import document_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.eval import router as eval_router
@@ -32,6 +33,7 @@ __all__ = [
     "conversations_router",
     "corpora_router",
     "diagnostics_router",
+    "document_graph_router",
     "document_router",
     "documents_router",
     "eval_router",

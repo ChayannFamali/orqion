@@ -63,6 +63,15 @@ class VectorStore(Protocol):
         """Удаление всех векторов и FTS-записей версии индекса."""
         ...
 
+    async def fetch_dense_all(self, index_version_id: str) -> list[tuple[str, list[float]]]:
+        """Массовая выгрузка плотных векторов версии индекса.
+
+        Возвращает пары (chunk_id, вектор) для всех чанков версии.
+        Для задач по всему индексу (кластеризация документов, Т-505),
+        а не запрос-ориентированного поиска top-k.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # SQLiteVectorStore — sqlite-vec + FTS5
@@ -254,6 +263,25 @@ class SQLiteVectorStore:
         # Освобождение дискового пространства
         await conn.execute("PRAGMA incremental_vacuum")
         await conn.commit()
+
+    async def fetch_dense_all(self, index_version_id: str) -> list[tuple[str, list[float]]]:
+        """Выгрузка всех плотных векторов версии: пары (chunk_id, вектор).
+
+        Чтение через джойн обычной таблицы маппинга с vec0 по rowid —
+        фильтрация по вспомогательной колонке vec0 без KNN-запроса
+        не поддерживается, поэтому обходим через явный маппинг.
+        """
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT m.chunk_id, v.embedding "
+            "FROM vec_chunk_map m "
+            "JOIN vec_chunks v ON v.rowid = m.rowid "
+            "WHERE m.index_version_id = ? "
+            "ORDER BY m.chunk_id",
+            (index_version_id,),
+        )
+        rows = await cursor.fetchall()
+        return [(str(row[0]), list(struct.unpack(f"{EMBEDDING_DIM}f", row[1]))) for row in rows]
 
     async def close(self) -> None:
         """Закрытие соединения."""
