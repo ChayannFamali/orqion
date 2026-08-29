@@ -7,10 +7,16 @@ import asyncio
 import sys
 
 from app.config import Settings
+from app.version import get_version
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="orqion", description="orqion — LLM application")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"orqion {get_version()}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     serve_parser = subparsers.add_parser("serve", help="Запустить сервер")

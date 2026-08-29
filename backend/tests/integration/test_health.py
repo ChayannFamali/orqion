@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from app.version import get_version
 from fastapi import FastAPI
 
 
@@ -14,6 +15,13 @@ async def test_health_returns_200(api_client: httpx.AsyncClient) -> None:
     response = await api_client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_health_reports_version(api_client: httpx.AsyncClient) -> None:
+    """Т-608: /health сообщает версию — сверка с тегом выпуска без парсинга файлов."""
+    response = await api_client.get("/health")
+    assert response.json()["version"] == get_version()
 
 
 @pytest.mark.asyncio

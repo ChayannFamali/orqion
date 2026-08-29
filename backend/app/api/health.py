@@ -6,6 +6,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.version import get_version
+
 router = APIRouter()
 
 
@@ -13,7 +15,7 @@ router = APIRouter()
 async def health() -> JSONResponse:
     return JSONResponse(
         status_code=200,
-        content={"status": "ok"},
+        content={"status": "ok", "version": get_version()},
     )
 
 
