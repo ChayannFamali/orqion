@@ -480,3 +480,22 @@ async def resolve_corpora(
     """
     unique_names = list(dict.fromkeys(corpus_names))
     return [await resolve_corpus(session, workspace_id, name) for name in unique_names]
+
+
+# Т-439 (решение А1), вынесено в Т-502: строгость классов данных.
+# Любой К2/К3 среди выбранных корпусов переводит весь запрос на
+# локальные модели. Общий для чат-конвейера и агентного модуля.
+_DATA_CLASS_STRICTNESS: dict[str, int] = {"К0": 0, "К1": 1, "К2": 2, "К3": 3}
+
+
+def strictest_data_class(classes: list[str | None]) -> str | None:
+    """Самый строгий data_class побеждает; None трактуется как К0."""
+    strictest: str | None = None
+    for cls in classes:
+        if cls is None:
+            continue
+        if strictest is None or _DATA_CLASS_STRICTNESS.get(cls, 0) > _DATA_CLASS_STRICTNESS.get(
+            strictest, 0
+        ):
+            strictest = cls
+    return strictest

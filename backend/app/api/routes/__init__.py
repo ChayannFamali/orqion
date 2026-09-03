@@ -1,5 +1,6 @@
 """Роутеры API, сгруппированные по доменам."""
 
+from app.api.routes.agent import router as agent_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.auth import router as auth_router
@@ -24,6 +25,7 @@ from app.api.routes.traces import router as traces_router
 from app.api.routes.users import router as users_router
 
 __all__ = [
+    "agent_router",
     "analytics_router",
     "audit_router",
     "auth_router",

@@ -122,6 +122,19 @@ class Forbidden(OrqionError):
     status_code = 403
 
 
+class AgentRunLimitExceeded(OrqionError):
+    """Т-502 (решение 4): лимит прогона агентного цикла исчерпан.
+
+    Дополнительный предохранитель поверх обычного биллинга: число
+    вызовов модели или суммарные токены за прогон превысили дефолты
+    конфигурации (agent_max_steps / agent_max_tokens_per_run).
+    """
+
+    error_code = "agent_run_limit_exceeded"
+    reason = "Агентный прогон остановлен: исчерпан лимит шагов или токенов"
+    status_code = 400
+
+
 class CorpusNotReady(OrqionError):
     error_code = "corpus_not_ready"
     reason = "Корпус не имеет активной версии индекса"

@@ -105,6 +105,45 @@ class ProviderClient:
 
         return await with_retry(_call)
 
+    async def complete_tools(
+        self,
+        messages: list[dict[str, Any]],
+        model: str,
+        tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
+        temperature: float = 0.7,
+    ) -> dict[str, Any]:
+        """POST /v1/chat/completions с tools — агентный модуль (Т-502).
+
+        Отдельный метод, не расширение ``complete``: сообщения принимают
+        вложенную структуру (роль ``tool``, ``tool_calls`` ассистента —
+        OpenAI tools API), которую обычный чат не использует. Возвращает
+        сырой ответ: ``choices[0].message`` содержит либо непустой
+        ``tool_calls`` (модель запрашивает инструмент), либо ``content``
+        (финальный ответ).
+        """
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+            "tools": tools,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        async def _call() -> dict[str, Any]:
+            async with self._client() as client:
+                response = await client.post(
+                    f"{self._base_url}/v1/chat/completions",
+                    json=payload,
+                )
+                response.raise_for_status()
+                result: dict[str, Any] = response.json()
+                return result
+
+        return await with_retry(_call)
+
     async def stream(
         self,
         messages: list[dict[str, str]],

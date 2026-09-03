@@ -288,6 +288,48 @@
         }
       }
     },
+    "/api/agent/chat": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat",
+        "description": "Один синхронный агентный прогон по вопросу пользователя.",
+        "operationId": "agent_chat_api_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics": {
       "get": {
         "tags": [
@@ -3909,6 +3951,246 @@
         "title": "ActivateResponse",
         "description": "Результат активации версии индекса."
       },
+      "AgentChatRequest": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias"
+          },
+          "corpus_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Names"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "model_alias"
+        ],
+        "title": "AgentChatRequest",
+        "description": "Запрос агентного прогона.\n\nМодель обязательна: агентный цикл работает только с моделями, у\nкоторых администратор включил флаг ``supports_tools`` (решение 3).\n``messages`` — буфер диалога, как в обычном чате (клиент управляет\nисторией); последнее сообщение — вопрос пользователя."
+      },
+      "AgentChatResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": true
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "complete"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStepEntry"
+            },
+            "type": "array",
+            "title": "Steps",
+            "default": []
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ChatSourceEntry"
+            },
+            "type": "array",
+            "title": "Sources",
+            "default": []
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "pending_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingConfirmation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "constraint": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constraint"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "title": "AgentChatResponse",
+        "description": "Ответ POST /api/agent/chat.\n\nЧестная деградация (паттерн Т-444/Т-505): без дополнения\n``orqion[agent]`` — 200 с ``available=false`` и явной причиной."
+      },
+      "AgentStepEntry": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "kind"
+        ],
+        "title": "AgentStepEntry",
+        "description": "Шаг прогона для ленты агентного диалога."
+      },
       "AnalyticsResponse": {
         "properties": {
           "summary": {
@@ -6852,6 +7134,31 @@
         ],
         "title": "NvidiaDiagnostics",
         "description": "Best-effort чтение через nvidia-smi; без него — честное «недоступно»."
+      },
+      "PendingConfirmation": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "tool",
+          "args"
+        ],
+        "title": "PendingConfirmation",
+        "description": "Запрос подтверждения деструктивного действия (пункт 9).\n\nМеханизм заложен в Т-502; в этой задаче деструктивных инструментов\nнет, поле всегда ``null``. Реальное использование проверяется в\nТ-503/Т-508."
       },
       "PromptTemplateCreate": {
         "properties": {

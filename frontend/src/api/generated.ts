@@ -210,6 +210,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Chat
+         * @description Один синхронный агентный прогон по вопросу пользователя.
+         */
+        post: operations["agent_chat_api_agent_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics": {
         parameters: {
             query?: never;
@@ -1439,6 +1459,98 @@ export interface components {
             warning?: string | null;
         };
         /**
+         * AgentChatRequest
+         * @description Запрос агентного прогона.
+         *
+         *     Модель обязательна: агентный цикл работает только с моделями, у
+         *     которых администратор включил флаг ``supports_tools`` (решение 3).
+         *     ``messages`` — буфер диалога, как в обычном чате (клиент управляет
+         *     историей); последнее сообщение — вопрос пользователя.
+         */
+        AgentChatRequest: {
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Messages */
+            messages: components["schemas"]["ChatMessage"][];
+            /** Model Alias */
+            model_alias: string;
+            /** Corpus Names */
+            corpus_names?: string[] | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+        };
+        /**
+         * AgentChatResponse
+         * @description Ответ POST /api/agent/chat.
+         *
+         *     Честная деградация (паттерн Т-444/Т-505): без дополнения
+         *     ``orqion[agent]`` — 200 с ``available=false`` и явной причиной.
+         */
+        AgentChatResponse: {
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Type
+             * @default complete
+             */
+            type: string;
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Model */
+            model?: string | null;
+            usage?: components["schemas"]["ChatUsage"] | null;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["AgentStepEntry"][];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["ChatSourceEntry"][];
+            /** Trace Id */
+            trace_id?: string | null;
+            pending_confirmation?: components["schemas"]["PendingConfirmation"] | null;
+            /** Code */
+            code?: string | null;
+            /** Constraint */
+            constraint?: {
+                [key: string]: unknown;
+            } | null;
+            /** Hint */
+            hint?: string | null;
+        };
+        /**
+         * AgentStepEntry
+         * @description Шаг прогона для ленты агентного диалога.
+         */
+        AgentStepEntry: {
+            /** Index */
+            index: number;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Decision */
+            decision?: string | null;
+        };
+        /**
          * AnalyticsResponse
          * @description Полный ответ аналитики.
          */
@@ -2599,6 +2711,24 @@ export interface components {
              */
             gpus: components["schemas"]["GpuInfo"][];
         };
+        /**
+         * PendingConfirmation
+         * @description Запрос подтверждения деструктивного действия (пункт 9).
+         *
+         *     Механизм заложен в Т-502; в этой задаче деструктивных инструментов
+         *     нет, поле всегда ``null``. Реальное использование проверяется в
+         *     Т-503/Т-508.
+         */
+        PendingConfirmation: {
+            /** Call Id */
+            call_id: string;
+            /** Tool */
+            tool: string;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+        };
         /** PromptTemplateCreate */
         PromptTemplateCreate: {
             /** Title */
@@ -3380,6 +3510,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangePasswordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_chat_api_agent_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChatResponse"];
                 };
             };
             /** @description Validation Error */

@@ -40,28 +40,11 @@ from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from app.rag.pipeline import RagContext, RagState, run_pipeline
-from app.rag.service import resolve_corpora
+from app.rag.service import resolve_corpora, strictest_data_class
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(current_user)])
-
-# T-439 (решение А1): строгость классов данных. Любой К2/К3 среди выбранных
-# корпусов переводит весь запрос на локальные модели.
-_DATA_CLASS_STRICTNESS: dict[str, int] = {"К0": 0, "К1": 1, "К2": 2, "К3": 3}
-
-
-def _strictest_data_class(classes: list[str | None]) -> str | None:
-    """Самый строгий data_class побеждает; None трактуется как К0."""
-    strictest: str | None = None
-    for cls in classes:
-        if cls is None:
-            continue
-        if strictest is None or _DATA_CLASS_STRICTNESS.get(cls, 0) > _DATA_CLASS_STRICTNESS.get(
-            strictest, 0
-        ):
-            strictest = cls
-    return strictest
 
 
 def _is_adr12_violation(exc: DataClassViolation | NoRouteAvailable) -> bool:
@@ -182,7 +165,7 @@ async def chat(
         # Решение А1: строжайший data_class побеждает — любой К2/К3 среди
         # выбранных корпусов делает весь запрос доступным только локальным
         # моделям (корпус переопределяет data_class из БД, как в T-221).
-        corpus_data_class = _strictest_data_class([c.data_class for c in corpora])
+        corpus_data_class = strictest_data_class([c.data_class for c in corpora])
         # Решение Д1: конфликт пинов → явная ошибка. Один общий пин
         # применяется как в одиночном режиме: переопределяет выбор
         # пользователя. Пин хранится как id модели, а маршрутизация

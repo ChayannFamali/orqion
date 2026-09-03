@@ -24,7 +24,6 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import tiktoken
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,22 +53,11 @@ class _NullSpan:
         return None
 
 
-_ENCODER: tiktoken.Encoding | None = None
-
-
-def _get_encoder() -> tiktoken.Encoding:
-    """Возвращает BPE-энкодер. cl100k_base —通用, работает для большинства моделей."""
-    global _ENCODER
-    if _ENCODER is None:
-        _ENCODER = tiktoken.get_encoding("cl100k_base")
-    return _ENCODER
-
-
 def _count_tokens(text: str) -> int:
-    """Точный подсчёт токенов через tiktoken. T-107: корректен для кириллицы и кода."""
-    if not text:
-        return 1
-    return len(_get_encoder().encode(text))
+    """Точный подсчёт токенов — общий помощник (Т-502 вынес в utils)."""
+    from app.utils.tokens import count_tokens
+
+    return count_tokens(text)
 
 
 def _filter_by_policy_models(
