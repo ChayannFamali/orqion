@@ -58,6 +58,21 @@ graph = [
 agent = [
     "langgraph==1.2.11",
 ]
+# Клиент протокола передачи контекста моделям (Т-503): подключение
+# внешних инструментов по HTTP к явному адресу (решение 1
+# дизайн-ревью Т-503 / пункт 8 ADR-21). Не входит в зависимости по
+# умолчанию. Точный пин головного пакета — по правилу Т-505;
+# транзитивные зависимости плавают в диапазонах, указанных самим
+# пакетом (прецедент qdrant-client).
+#
+# ВНИМАНИЕ (согласовано 2026-09-03): в отличие от langgraph/langsmith,
+# клиент протокола телеметрии не тянет — проверено `pip freeze` на
+# чистом venv (в дереве ветки 1.х нет телеметрических клиентов).
+# Лицензии транзитивных пакетов проверены по текстам LICENSE в колёсах
+# (см. backend/scripts/license_allowlist.py: pyjwt, sse-starlette).
+mcp = [
+    "mcp==1.29.1",
+]
 vector-qdrant = [
     "qdrant-client==1.19.0",
 ]
@@ -214,6 +229,19 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "langchain_core.*"
+ignore_missing_imports = true
+
+# Клиент протокола передачи контекста моделям (экстра orqion[mcp],
+# Т-503): в джобе типов стоит только [dev], без дополнения импорты
+# считаются отсутствующими. С установленным дополнением mypy берёт
+# собственные типы пакета (есть py.typed) — оверрайд действует только
+# без него.
+[[tool.mypy.overrides]]
+module = "mcp"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

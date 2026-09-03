@@ -227,6 +227,16 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/pydantic/pydantic-settings/blob/main/LICENSE",
         "2026-08-15",
     ),
+    # Клиент протокола передачи контекста моделям (экстра orqion[mcp],
+    # Т-503), транзитивная зависимость. В метаданных только PEP 639
+    # License-Expression; текст «The MIT License (MIT), Copyright (c)
+    # 2015-2022 José Padilla» проверен в файле LICENSE внутри колеса
+    # 2.13.0.
+    "pyjwt": (
+        "MIT",
+        "https://github.com/jpadilla/pyjwt/blob/master/LICENSE",
+        "2026-09-03",
+    ),
     "pygments": (
         "BSD-2-Clause",
         "https://github.com/pygments/pygments/blob/master/LICENSE",
@@ -259,6 +269,15 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
     "ruff": ("MIT", "https://github.com/astral-sh/ruff/blob/main/LICENSE", "2026-08-15"),
     "rtree": ("MIT", "https://github.com/Toblerity/rtree/blob/main/LICENSE", "2026-08-15"),
     "setuptools": ("MIT", "https://github.com/pypa/setuptools/blob/main/LICENSE", "2026-08-15"),
+    # Серверная часть SSE — транзитивная зависимость экстра orqion[mcp]
+    # (Т-503). В метаданных только PEP 639 License-Expression; текст
+    # BSD-3-Clause («Copyright © 2020, sysid») проверен в файле LICENSE
+    # внутри колеса 3.4.10.
+    "sse-starlette": (
+        "BSD-3-Clause",
+        "https://github.com/sysid/sse-starlette/blob/master/LICENSE",
+        "2026-09-03",
+    ),
     "starlette": (
         "BSD-3-Clause",
         "https://github.com/encode/starlette/blob/master/LICENSE",
