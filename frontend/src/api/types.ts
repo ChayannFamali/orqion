@@ -99,3 +99,8 @@ export type PromptTemplateResponse = components["schemas"]["PromptTemplateRespon
 export type PromptTemplateListResponse = components["schemas"]["PromptTemplateListResponse"];
 export type PromptTemplateCreate = components["schemas"]["PromptTemplateCreate"];
 export type PromptTemplateUpdate = components["schemas"]["PromptTemplateUpdate"];
+/** Агентный модуль (Т-502). */
+export type AgentChatRequest = components["schemas"]["AgentChatRequest"];
+export type AgentChatResponse = components["schemas"]["AgentChatResponse"];
+export type AgentStepEntry = components["schemas"]["AgentStepEntry"];
+export type PendingConfirmation = components["schemas"]["PendingConfirmation"];

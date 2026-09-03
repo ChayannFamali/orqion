@@ -8,11 +8,22 @@ interface NewChatModalProps {
   models: ModelInfo[];
   onCancel: () => void;
   onCreate: (alias: string) => void;
+  /** Т-502: заголовок точки создания (для агентного диалога — свой). */
+  title?: string;
+  /** Т-502: подпись-подсказка под заголовком. */
+  description?: string;
 }
 
 const GROUP_THRESHOLD = 10;
 
-export function NewChatModal({ open, models, onCancel, onCreate }: NewChatModalProps) {
+export function NewChatModal({
+  open,
+  models,
+  onCancel,
+  onCreate,
+  title = "Новый диалог",
+  description = "Выберите модель — выбор обязателен",
+}: NewChatModalProps) {
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,12 +82,12 @@ export function NewChatModal({ open, models, onCancel, onCreate }: NewChatModalP
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Новый диалог"
+        aria-label={title}
         className="w-full max-w-md rounded-lg border border-border bg-background p-4 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Новый диалог</h2>
+          <h2 className="text-sm font-semibold">{title}</h2>
           <button
             onClick={onCancel}
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -85,9 +96,7 @@ export function NewChatModal({ open, models, onCancel, onCreate }: NewChatModalP
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Выберите модель — выбор обязателен
-        </p>
+        <p className="mb-3 text-sm text-muted-foreground">{description}</p>
         <div className="max-h-80 overflow-y-auto rounded-md border border-border p-1">
           {groups.length > 0
             ? groups.map((g) => (

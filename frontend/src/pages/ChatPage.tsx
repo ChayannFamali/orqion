@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, Eraser } from "lucide-react";
+import { Bot, Download, Eraser } from "lucide-react";
 import {
   useConversations,
   useConversation,
@@ -10,6 +10,7 @@ import {
 import { useEnabledModels } from "../hooks/useModels";
 import { useAvailableCorpora } from "../hooks/useCorpora";
 import { useChat } from "../hooks/useChat";
+import { useAgentChat } from "../hooks/useAgentChat";
 import { useCurrentUser } from "../hooks/useAuth";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { ConversationList } from "../components/ConversationList";
@@ -18,6 +19,7 @@ import { ChatInput } from "../components/ChatInput";
 import { ModelSelector } from "../components/ModelSelector";
 import { CorpusSelector } from "../components/CorpusSelector";
 import { NewChatModal } from "../components/NewChatModal";
+import { AgentRunSummary } from "../components/AgentRunSummary";
 import type { ChatMessage, MessageResponse } from "../api/types";
 import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
 import { estimateTokens } from "../utils/estimateTokens";
@@ -33,6 +35,11 @@ export function ChatPage() {
   // виден только при политике "optional"; выбор не запоминается на диалог —
   // сбрасывается на дефолт (выключен = "авто") при новом диалоге.
   const [reasoningOn, setReasoningOn] = useState(false);
+  // Т-502 (решение 10): агентный режим — отдельная точка создания, обычный
+  // чат поведение не меняет. Режим следует за разговором (поле ``mode``).
+  const [agentMode, setAgentMode] = useState(false);
+  const [agentConvId, setAgentConvId] = useState<string | null>(null);
+  const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
 
   const currentUser = useCurrentUser();
   const reasoningPolicy = currentUser.data?.reasoning ?? "off";
@@ -53,6 +60,12 @@ export function ChatPage() {
   const resetContext = useResetConversationContext();
   const deleteConv = useDeleteConversation();
   const chat = useChat();
+  const agent = useAgentChat();
+
+  // Т-502: модели с флагом пригодности к инструментам (решение 3). Точка
+  // создания агентного диалога видна только при наличии хотя бы одной.
+  const agentModels = (models.data ?? []).filter((m) => m.supports_tools);
+  const hasAgentModels = agentModels.length > 0;
 
   // Явный дефолт вместо null: селектор всегда показывает модель, которая
   // ответит; запрос уходит с model_alias, а не с неявным candidates[0]
@@ -68,6 +81,26 @@ export function ChatPage() {
     setReasoningOn(false);
   }, [activeId]);
 
+  // Т-502: режим следует за загруженным разговором (поле ``mode``). Для
+  // нового (ещё не сохранённого) диалога режим задаёт точка создания.
+  useEffect(() => {
+    if (activeId && conversation.data) {
+      const isAgent = conversation.data.mode === "agent";
+      setAgentMode(isAgent);
+      if (isAgent) {
+        setAgentConvId(activeId);
+      }
+    }
+  }, [activeId, conversation.data]);
+
+  // Т-502: сервер создаёт разговор при первом прогоне — фиксируем его
+  // идентификатор, чтобы следующие сообщения продолжали тот же диалог.
+  useEffect(() => {
+    if (agentMode && agent.conversationId) {
+      setAgentConvId(agent.conversationId);
+    }
+  }, [agentMode, agent.conversationId]);
+
   // Эффективный выбор на уровне сообщения: учитывается только при "optional".
   const reasoningMode = reasoningOptional && reasoningOn ? "on" : null;
 
@@ -81,9 +114,14 @@ export function ChatPage() {
     max: selectedModelMeta?.max_input_tokens ?? null,
   };
 
+  // Т-502: в агентном режиме — только модели с флагом, занятость от прогона.
+  const selectorModels = agentMode ? agentModels : (models.data ?? []);
+  const isBusy = agentMode ? agent.isRunning : chat.isStreaming;
+
   const handleSelect = useCallback((id: string) => {
     setActiveId(id);
     setLocalMessages([]);
+    setAgentConvId(null);
   }, []);
 
   // T-439: переключение корпуса в мульти-селекторе
@@ -101,7 +139,23 @@ export function ChatPage() {
     setActiveId(null);
     setLocalMessages([]);
     setSelectedModel(alias);
+    setAgentMode(false);
+    setAgentConvId(null);
     setNewChatOpen(false);
+  }, []);
+
+  // Т-502 (решение 10): отдельная точка создания агентного диалога.
+  const handleNewAgent = useCallback(() => {
+    setNewAgentChatOpen(true);
+  }, []);
+
+  const handleCreateAgent = useCallback((alias: string) => {
+    setActiveId(null);
+    setLocalMessages([]);
+    setSelectedModel(alias);
+    setAgentMode(true);
+    setAgentConvId(null);
+    setNewAgentChatOpen(false);
   }, []);
 
   const handleSend = useCallback(
@@ -111,6 +165,25 @@ export function ChatPage() {
 
       const messagesToSend = [...localMessages, userMsg];
       setLocalMessages([...messagesToSend, assistantMsg]);
+
+      // Т-502: агентный прогон — синхронный цикл, отдельный эндпоинт.
+      if (agentMode && selectedModel) {
+        agent.send({
+          messages: messagesToSend,
+          modelAlias: selectedModel,
+          conversationId: agentConvId,
+          corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+          onDone: (fullContent) => {
+            const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
+            setLocalMessages(updated);
+            conversations.refetch();
+            if (activeId !== null) {
+              conversation.refetch();
+            }
+          },
+        });
+        return;
+      }
 
       chat.sendMessage({
         messages: messagesToSend,
@@ -129,12 +202,13 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, agentMode, agentConvId, agent, chat, conversations, conversation],
   );
 
   const handleAbort = useCallback(() => {
     chat.abort();
-  }, [chat]);
+    agent.abort();
+  }, [chat, agent]);
 
   const handleExport = useCallback(() => {
     if (!conversation.data) return;
@@ -235,13 +309,24 @@ export function ChatPage() {
     <div className="flex h-full">
       {/* Conversations panel (within content area, not AppLayout sidebar) */}
       <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-background">
-        <div className="border-b border-border p-3">
+        <div className="space-y-2 border-b border-border p-3">
           <button
             onClick={handleNew}
             className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Новый диалог
           </button>
+          {hasAgentModels && (
+            <button
+              onClick={handleNewAgent}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
+              data-testid="new-agent-chat"
+              title="Диалог, в котором модель сама вызывает инструменты (поиск по корпусу)"
+            >
+              <Bot className="h-4 w-4" />
+              Агентный диалог
+            </button>
+          )}
         </div>
         <ConversationList
           conversations={conversations.data?.conversations ?? []}
@@ -267,17 +352,20 @@ export function ChatPage() {
             />
           )}
           {!activeId && (
-            <span className="flex-1 text-sm text-muted-foreground">Новый диалог</span>
+            <span className="flex-1 text-sm text-muted-foreground">
+              {agentMode ? "Новый агентный диалог" : "Новый диалог"}
+            </span>
           )}
           <ModelSelector
-            models={models.data ?? []}
+            models={selectorModels}
             value={selectedModel}
             onChange={setSelectedModel}
-            disabled={chat.isStreaming}
+            disabled={isBusy}
           />
           {/* Т-445 (Г1): переключатель рассуждения виден только при политике
-              "optional"; при off/on режим фиксирован политикой. */}
-          {reasoningOptional && (
+              "optional"; при off/on режим фиксирован политикой. В агентном
+              режиме (Т-502) рассуждение не управляется — скрыт. */}
+          {reasoningOptional && !agentMode && (
             <label
               className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               title="Режим рассуждения модели на это сообщение (политика роли: по выбору)"
@@ -286,7 +374,7 @@ export function ChatPage() {
                 type="checkbox"
                 checked={reasoningOn}
                 onChange={(e) => setReasoningOn(e.target.checked)}
-                disabled={chat.isStreaming}
+                disabled={isBusy}
                 className="h-3.5 w-3.5"
                 data-testid="reasoning-toggle"
               />
@@ -296,7 +384,7 @@ export function ChatPage() {
           {activeId && conversation.data && (
             <button
               onClick={handleResetContext}
-              disabled={chat.isStreaming || resetContext.isPending || displayedMessages.length === 0}
+              disabled={isBusy || resetContext.isPending || displayedMessages.length === 0}
               className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
               title="Сбросить контекст: история останется видимой, но в модель уйдут только сообщения после маркера"
             >
@@ -321,10 +409,13 @@ export function ChatPage() {
               corpora={availableCorpora.data?.corpora ?? []}
               selected={selectedCorpora}
               onToggle={handleToggleCorpus}
-              disabled={chat.isStreaming}
+              disabled={isBusy}
             />
           </div>
         )}
+
+        {/* Т-502: сводка шагов последнего агентного прогона */}
+        {agentMode && agent.steps.length > 0 && <AgentRunSummary steps={agent.steps} />}
 
         {/* Messages */}
         <ChatMessages
@@ -332,25 +423,31 @@ export function ChatPage() {
           streamingContent={localMessages.length > 0 && localMessages[localMessages.length - 1].role === "assistant"
             ? localMessages[localMessages.length - 1].content
             : ""}
-          streamingReasoning={chat.streamingReasoning}
-          isStreaming={chat.isStreaming}
-          error={chat.error}
-          sources={chat.sources}
-          ragDegraded={chat.ragDegraded}
+          streamingReasoning={agentMode ? "" : chat.streamingReasoning}
+          isStreaming={isBusy}
+          error={agentMode ? agent.error : chat.error}
+          sources={agentMode ? agent.sources : chat.sources}
+          ragDegraded={agentMode ? false : chat.ragDegraded}
           onRegenerate={localMessages.length > 0 ? handleRegenerate : undefined}
           onEdit={handleEdit}
           contextResetAt={conversation.data?.context_reset_at ?? null}
         />
 
-        {/* Input */}
-        <ChatInput
-          onSend={handleSend}
-          onAbort={handleAbort}
-          isStreaming={chat.isStreaming}
-          disabled={models.data?.length === 0}
-          contextUsage={contextUsage}
-          templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
-        />
+        {/* Т-502: дополнение не установлено — честная причина вместо ввода */}
+        {agentMode && agent.unavailableReason ? (
+          <div className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
+            {agent.unavailableReason}
+          </div>
+        ) : (
+          <ChatInput
+            onSend={handleSend}
+            onAbort={handleAbort}
+            isStreaming={isBusy}
+            disabled={selectorModels.length === 0}
+            contextUsage={contextUsage}
+            templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
+          />
+        )}
       </main>
 
       <NewChatModal
@@ -358,6 +455,16 @@ export function ChatPage() {
         models={models.data ?? []}
         onCancel={() => setNewChatOpen(false)}
         onCreate={handleCreateChat}
+      />
+      {/* Т-502 (решение 10): отдельная точка создания агентного диалога —
+          только модели с флагом пригодности к инструментам. */}
+      <NewChatModal
+        open={newAgentChatOpen}
+        models={agentModels}
+        title="Агентный диалог"
+        description="Модель будет сама вызывать инструменты (поиск по корпусу). Выберите модель с поддержкой инструментов."
+        onCancel={() => setNewAgentChatOpen(false)}
+        onCreate={handleCreateAgent}
       />
     </div>
   );
