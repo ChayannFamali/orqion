@@ -220,6 +220,10 @@ async def _call_model_once(
         "model": cfg.model.alias,
         "input_tokens": input_tokens,
     }
+    # Факт приёмки Т-502: схема инструментов фиксируется в спане — она
+    # уходит в запросе к провайдеру параметром ``tools``.
+    tools_schema = openai_tool_schemas()
+    call_payload["tools"] = tools_schema
     async with span(
         cfg.trace_ctx, f"agent.model_call.{rs.result.model_calls}", payload=call_payload
     ):
@@ -227,7 +231,7 @@ async def _call_model_once(
             raw = await client.complete_tools(
                 messages=openai_messages,
                 model=cfg.model.upstream_name,
-                tools=openai_tool_schemas(),
+                tools=tools_schema,
                 max_tokens=cfg.model.max_output_tokens,
                 temperature=0.7,
             )
@@ -295,6 +299,20 @@ async def _call_model_once(
 
     message_obj = raw.get("choices", [{}])[0].get("message", {})
     message: dict[str, Any] = message_obj if isinstance(message_obj, dict) else {}
+    # Факт приёмки Т-502: форма сырого ответа — вернулась ли структурированная
+    # реакция вызова инструмента (``tool_calls``), а не обычный текст.
+    raw_calls = message.get("tool_calls") or []
+    call_payload["response_has_tool_calls"] = bool(raw_calls)
+    if raw_calls:
+        call_payload["tool_calls"] = [
+            {
+                "id": tc.get("id") if isinstance(tc, dict) else None,
+                "name": tc.get("function", {}).get("name")
+                if isinstance(tc, dict) and isinstance(tc.get("function"), dict)
+                else None,
+            }
+            for tc in list(raw_calls)
+        ]
     return message
 
 

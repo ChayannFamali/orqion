@@ -233,6 +233,16 @@ async def test_cycle_model_tool_model(
     assert tool_audits[0].meta is not None
     assert tool_audits[0].meta["decision"] == "allow"
 
+    # Трассировка: факты приёмки — схема ``tools`` ушла в запросе, первый
+    # вызов вернул структурированный ``tool_calls``, второй — текст.
+    payloads = {rec.name: rec.payload for rec in cfg.trace_ctx.spans}
+    call1 = payloads["agent.model_call.1"]
+    assert call1["tools"]  # параметр ``tools`` присутствует в составе запроса
+    assert call1["response_has_tool_calls"] is True
+    assert call1["tool_calls"] == [{"id": "call-1", "name": "search_corpus"}]
+    call2 = payloads["agent.model_call.2"]
+    assert call2["response_has_tool_calls"] is False
+
 
 @pytest.mark.asyncio
 async def test_step_limit_stops_run(
