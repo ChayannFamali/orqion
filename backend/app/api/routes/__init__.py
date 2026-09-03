@@ -15,6 +15,7 @@ from app.api.routes.documents import document_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.eval import router as eval_router
 from app.api.routes.index_versions import router as index_versions_router
+from app.api.routes.mcp_servers import router as mcp_servers_router
 from app.api.routes.models import router as models_router
 from app.api.routes.prompt_templates import router as prompt_templates_router
 from app.api.routes.providers import router as providers_router
@@ -40,6 +41,7 @@ __all__ = [
     "documents_router",
     "eval_router",
     "index_versions_router",
+    "mcp_servers_router",
     "models_router",
     "prompt_templates_router",
     "providers_router",

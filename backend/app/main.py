@@ -212,6 +212,7 @@ def create_app() -> FastAPI:
         documents_router,
         eval_router,
         index_versions_router,
+        mcp_servers_router,
         models_router,
         prompt_templates_router,
         providers_router,
@@ -241,6 +242,7 @@ def create_app() -> FastAPI:
     app.include_router(document_router)
     app.include_router(eval_router)
     app.include_router(index_versions_router)
+    app.include_router(mcp_servers_router)
     app.include_router(models_router)
     app.include_router(providers_router)
     app.include_router(model_download_router)

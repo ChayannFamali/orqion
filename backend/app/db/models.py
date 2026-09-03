@@ -235,6 +235,28 @@ class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class McpServer(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Сервер протокола передачи контекста моделям (Т-503).
+
+    Админский реестр (пункт 8 ADR-21): транспорт только HTTP к явному
+    адресу, секреты шифруются механизмом ключей провайдеров
+    (``api_key_enc``, AES-GCM) и в ответах не возвращаются. Имя
+    уникально в рабочей области и служит неймспейсом инструментов
+    сервера в едином реестре (``<имя_сервера>.<имя_инструмента>``),
+    поэтому после создания не меняется.
+    """
+
+    __tablename__ = "mcp_server"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_mcp_server_workspace_name"),
+    )
+
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    url: Mapped[str] = mapped_column(String(512), nullable=False)
+    api_key_enc: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class RoutingRule(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Правило маршрутизации. arch.md §7.2, S-12.
 
