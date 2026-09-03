@@ -10,6 +10,23 @@ pip-licenses не находит trove classifiers или metadata License field
 
 Список генерируется для ALLOWED_UNKNOWN в .github/workflows/ci.yml.
 При обновлении версии пакета — перепроверь лицензию.
+
+ОБОСНОВАНИЕ ИСКЛЮЧЕНИЯ ДЛЯ MPL-2.0 (решение согласовано в ревью Т-502,
+2026-09-03). ADR-2 называет три разрешённых типа — MIT, Apache, BSD;
+MPL-2.0 там не поименован и в списке запрещённых (GPL/AGPL/SSPL/BUSL)
+CI-проверки тоже не значится. Пакеты под MPL-2.0 появляются в дереве
+транзитивно и осознанно принимаются на следующих основаниях:
+  - MPL-2.0 — слабый файловый копилефт: обязательства копилефта
+    ограничены собственными файлами пакета и НЕ распространяются на код
+    проекта, в отличие от GPL/AGPL/SSPL/BUSL, которые реально запрещены;
+  - это транзитивные листовые зависимости (не ядро архитектуры), которые
+    невозможно убрать, не отказавшись от вышестоящей разрешённой
+    зависимости;
+  - записи ниже документируют каждый такой пакет как осознанное
+    исключение, чтобы проникновение не было молчаливым.
+Первый случай — `certifi` (транзитивно через `httpx`, фактически в дереве
+с начала проекта); второй — `orjson` (транзитивно через `langsmith`
+в составе дополнения `agent`, Т-502).
 """
 
 # (имя_пакета, лицензия, источник, дата_проверки)
@@ -30,6 +47,11 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
     ),
     "ast_serialize": ("MIT", "PyPI metadata", "2026-08-15"),
     "attrs": ("MIT", "https://github.com/python-attrs/attrs/blob/main/LICENSE", "2026-08-15"),
+    "certifi": (
+        "MPL-2.0",
+        "https://github.com/certifi/python-certifi/blob/master/LICENSE",
+        "2026-09-03",
+    ),
     "cffi": ("MIT", "https://github.com/python-cffi/cffi/blob/main/LICENSE", "2026-08-15"),
     "charset-normalizer": (
         "MIT",
@@ -132,6 +154,13 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "Apache-2.0",
         "https://github.com/python-openapi/openapi-spec-validator/blob/main/LICENSE",
         "2026-08-15",
+    ),
+    # MPL-2.0 AND (Apache-2.0 OR MIT) по PEP 639; MPL-2.0 принят как
+    # осознанное исключение — см. обоснование в шапке модуля (Т-502).
+    "orjson": (
+        "MPL-2.0 AND (Apache-2.0 OR MIT)",
+        "https://github.com/ijl/orjson/blob/master/LICENSE-MPL",
+        "2026-09-03",
     ),
     "packaging": (
         "Apache-2.0 OR BSD-3-Clause",
