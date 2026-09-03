@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from app.agent.tools import (
+    AGENT_TOOL_SPECS,
     SEARCH_CORPUS_SPEC,
     ToolRunContext,
     execute_search_corpus,
@@ -204,10 +205,10 @@ async def test_search_allowed_writes_audit_allow(
 
 
 def test_tool_registry() -> None:
-    """MVP-реестр: единственный инструмент — поиск, не деструктивный."""
-    assert get_tool_spec("search_corpus") is SEARCH_CORPUS_SPEC
+    """MVP-реестр: единственный встроенный инструмент — поиск, не деструктивный."""
+    assert get_tool_spec("search_corpus", AGENT_TOOL_SPECS) is SEARCH_CORPUS_SPEC
     assert SEARCH_CORPUS_SPEC.destructive is False
-    assert get_tool_spec("unknown-tool") is None
+    assert get_tool_spec("unknown-tool", AGENT_TOOL_SPECS) is None
 
     schemas = openai_tool_schemas()
     assert len(schemas) == 1

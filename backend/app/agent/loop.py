@@ -28,11 +28,12 @@ from typing import Any
 
 from app.agent.tools import (
     SEARCH_CORPUS_SPEC,
+    ResolvedTools,
     ToolOutcome,
     ToolRunContext,
+    build_tool_schemas,
+    execute_mcp_tool,
     execute_search_corpus,
-    get_tool_spec,
-    openai_tool_schemas,
 )
 from app.config import Settings
 from app.db.models import Corpus, Model, Provider, User
@@ -82,6 +83,9 @@ class AgentRunConfig:
     trace_ctx: TraceContext
     max_steps: int
     max_tokens_per_run: int
+    # Единый реестр инструментов прогона (Т-503): встроенные + внешние
+    # с меткой источника; собирает эндпоинт до запуска цикла.
+    tools_registry: ResolvedTools
 
 
 @dataclass
@@ -221,8 +225,9 @@ async def _call_model_once(
         "input_tokens": input_tokens,
     }
     # Факт приёмки Т-502: схема инструментов фиксируется в спане — она
-    # уходит в запросе к провайдеру параметром ``tools``.
-    tools_schema = openai_tool_schemas()
+    # уходит в запросе к провайдеру параметром ``tools``. В Т-503 схемы
+    # берутся из единого реестра прогона (встроенные + внешние).
+    tools_schema = build_tool_schemas(cfg.tools_registry.specs)
     call_payload["tools"] = tools_schema
     async with span(
         cfg.trace_ctx, f"agent.model_call.{rs.result.model_calls}", payload=call_payload
@@ -423,7 +428,7 @@ async def run_agent_loop(
             args = tc.get("args", {}) if isinstance(tc.get("args"), dict) else {}
             call_id = str(tc.get("id", ""))
 
-            spec = get_tool_spec(name)
+            spec = cfg.tools_registry.spec_by_name(name)
             if spec is None:
                 outs.append(
                     ToolMessage(
@@ -441,6 +446,25 @@ async def run_agent_loop(
                     "args": args,
                 }
                 raise _ConfirmationStop()
+
+            # Т-503: инструмент внешнего сервера — исполнение по протоколу
+            # с теми же гарантиями ADR-21, что у встроенного поиска
+            # (дуальный аудит, отказ К2/К3 до вызова).
+            if spec.source.startswith("mcp:"):
+                mcp_outcome: ToolOutcome = await execute_mcp_tool(
+                    spec, args, tctx, cfg.tools_registry
+                )
+                result.steps.append(
+                    AgentStep(
+                        index=len(result.steps) + 1,
+                        kind="tool",
+                        name=name,
+                        summary=f"Внешний сервер '{spec.server_name}'",
+                        decision=mcp_outcome.decision,
+                    )
+                )
+                outs.append(ToolMessage(content=mcp_outcome.text, tool_call_id=call_id))
+                continue
 
             if name == SEARCH_CORPUS_SPEC.name:
                 query = str(args.get("query", "")).strip()
@@ -460,6 +484,14 @@ async def run_agent_loop(
                 )
                 result.sources.extend(outcome.sources)
                 outs.append(ToolMessage(content=outcome.text, tool_call_id=call_id))
+                continue
+
+            outs.append(
+                ToolMessage(
+                    content=f"Инструмент '{name}' не поддерживается.",
+                    tool_call_id=call_id,
+                )
+            )
 
         return {"messages": outs}
 

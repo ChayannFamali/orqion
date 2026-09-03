@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     agent_max_steps: int = 10
     agent_max_tokens_per_run: int = 100_000
 
+    # Серверы протокола передачи контекста моделям (Т-503). Таймаут
+    # обнаружения — общий бюджет на подключение и list_tools одного
+    # сервера при сборке реестра; таймаут вызова — на один вызов
+    # инструмента в прогоне.
+    mcp_discovery_timeout: float = 10.0
+    mcp_call_timeout: float = 30.0
+
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""

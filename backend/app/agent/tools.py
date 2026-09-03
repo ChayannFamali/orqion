@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -54,14 +55,28 @@ _log = logging.getLogger("orqion.agent.tools")
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """Описание инструмента: контракт для модели и атрибуты механизма."""
+    """Описание инструмента: контракт для модели и атрибуты механизма.
+
+    Единый реестр инструментов (решение 4 дизайн-ревью Т-503):
+    встроенные инструменты и инструменты внешних серверов протокола —
+    одна структура с меткой источника ``source``. Инструмент внешнего
+    сервера регистрируется под неймспейсом
+    ``<имя_сервера>.<имя_инструмента>``; имя сервера не содержит точку
+    (валидация при создании), разбор по первой точке однозначен.
+    """
 
     name: str
     description: str
     parameters: dict[str, Any]
     # Пункт 9: деструктивные инструменты запрашивают подтверждение до
-    # выполнения. В Т-502 таких нет.
+    # выполнения. В Т-502/Т-503 таких нет.
     destructive: bool
+    # Метка источника в едином реестре: "builtin" либо "mcp:<имя_сервера>".
+    source: str = "builtin"
+    # Для инструментов внешних серверов: имя сервера и имя инструмента на
+    # сервере (без неймспейса) — для вызова по протоколу.
+    server_name: str | None = None
+    mcp_tool_name: str | None = None
 
 
 SEARCH_CORPUS_SPEC = ToolSpec(
@@ -85,15 +100,22 @@ SEARCH_CORPUS_SPEC = ToolSpec(
 )
 
 AGENT_TOOL_SPECS: list[ToolSpec] = [SEARCH_CORPUS_SPEC]
-_SPECS_BY_NAME: dict[str, ToolSpec] = {s.name: s for s in AGENT_TOOL_SPECS}
 
 
-def get_tool_spec(name: str) -> ToolSpec | None:
-    return _SPECS_BY_NAME.get(name)
+def get_tool_spec(name: str, specs: Sequence[ToolSpec]) -> ToolSpec | None:
+    """Поиск спецификации в переданном реестре прогона.
+
+    Реестр один на прогон (встроенные + внешние с меткой источника);
+    коллизии имён исключены неймспейсингом при сборке (Т-503).
+    """
+    for spec in specs:
+        if spec.name == name:
+            return spec
+    return None
 
 
-def openai_tool_schemas() -> list[dict[str, Any]]:
-    """Схемы инструментов в формате OpenAI tools API."""
+def build_tool_schemas(specs: Sequence[ToolSpec]) -> list[dict[str, Any]]:
+    """Схемы инструментов реестра в формате OpenAI tools API."""
     return [
         {
             "type": "function",
@@ -103,8 +125,59 @@ def openai_tool_schemas() -> list[dict[str, Any]]:
                 "parameters": spec.parameters,
             },
         }
-        for spec in AGENT_TOOL_SPECS
+        for spec in specs
     ]
+
+
+def openai_tool_schemas() -> list[dict[str, Any]]:
+    """Схемы встроенных инструментов (обёртка для совместимости)."""
+    return build_tool_schemas(AGENT_TOOL_SPECS)
+
+
+# ---------------------------------------------------------------------------
+# Единый реестр прогона (Т-503, решение 4 + пункт 8 ADR-21 буквально)
+# ---------------------------------------------------------------------------
+
+# Классы данных, при которых вынос данных на внешние серверы запрещён
+# (пункт 8 ADR-21): разговор уровня К2/К3 не может отправлять запросы
+# инструментам вне системы.
+EXTERNAL_DATA_CLASS_BLOCK = ("К2", "К3")
+
+
+def external_tools_allowed(data_class: str | None) -> bool:
+    """False, если класс данных разговора запрещает вынос на внешние серверы."""
+    return data_class not in EXTERNAL_DATA_CLASS_BLOCK
+
+
+@dataclass(frozen=True)
+class ServerEndpoint:
+    """Транспортные данные сервера для вызова инструментов."""
+
+    url: str
+    api_key_enc: str | None
+
+
+@dataclass
+class ResolvedTools:
+    """Единый реестр инструментов одного прогона.
+
+    Один список ``specs`` без параллельных веток: встроенные
+    инструменты (``source="builtin"``) и инструменты внешних серверов
+    (``source="mcp:<имя_сервера>"``). Диспетчер цикла ищет спецификацию
+    только здесь (решение 4 дизайн-ревью Т-503).
+    """
+
+    specs: list[ToolSpec] = field(default_factory=list)
+    # Транспортные данные внешних серверов, чьи инструменты вошли в реестр.
+    servers: dict[str, ServerEndpoint] = field(default_factory=dict)
+    # Класс данных, если внешние инструменты отклонены целиком (К2/К3).
+    blocked_external: str | None = None
+
+    def spec_by_name(self, name: str) -> ToolSpec | None:
+        return get_tool_spec(name, self.specs)
+
+    def schemas(self) -> list[dict[str, Any]]:
+        return build_tool_schemas(self.specs)
 
 
 @dataclass
@@ -301,3 +374,131 @@ async def execute_search_corpus(query: str, tctx: ToolRunContext) -> ToolOutcome
         sources=sources,
         fragments_used=fragments_used,
     )
+
+
+async def execute_mcp_tool(
+    spec: ToolSpec,
+    args: dict[str, Any],
+    tctx: ToolRunContext,
+    registry: ResolvedTools,
+) -> ToolOutcome:
+    """Вызов инструмента внешнего сервера протокола (Т-503).
+
+    Гарантии ADR-21 буквально, как у встроенного поиска:
+
+    - отклонение выноса данных для К2/К3 ДО вызова (пункт 8): даже если
+      спецификация каким-то путём оказалась в реестре, вызов не
+      выполняется;
+    - дуальная запись каждого вызова: полный состав — в span
+      трассировки; компактный факт (разрешено/отклонено, класс данных,
+      инструмент, сервер) — в журнал аудита бессрочно;
+    - сбой транспорта не роняет прогон (решение 6): модель получает
+      текст ошибки инструмента.
+    """
+    from app.mcp.client import call_tool, decrypt_server_connection
+
+    decision = "allow"
+    outcome_text = ""
+    span_payload: dict[str, object] = {
+        "tool": spec.name,
+        "server": spec.server_name,
+        "args": args,
+        "data_class": tctx.corpus_data_class,
+    }
+
+    # 1. Отказ выноса данных К2/К3 до вызова — защита построением и
+    #    защитой в глубине: реестр прогона не содержит внешних
+    #    инструментов при К2/К3, но проверка повторяется в точке вызова.
+    if not external_tools_allowed(tctx.corpus_data_class):
+        decision = "deny"
+        outcome_text = (
+            f"Вызов внешнего инструмента '{spec.name}' отклонён: класс данных "
+            "разговора К2/К3 запрещает вынос данных на внешние серверы."
+        )
+        span_payload["decision"] = decision
+        async with span(tctx.trace_ctx, f"agent.tool.{spec.name}", payload=span_payload):
+            await write_audit(
+                tctx.session,
+                workspace_id=tctx.workspace_id,
+                actor_user_id=tctx.user_id,
+                action="agent.tool.mcp",
+                object_type="agent_tool",
+                object_id=tctx.conversation_id,
+                meta={
+                    "decision": decision,
+                    "data_class": tctx.corpus_data_class,
+                    "tool": spec.name,
+                    "server_name": spec.server_name,
+                },
+            )
+        _log.info(
+            "agent mcp tool denied by data class: user=%s tool=%s class=%s",
+            tctx.user_id,
+            spec.name,
+            tctx.corpus_data_class,
+        )
+        return ToolOutcome(decision=decision, text=outcome_text)
+
+    endpoint = registry.servers.get(spec.server_name or "")
+    if endpoint is None or not spec.mcp_tool_name:
+        # Спецификация есть, транспорта нет — ошибка сборки; прогон не падает.
+        span_payload["decision"] = "allow"
+        span_payload["error"] = "no_endpoint"
+        async with span(tctx.trace_ctx, f"agent.tool.{spec.name}", payload=span_payload):
+            pass
+        return ToolOutcome(
+            decision="allow",
+            text=f"Инструмент '{spec.name}' временно недоступен: сервер не настроен.",
+        )
+
+    # 2. Вызов по протоколу: сбой транспорта возвращается модели текстом.
+    error_text: str | None = None
+    result_is_error = False
+    try:
+        conn = decrypt_server_connection(endpoint.url, endpoint.api_key_enc, tctx.secret_key)
+        result = await call_tool(
+            conn,
+            spec.mcp_tool_name,
+            args,
+            timeout=tctx.settings.mcp_call_timeout,
+        )
+        outcome_text = result.text or "Инструмент вернул пустой ответ."
+        result_is_error = result.is_error
+    except Exception as exc:  # noqa: BLE001 сбой сервера — факт прогона, не падение
+        error_text = f"{type(exc).__name__}: {exc}"
+        outcome_text = f"Внешний инструмент '{spec.name}' недоступен: {type(exc).__name__}."
+
+    # 3. Дуальная запись: полный состав в span, компактный факт — в журнал.
+    span_payload["decision"] = decision
+    if error_text is not None:
+        span_payload["error"] = error_text
+    else:
+        span_payload["result_chars"] = len(outcome_text)
+        span_payload["result_is_error"] = result_is_error
+    async with span(tctx.trace_ctx, f"agent.tool.{spec.name}", payload=span_payload):
+        meta: dict[str, object] = {
+            "decision": decision,
+            "data_class": tctx.corpus_data_class,
+            "tool": spec.name,
+            "server_name": spec.server_name,
+        }
+        if error_text is not None:
+            meta["error"] = error_text
+        await write_audit(
+            tctx.session,
+            workspace_id=tctx.workspace_id,
+            actor_user_id=tctx.user_id,
+            action="agent.tool.mcp",
+            object_type="agent_tool",
+            object_id=tctx.conversation_id,
+            meta=meta,
+        )
+    if error_text is not None:
+        _log.info(
+            "agent mcp tool call failed: user=%s tool=%s error=%s",
+            tctx.user_id,
+            spec.name,
+            error_text,
+        )
+
+    return ToolOutcome(decision=decision, text=outcome_text)

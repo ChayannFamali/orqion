@@ -48,6 +48,7 @@ from app.errors import (
     NotFound,
     OrqionError,
 )
+from app.mcp.registry import resolve_tools
 from app.policy.enforce import enforce_all
 from app.policy.resolve import resolve_policy
 from app.rag.service import resolve_corpora, strictest_data_class
@@ -218,6 +219,25 @@ async def agent_chat(
         session.add(conversation)
         await session.flush()
 
+    # Единый реестр инструментов прогона (Т-503, решение 4): встроенные
+    # инструменты и инструменты внешних серверов собираются в один список
+    # ДО запуска цикла. Сборка идёт после ``enforce`` — отклонённый
+    # политикой запрос не обращается к внешним серверам. Класс данных
+    # К2/К3 отклоняет вынос ещё до обнаружения; недоступный сервер
+    # скрывает свои инструменты и пишет факт в журнал аудита в самом
+    # пути сборки (решение 6).
+    async with span(trace_ctx, "resolve_tools"):
+        tools_registry = await resolve_tools(
+            session,
+            settings=request.app.state.settings,
+            secret_key=secret_key,
+            workspace_id=workspace_id,
+            user_id=user.id,
+            trace_ctx=trace_ctx,
+            conversation_id=conversation.id,
+            corpus_data_class=corpus_data_class,
+        )
+
     cfg = AgentRunConfig(
         session=session,
         settings=request.app.state.settings,
@@ -237,6 +257,7 @@ async def agent_chat(
         trace_ctx=trace_ctx,
         max_steps=request.app.state.settings.agent_max_steps,
         max_tokens_per_run=request.app.state.settings.agent_max_tokens_per_run,
+        tools_registry=tools_registry,
     )
 
     try:

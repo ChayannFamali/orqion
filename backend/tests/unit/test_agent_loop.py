@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from app.agent.loop import AgentRunConfig, run_agent_loop
-from app.agent.tools import ToolSpec
+from app.agent.tools import AGENT_TOOL_SPECS, ResolvedTools, ToolSpec
 from app.auth.passwords import hash_password
 from app.config import Settings
 from app.db.models import (
@@ -131,6 +131,7 @@ def _make_config(
     *,
     max_steps: int = 5,
     max_tokens_per_run: int = 100_000,
+    tools_registry: ResolvedTools | None = None,
 ) -> AgentRunConfig:
     embedding_backend = AsyncMock()
     vector = [0.0] * EMBEDDING_DIM
@@ -138,6 +139,7 @@ def _make_config(
     embedding_backend.embed.return_value = [vector]
     store = SQLiteVectorStore(str(tmp_path / "vec.db"))
     stores.append(store)
+    registry = tools_registry or ResolvedTools(specs=list(AGENT_TOOL_SPECS))
     return AgentRunConfig(
         session=db_session,
         settings=test_settings,
@@ -157,6 +159,7 @@ def _make_config(
         trace_ctx=TraceContext(trace_id="trace-loop", workspace_id=workspace_id),
         max_steps=max_steps,
         max_tokens_per_run=max_tokens_per_run,
+        tools_registry=registry,
     )
 
 
@@ -326,6 +329,16 @@ async def test_destructive_tool_requests_confirmation(
     workspace_id, user_id, model, provider = await _seed(db_session)
     user = await db_session.get(User, user_id)
     assert user is not None
+    registry = ResolvedTools(
+        specs=[
+            ToolSpec(
+                name="delete_everything",
+                description="деструктивная заглушка",
+                parameters={"type": "object", "properties": {}},
+                destructive=True,
+            )
+        ]
+    )
     cfg = _make_config(
         db_session,
         test_settings,
@@ -335,6 +348,7 @@ async def test_destructive_tool_requests_confirmation(
         model,
         provider,
         vector_stores,
+        tools_registry=registry,
     )
 
     destructive_call = {
@@ -358,16 +372,6 @@ async def test_destructive_tool_requests_confirmation(
         "usage": {"prompt_tokens": 3, "completion_tokens": 1},
     }
     _patch_model(monkeypatch, [destructive_call])
-
-    monkeypatch.setattr(
-        "app.agent.loop.get_tool_spec",
-        lambda name: ToolSpec(
-            name=name,
-            description="деструктивная заглушка",
-            parameters={"type": "object", "properties": {}},
-            destructive=True,
-        ),
-    )
 
     result = await run_agent_loop(cfg, [{"role": "user", "content": "вопрос"}])
 
