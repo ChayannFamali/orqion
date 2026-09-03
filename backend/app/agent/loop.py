@@ -467,7 +467,10 @@ async def run_agent_loop(
         last = state["messages"][-1]
         if getattr(last, "tool_calls", None):
             return "tools"
-        return END
+        # Без установленного дополнения ``END`` типизирован как Any —
+        # возврат через объявленную переменную.
+        end_node: str = END
+        return end_node
 
     builder = StateGraph(MessagesState)
     builder.add_node("model", model_node)

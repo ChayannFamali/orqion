@@ -127,6 +127,29 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "https://github.com/python-jsonschema/jsonschema/blob/main/LICENSE",
         "2026-08-15",
     ),
+    # Т-502 (экстра orqion[agent]): PEP 639 License-Expression в колёсах,
+    # который старый pip-licenses не читает. Лицензии проверены по текстам
+    # LICENSE внутри колёс версии 1.2.11 / 4.2.0 / 1.1.0 / 0.4.4.
+    "langgraph": (
+        "MIT",
+        "https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/LICENSE",
+        "2026-09-03",
+    ),
+    "langgraph-checkpoint": (
+        "MIT",
+        "https://github.com/langchain-ai/langgraph/blob/main/libs/checkpoint/LICENSE",
+        "2026-09-03",
+    ),
+    "langgraph-prebuilt": (
+        "MIT",
+        "https://github.com/langchain-ai/langgraph/blob/main/libs/prebuilt/LICENSE",
+        "2026-09-03",
+    ),
+    "langgraph-sdk": (
+        "MIT",
+        "https://github.com/langchain-ai/langgraph/blob/main/libs/sdk-py/LICENSE",
+        "2026-09-03",
+    ),
     "lazy-object-proxy": (
         "MIT",
         "https://github.com/abarnert/lazy-object-proxy/blob/master/LICENSE",
@@ -247,6 +270,14 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "2026-08-15",
     ),
     "tomli": ("MIT", "https://github.com/hukkin/tomli/blob/master/LICENSE", "2026-08-15"),
+    # Т-502 (транзитивно через langsmith дополнения orqion[agent]):
+    # PEP 639 License-Expression, старый pip-licenses не читает.
+    # Проверено по тексту LICENSE в колесе 0.10.4.
+    "truststore": (
+        "MIT",
+        "https://github.com/pypa/truststore/blob/main/LICENSE",
+        "2026-09-03",
+    ),
     "typer": ("MIT", "https://github.com/fastapi/typer/blob/master/LICENSE", "2026-08-15"),
     "typing-inspection": (
         "MIT",
@@ -260,7 +291,23 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
     ),
     "tzdata": ("Apache-2.0", "https://github.com/python/tzdata/blob/main/LICENSE", "2026-08-15"),
     "urllib3": ("MIT", "https://github.com/urllib3/urllib3/blob/main/LICENSE", "2026-08-15"),
+    # Т-502 (транзитивно через langsmith дополнения orqion[agent]):
+    # PEP 639 License-Expression, старый pip-licenses не читает.
+    # Проверено по тексту LICENSE в колесе 0.17.0.
+    "uuid_utils": (
+        "BSD-3-Clause",
+        "https://github.com/aminalaee/uuid-utils/blob/main/LICENSE",
+        "2026-09-03",
+    ),
     "wcwidth": ("MIT", "https://github.com/jquast/wcwidth/blob/main/LICENSE", "2026-08-15"),
+    # Т-502 (транзитивно через langsmith дополнения orqion[agent]):
+    # PEP 639 License-Expression, старый pip-licenses не читает.
+    # Проверено по тексту LICENSE в колесе 16.1.1.
+    "websockets": (
+        "BSD-3-Clause",
+        "https://github.com/python-websockets/websockets/blob/main/LICENSE",
+        "2026-09-03",
+    ),
     "werkzeug": (
         "BSD-3-Clause",
         "https://github.com/pallets/werkzeug/blob/main/LICENSE",
@@ -275,5 +322,13 @@ ALLOWED_UNKNOWN_VERIFIED: dict[str, tuple[str, str, str]] = {
         "MIT",
         "https://github.com/martinblech/xmltodict/blob/master/LICENSE",
         "2026-08-15",
+    ),
+    # Т-502 (транзитивно через langsmith дополнения orqion[agent]):
+    # PEP 639 License-Expression, старый pip-licenses не читает.
+    # Проверено по тексту LICENSE в колесе 0.25.0.
+    "zstandard": (
+        "BSD-3-Clause",
+        "https://github.com/indygreg/python-zstandard/blob/main/LICENSE",
+        "2026-09-03",
     ),
 }

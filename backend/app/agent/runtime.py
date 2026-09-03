@@ -36,4 +36,8 @@ def import_langgraph() -> ModuleType:
         raise ImportError(
             "langgraph не установлен. Установите orqion[agent]: pip install orqion[agent]"
         ) from e
-    return langgraph
+    # Без установленного дополнения (джоба типов с одним [dev]) имя
+    # типизировано как Any — возврат через объявленную переменную, чтобы
+    # не нарушать ``warn_return_any``.
+    module: ModuleType = langgraph
+    return module

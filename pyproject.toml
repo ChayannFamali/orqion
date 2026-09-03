@@ -200,6 +200,22 @@ ignore_missing_imports = true
 module = "numpy"
 ignore_missing_imports = true
 
+# Агентный модуль (экстра orqion[agent], Т-502): в джобе типов стоит только
+# [dev], без дополнения импорты считаются отсутствующими. С установленным
+# дополнением mypy берёт собственные типы пакетов — оверрайд действует
+# только без него.
+[[tool.mypy.overrides]]
+module = "langgraph"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langgraph.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_core.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
