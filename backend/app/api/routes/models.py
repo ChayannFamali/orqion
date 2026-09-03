@@ -79,6 +79,7 @@ async def list_available_models(
             max_output_tokens=m.max_output_tokens,
             supports_reasoning=m.supports_reasoning,
             reasoning_toggleable=m.reasoning_toggleable,
+            supports_tools=m.supports_tools,
             cost_in=m.cost_in,
             cost_out=m.cost_out,
             enabled=m.enabled,

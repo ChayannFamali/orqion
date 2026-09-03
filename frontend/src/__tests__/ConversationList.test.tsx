@@ -21,8 +21,8 @@ vi.mock("../api/conversations", () => ({
 }));
 
 const mockConversations: ConversationResponse[] = [
-  { id: "c1", title: "Первый диалог", archived: false, created_at: "2026-01-01T00:00:00Z", message_count: 0 },
-  { id: "c2", title: "Второй диалог", archived: false, created_at: "2026-01-02T00:00:00Z", message_count: 0 },
+  { id: "c1", title: "Первый диалог", archived: false, mode: "chat", created_at: "2026-01-01T00:00:00Z", message_count: 0 },
+  { id: "c2", title: "Второй диалог", archived: false, mode: "chat", created_at: "2026-01-02T00:00:00Z", message_count: 0 },
 ];
 
 function renderList(

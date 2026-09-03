@@ -4747,6 +4747,11 @@
             "type": "boolean",
             "title": "Archived"
           },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "chat"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4821,6 +4826,11 @@
           "archived": {
             "type": "boolean",
             "title": "Archived"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "chat"
           },
           "created_at": {
             "type": "string",
@@ -6394,6 +6404,11 @@
             "title": "Reasoning Toggleable",
             "default": false
           },
+          "supports_tools": {
+            "type": "boolean",
+            "title": "Supports Tools",
+            "default": false
+          },
           "cost_in": {
             "anyOf": [
               {
@@ -6524,6 +6539,10 @@
             "type": "boolean",
             "title": "Reasoning Toggleable"
           },
+          "supports_tools": {
+            "type": "boolean",
+            "title": "Supports Tools"
+          },
           "cost_in": {
             "anyOf": [
               {
@@ -6561,6 +6580,7 @@
           "max_output_tokens",
           "supports_reasoning",
           "reasoning_toggleable",
+          "supports_tools",
           "cost_in",
           "cost_out",
           "enabled"
@@ -6645,6 +6665,17 @@
               }
             ],
             "title": "Reasoning Toggleable"
+          },
+          "supports_tools": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Tools"
           },
           "cost_in": {
             "anyOf": [

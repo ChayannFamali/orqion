@@ -225,6 +225,11 @@ class Model(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     # Ручной флаг по паттерну supports_reasoning; без него политика не знает,
     # для какой модели пробовать переключение.
     reasoning_toggleable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Т-502: пригодность модели к инструментам (агентный модуль). Ручной флаг
+    # по образцу флагов рассуждения (решение 3 дизайн-ревью): администратор
+    # ставит сам, автоопределение пробой не делается. Точка создания
+    # агентного диалога видна только при наличии модели с этим флагом.
+    supports_tools: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cost_in: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_out: Mapped[float | None] = mapped_column(Float, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -270,6 +275,11 @@ class Conversation(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Т-502: режим разговора — "chat" (обычный) или "agent" (агентный
+    # диалог, цикл «модель → инструменты → модель»). Точка входа в
+    # агентный модуль — отдельная карточка (решение 10 дизайн-ревью),
+    # обычный чат поведение не меняет.
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="chat")
     last_activity_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

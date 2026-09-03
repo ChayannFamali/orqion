@@ -926,6 +926,8 @@ function CreateModelModal({
   const [maxOutputTokens, setMaxOutputTokens] = useState("");
   const [supportsReasoning, setSupportsReasoning] = useState(false);
   const [reasoningToggleable, setReasoningToggleable] = useState(false);
+  // Т-502: пригодность модели к инструментам (агентный модуль).
+  const [supportsTools, setSupportsTools] = useState(false);
   const [costIn, setCostIn] = useState("");
   const [costOut, setCostOut] = useState("");
 
@@ -942,6 +944,7 @@ function CreateModelModal({
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
           supports_reasoning: supportsReasoning,
           reasoning_toggleable: reasoningToggleable,
+          supports_tools: supportsTools,
           cost_in: costIn ? parseFloat(costIn) : null,
           cost_out: costOut ? parseFloat(costOut) : null,
           enabled: true,
@@ -987,6 +990,15 @@ function CreateModelModal({
             />
             Рассуждение можно переключать
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={supportsTools}
+              onChange={(e) => setSupportsTools(e.target.checked)}
+              data-testid="supports-tools-checkbox"
+            />
+            Модель подходит для агентного режима
+          </label>
           <FormField label="Cost in (per 1K tokens)" value={costIn} onChange={setCostIn} type="number" placeholder="0.0" />
           <FormField label="Cost out (per 1K tokens)" value={costOut} onChange={setCostOut} type="number" placeholder="0.0" />
           <button
@@ -1024,6 +1036,8 @@ function EditModelModal({
   const [reasoningToggleable, setReasoningToggleable] = useState(
     model.reasoning_toggleable ?? false,
   );
+  // Т-502: пригодность модели к инструментам (агентный модуль).
+  const [supportsTools, setSupportsTools] = useState(model.supports_tools);
   const [costIn, setCostIn] = useState(model.cost_in?.toString() ?? "");
   const [costOut, setCostOut] = useState(model.cost_out?.toString() ?? "");
 
@@ -1040,6 +1054,7 @@ function EditModelModal({
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
           supports_reasoning: supportsReasoning,
           reasoning_toggleable: reasoningToggleable,
+          supports_tools: supportsTools,
           cost_in: costIn ? parseFloat(costIn) : null,
           cost_out: costOut ? parseFloat(costOut) : null,
         },
@@ -1083,6 +1098,15 @@ function EditModelModal({
               onChange={(e) => setReasoningToggleable(e.target.checked)}
             />
             Рассуждение можно переключать
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={supportsTools}
+              onChange={(e) => setSupportsTools(e.target.checked)}
+              data-testid="supports-tools-checkbox"
+            />
+            Модель подходит для агентного режима
           </label>
           <FormField label="Cost in (per 1K tokens)" value={costIn} onChange={setCostIn} type="number" />
           <FormField label="Cost out (per 1K tokens)" value={costOut} onChange={setCostOut} type="number" />

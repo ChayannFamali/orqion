@@ -149,3 +149,13 @@ def test_session_cookie_secure_no_warning_sqlite(
     with caplog.at_level("WARNING", logger="orqion.config"):
         Settings()
     assert not any("session_cookie_secure=False" in r.message for r in caplog.records)
+
+
+# Т-502 (решение 4 дизайн-ревью): лимиты прогона агентного цикла
+
+
+def test_agent_run_limit_defaults() -> None:
+    """Лимиты прогона агента: разумные дефолты в конфигурации."""
+    settings = EnvFreeSettings()
+    assert settings.agent_max_steps == 10
+    assert settings.agent_max_tokens_per_run == 100_000

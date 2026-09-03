@@ -22,6 +22,8 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     archived: bool
+    # Т-502: режим разговора — "chat" или "agent" (агентный диалог).
+    mode: str = "chat"
     created_at: datetime
     message_count: int = 0
     # T-442: маркер мягкого сброса контекста (до этой отметки история

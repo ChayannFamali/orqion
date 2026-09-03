@@ -1762,6 +1762,11 @@ export interface components {
             /** Archived */
             archived: boolean;
             /**
+             * Mode
+             * @default chat
+             */
+            mode: string;
+            /**
              * Created At
              * Format: date-time
              */
@@ -1794,6 +1799,11 @@ export interface components {
             title: string;
             /** Archived */
             archived: boolean;
+            /**
+             * Mode
+             * @default chat
+             */
+            mode: string;
             /**
              * Created At
              * Format: date-time
@@ -2444,6 +2454,11 @@ export interface components {
              * @default false
              */
             reasoning_toggleable: boolean;
+            /**
+             * Supports Tools
+             * @default false
+             */
+            supports_tools: boolean;
             /** Cost In */
             cost_in?: number | null;
             /** Cost Out */
@@ -2489,6 +2504,8 @@ export interface components {
             supports_reasoning: boolean;
             /** Reasoning Toggleable */
             reasoning_toggleable: boolean;
+            /** Supports Tools */
+            supports_tools: boolean;
             /** Cost In */
             cost_in: number | null;
             /** Cost Out */
@@ -2512,6 +2529,8 @@ export interface components {
             supports_reasoning?: boolean | null;
             /** Reasoning Toggleable */
             reasoning_toggleable?: boolean | null;
+            /** Supports Tools */
+            supports_tools?: boolean | null;
             /** Cost In */
             cost_in?: number | null;
             /** Cost Out */

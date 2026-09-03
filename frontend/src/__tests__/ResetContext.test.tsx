@@ -22,6 +22,7 @@ const baseConversation = {
   id: "c1",
   title: "Test conversation",
   archived: false,
+  mode: "chat",
   created_at: "2026-08-08T09:00:00Z",
   message_count: 2,
   context_reset_at: null as string | null,

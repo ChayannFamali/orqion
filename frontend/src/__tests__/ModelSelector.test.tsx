@@ -13,6 +13,7 @@ function makeModel(overrides: Partial<ModelInfo> = {}): ModelInfo {
     max_output_tokens: 4096,
     supports_reasoning: false,
     reasoning_toggleable: false,
+    supports_tools: false,
     cost_in: null,
     cost_out: null,
     enabled: true,

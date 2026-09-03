@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     prompt_templates_max_per_user: int = 100
     prompt_template_max_chars: int = 8192
 
+    # Агентный модуль (Т-502, решение 4 дизайн-ревью): лимиты прогона
+    # цикла «модель → инструменты → модель». Дополнительный
+    # предохранитель поверх обычного биллинга (Т-108/Т-117): число шагов
+    # (вызовов модели) и суммарные токены за один прогон. В конфиге, не
+    # в интерфейсе — интерфейс позже.
+    agent_max_steps: int = 10
+    agent_max_tokens_per_run: int = 100_000
+
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""

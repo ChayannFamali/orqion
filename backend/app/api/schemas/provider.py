@@ -58,6 +58,9 @@ class ModelResponse(BaseModel):
     max_output_tokens: int | None
     supports_reasoning: bool
     reasoning_toggleable: bool
+    # Т-502: пригодность модели к инструментам (агентный модуль) — ручной
+    # флаг администратора по образцу флагов рассуждения.
+    supports_tools: bool
     cost_in: float | None
     cost_out: float | None
     enabled: bool
@@ -80,6 +83,7 @@ class ModelCreate(BaseModel):
     max_output_tokens: int | None = None
     supports_reasoning: bool = False
     reasoning_toggleable: bool = False
+    supports_tools: bool = False
     cost_in: float | None = None
     cost_out: float | None = None
     enabled: bool = True
@@ -93,6 +97,7 @@ class ModelUpdate(BaseModel):
     max_output_tokens: int | None = None
     supports_reasoning: bool | None = None
     reasoning_toggleable: bool | None = None
+    supports_tools: bool | None = None
     cost_in: float | None = None
     cost_out: float | None = None
     enabled: bool | None = None
