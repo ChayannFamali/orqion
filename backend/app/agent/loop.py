@@ -567,12 +567,33 @@ async def run_agent_loop(
     builder = StateGraph(MessagesState)
     builder.add_node("model", model_node)
     builder.add_node("tools", tools_node)
-    builder.add_edge(START, "model")
     builder.add_conditional_edges("model", route_after_model)
     builder.add_edge("tools", "model")
-    graph = builder.compile()
 
     initial_messages = _history_to_lc_messages(history)
+    if approved_tool_call is not None:
+        # Пункт 9: по подтверждению вызов исполняется НАПРЯМУЮ — модель не
+        # обязана запрашивать его повторно. В состояние предзаполняется
+        # сообщение с запросом подтверждённого инструмента, и прогон входит
+        # через узел инструментов; затем модель строит финальный ответ по
+        # результату исполнения.
+        initial_messages.append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": approved_tool_call.get("tool", ""),
+                        "args": approved_tool_call.get("args") or {},
+                        "id": approved_tool_call.get("call_id", ""),
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        )
+        builder.add_edge(START, "tools")
+    else:
+        builder.add_edge(START, "model")
+    graph = builder.compile()
 
     try:
         # recursion_limit — страховочный потолок поверх собственных лимитов:
