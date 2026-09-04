@@ -21,6 +21,9 @@ vi.mock("../pages/CodeGraphPage", () => ({ CodeGraphPage: () => <div>CODE_GRAPH_
 vi.mock("../pages/DocumentGraphPage", () => ({
   DocumentGraphPage: () => <div>DOCUMENT_GRAPH_PAGE</div>,
 }));
+vi.mock("../pages/McpServersPage", () => ({
+  McpServersPage: () => <div>MCP_SERVERS_PAGE</div>,
+}));
 vi.mock("../pages/PlaceholderPage", () => ({ PlaceholderPage: () => <div>PLACEHOLDER</div> }));
 vi.mock("../components/Topbar", () => ({ Topbar: () => <div>TOPBAR</div> }));
 vi.mock("../hooks/useUsers", () => ({
@@ -121,5 +124,17 @@ describe("AppLayout navigation persistence", () => {
     window.location.hash = "#/document-graph";
     renderLayout(["*"]);
     expect(screen.getByText("DOCUMENT_GRAPH_PAGE")).toBeInTheDocument();
+  });
+
+  it("Т-503: серверы инструментов недоступны без способности и доступны через *", () => {
+    window.location.hash = "#/mcp-servers";
+    const { unmount } = renderLayout(["chat", "upload"]);
+    expect(screen.queryByText("MCP_SERVERS_PAGE")).not.toBeInTheDocument();
+    expect(screen.getByText("CHAT_PAGE")).toBeInTheDocument();
+    unmount();
+
+    window.location.hash = "#/mcp-servers";
+    renderLayout(["*"]);
+    expect(screen.getByText("MCP_SERVERS_PAGE")).toBeInTheDocument();
   });
 });

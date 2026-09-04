@@ -16,6 +16,7 @@ import { AuditLogPage } from "../pages/AuditLogPage";
 import { CodeGraphPage } from "../pages/CodeGraphPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { DocumentGraphPage } from "../pages/DocumentGraphPage";
+import { McpServersPage } from "../pages/McpServersPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
@@ -105,6 +106,9 @@ export function AppLayout({
     }
     if (activeSection === "document-graph") {
       return <DocumentGraphPage />;
+    }
+    if (activeSection === "mcp-servers") {
+      return <McpServersPage />;
     }
     if (activeSection === "settings") {
       return <SettingsPage capabilities={capabilities} />;

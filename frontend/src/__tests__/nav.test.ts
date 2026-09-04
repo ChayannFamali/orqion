@@ -40,6 +40,7 @@ describe("isNavVisible", () => {
       "diagnostics",
       "code-graph",
       "document-graph",
+      "mcp-servers",
       "settings",
     ]);
   });
@@ -68,6 +69,15 @@ describe("isNavVisible", () => {
     expect(isNavVisible(item, ["*"])).toBe(true);
     expect(isNavVisible(item, ["view_document_graph"])).toBe(true);
     expect(isNavVisible(item, ["chat", "view_code_graph"])).toBe(false);
+    expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("Т-503: серверы инструментов видны только с manage_mcp_servers или *", () => {
+    const item = navItems.find((i) => i.key === "mcp-servers")!;
+    expect(item.capability).toBe("manage_mcp_servers");
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    expect(isNavVisible(item, ["manage_mcp_servers"])).toBe(true);
+    expect(isNavVisible(item, ["chat", "manage_providers"])).toBe(false);
     expect(isNavVisible(item, [])).toBe(false);
   });
 

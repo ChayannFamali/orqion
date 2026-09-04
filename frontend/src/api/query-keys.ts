@@ -77,4 +77,7 @@ export const queryKeys = {
   promptTemplates: {
     all: ["prompt-templates"] as const,
   },
+  mcpServers: {
+    all: ["mcp-servers"] as const,
+  },
 } as const;

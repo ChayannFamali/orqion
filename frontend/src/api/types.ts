@@ -104,3 +104,9 @@ export type AgentChatRequest = components["schemas"]["AgentChatRequest"];
 export type AgentChatResponse = components["schemas"]["AgentChatResponse"];
 export type AgentStepEntry = components["schemas"]["AgentStepEntry"];
 export type PendingConfirmation = components["schemas"]["PendingConfirmation"];
+/** Реестр серверов внешних инструментов (Т-503). */
+export type McpServerResponse = components["schemas"]["McpServerResponse"];
+export type McpServerListResponse = components["schemas"]["McpServerListResponse"];
+export type McpServerCreate = components["schemas"]["McpServerCreate"];
+export type McpServerUpdate = components["schemas"]["McpServerUpdate"];
+export type McpServerDeleteResponse = components["schemas"]["McpServerDeleteResponse"];
