@@ -277,6 +277,33 @@ export function ChatPage() {
     });
   }, [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, chat, conversations, conversation]);
 
+  // Пункт 9 ревью Т-502: деструктивный инструмент останавливает прогон
+  // до выполнения и запрашивает подтверждение. Решение уходит следующим
+  // запросом вместе с тем же буфером сообщений — без нового сообщения
+  // пользователя.
+  const handleAgentConfirmation = useCallback(
+    (decision: "approve" | "reject") => {
+      const pending = agent.pendingConfirmation;
+      if (!pending || !selectedModel) return;
+      const messagesToSend = localMessages.filter((m) => m.role === "user" || m.content);
+      agent.send({
+        messages: messagesToSend,
+        modelAlias: selectedModel,
+        conversationId: agentConvId,
+        confirmation: { decision, pending },
+        onDone: (fullContent) => {
+          const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
+          setLocalMessages(updated);
+          conversations.refetch();
+          if (activeId !== null) {
+            conversation.refetch();
+          }
+        },
+      });
+    },
+    [agent, selectedModel, localMessages, agentConvId, conversations, conversation, activeId],
+  );
+
   const handleEdit = useCallback(
     (messageIndex: number, newContent: string) => {
       // Обрезаем всё после отредактированного сообщения, заменяем контент
@@ -433,6 +460,41 @@ export function ChatPage() {
           contextResetAt={conversation.data?.context_reset_at ?? null}
         />
 
+        {/* Пункт 9: деструктивный инструмент просит подтверждения — прогон
+            остановлен до выполнения, действие не выполняется без решения. */}
+        {agentMode && agent.pendingConfirmation && (
+          <div
+            className="mx-4 my-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3"
+            data-testid="agent-confirmation-card"
+          >
+            <p className="text-sm font-medium">
+              Инструмент «{agent.pendingConfirmation.tool}» выполняет действие и просит
+              подтверждения
+            </p>
+            <p className="mt-1 break-all text-xs text-muted-foreground">
+              Параметры: {JSON.stringify(agent.pendingConfirmation.args)}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={() => handleAgentConfirmation("approve")}
+                disabled={isBusy}
+                data-testid="confirmation-approve"
+                className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                Выполнить
+              </button>
+              <button
+                onClick={() => handleAgentConfirmation("reject")}
+                disabled={isBusy}
+                data-testid="confirmation-reject"
+                className="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                Отменить
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Т-502: дополнение не установлено — честная причина вместо ввода */}
         {agentMode && agent.unavailableReason ? (
           <div className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
@@ -443,7 +505,7 @@ export function ChatPage() {
             onSend={handleSend}
             onAbort={handleAbort}
             isStreaming={isBusy}
-            disabled={selectorModels.length === 0}
+            disabled={selectorModels.length === 0 || (agentMode && !!agent.pendingConfirmation)}
             contextUsage={contextUsage}
             templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
           />

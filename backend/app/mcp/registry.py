@@ -135,7 +135,11 @@ async def resolve_tools(
                     name=f"{server.name}.{tool.server_tool_name}",
                     description=tool.description or f"Инструмент сервера '{server.name}'",
                     parameters=tool.input_schema or {"type": "object", "properties": {}},
-                    destructive=False,
+                    # Пункт 9 ревью Т-502 буквально: деструктивность заявляет
+                    # сам сервер аннотацией протокола; такой инструмент
+                    # останавливает прогон до выполнения и запрашивает
+                    # подтверждение пользователя.
+                    destructive=tool.destructive,
                     source=f"mcp:{server.name}",
                     server_name=server.name,
                     mcp_tool_name=tool.server_tool_name,

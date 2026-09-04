@@ -34,6 +34,7 @@ from app.db.models import (
     Corpus,
     Document,
     IndexVersion,
+    Message,
     Model,
     Provider,
     Role,
@@ -404,3 +405,109 @@ async def test_agent_demo_scenario_full_cycle(
         assert len(tool_audits) == 1
         assert tool_audits[0].meta is not None
         assert tool_audits[0].meta["decision"] == "allow"
+
+
+@pytest.mark.asyncio
+async def test_agent_confirmation_reject_cancels_without_model(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Пункт 9: отмена подтверждения не вызывает модель и пишет аудит.
+
+    Запрос с ``confirmation_decision="reject"`` возвращает факт отмены;
+    провайдер не вызывается вовсе; решение пользователя фиксируется в
+    журнале аудита.
+    """
+    pytest.importorskip("langgraph")
+    await _login(api_client, app_fixture)
+    await _seed_agent_model(app_fixture)
+
+    calls = _patch_complete_tools(monkeypatch, [_final_response("не должно вызываться")])
+
+    resp = await api_client.post(
+        "/api/agent/chat",
+        json={
+            "messages": [{"role": "user", "content": "Удали кэш"}],
+            "model_alias": "local/agent-model",
+            "confirmation_decision": "reject",
+            "confirmation": {
+                "call_id": "call-danger",
+                "tool": "wiki.purge_cache",
+                "args": {"item": "x"},
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["type"] == "complete"
+    assert body["content"] == "Действие отменено. Инструмент не выполнялся."
+    assert body["pending_confirmation"] is None
+    assert calls["n"] == 0  # модель не вызывалась
+
+    kinds = [(s["kind"], s.get("decision")) for s in body["steps"]]
+    assert ("confirmation", "reject") in kinds
+
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        audits = (await session.execute(select(AuditLog))).scalars().all()
+        confirmations = [a for a in audits if a.action == "agent.tool.confirmation"]
+        assert len(confirmations) == 1
+        assert confirmations[0].meta is not None
+        assert confirmations[0].meta["decision"] == "reject"
+        assert confirmations[0].meta["tool"] == "wiki.purge_cache"
+
+
+@pytest.mark.asyncio
+async def test_agent_continue_does_not_duplicate_messages(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Продолжение диалога полным буфером не дублирует сообщения.
+
+    Клиент шлёт буфер целиком; сохраняются только новые сообщения
+    (хвост после уже записанных) — иначе каждый ход задваивал бы
+    историю.
+    """
+    pytest.importorskip("langgraph")
+    await _login(api_client, app_fixture)
+    await _seed_agent_model(app_fixture)
+
+    _patch_complete_tools(
+        monkeypatch,
+        [_final_response("Первый ответ"), _final_response("Второй ответ")],
+    )
+
+    first = await api_client.post(
+        "/api/agent/chat",
+        json={
+            "messages": [{"role": "user", "content": "Первый вопрос"}],
+            "model_alias": "local/agent-model",
+        },
+    )
+    assert first.status_code == 200, first.text
+    conv_id = first.json()["conversation_id"]
+
+    second = await api_client.post(
+        "/api/agent/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "Первый вопрос"},
+                {"role": "assistant", "content": "Первый ответ"},
+                {"role": "user", "content": "Второй вопрос"},
+            ],
+            "model_alias": "local/agent-model",
+            "conversation_id": conv_id,
+        },
+    )
+    assert second.status_code == 200, second.text
+
+    factory = app_fixture.state.db_session_factory
+    async with factory() as session:
+        rows = (
+            (await session.execute(select(Message.role).where(Message.conversation_id == conv_id)))
+            .scalars()
+            .all()
+        )
+        assert list(rows) == ["user", "assistant", "user", "assistant"]

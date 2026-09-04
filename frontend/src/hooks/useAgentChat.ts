@@ -1,6 +1,17 @@
 import { useCallback, useRef, useState } from "react";
 import { agentChat } from "../api/agent";
-import type { AgentStepEntry, ChatMessage, ChatSourceEntry } from "../api/types";
+import type {
+  AgentStepEntry,
+  ChatMessage,
+  ChatSourceEntry,
+  PendingConfirmation,
+} from "../api/types";
+
+/** Решение по запросу подтверждения деструктивного инструмента (пункт 9). */
+export interface ConfirmationParams {
+  decision: "approve" | "reject";
+  pending: PendingConfirmation;
+}
 
 interface UseAgentChatResult {
   /** Прогон выполняется */
@@ -17,12 +28,15 @@ interface UseAgentChatResult {
   unavailableReason: string | null;
   /** Идентификатор разговора, созданный/использованный сервером */
   conversationId: string | null;
+  /** Запрос подтверждения деструктивного действия, если прогон остановлен */
+  pendingConfirmation: PendingConfirmation | null;
   /** Запустить прогон */
   send: (params: {
     messages: ChatMessage[];
     modelAlias: string;
     conversationId?: string | null;
     corpusNames?: string[] | null;
+    confirmation?: ConfirmationParams | null;
     onDone?: (content: string, error: { code: string; message: string } | null) => void;
   }) => void;
   /** Прервать прогон */
@@ -33,6 +47,9 @@ interface UseAgentChatResult {
  * Агентный прогон (Т-502). В отличие от чата — один синхронный запрос,
  * ответ целиком; стриминга нет. Хранит шаги, источники и идентификатор
  * разговора, чтобы последующие сообщения продолжали тот же диалог.
+ * Цикл подтверждения (пункт 9): если ответ содержит запрос
+ * подтверждения, клиент показывает карточку решения и отправляет его
+ * следующим запросом вместе с тем же буфером сообщений.
  */
 export function useAgentChat(): UseAgentChatResult {
   const [isRunning, setIsRunning] = useState(false);
@@ -42,6 +59,7 @@ export function useAgentChat(): UseAgentChatResult {
   const [sources, setSources] = useState<ChatSourceEntry[] | null>(null);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const abort = useCallback(() => {
@@ -53,7 +71,7 @@ export function useAgentChat(): UseAgentChatResult {
   }, []);
 
   const send = useCallback<UseAgentChatResult["send"]>(
-    ({ messages, modelAlias, conversationId: convId, corpusNames, onDone }) => {
+    ({ messages, modelAlias, conversationId: convId, corpusNames, confirmation, onDone }) => {
       setError(null);
       setContent("");
       setSteps([]);
@@ -72,6 +90,8 @@ export function useAgentChat(): UseAgentChatResult {
               model_alias: modelAlias,
               conversation_id: convId ?? null,
               corpus_names: corpusNames && corpusNames.length > 0 ? corpusNames : null,
+              confirmation_decision: confirmation?.decision ?? null,
+              confirmation: confirmation?.pending ?? null,
             },
             controller.signal,
           );
@@ -85,6 +105,7 @@ export function useAgentChat(): UseAgentChatResult {
             const msg = result.hint ?? "Агентный прогон остановлен";
             setError({ code: result.code ?? "agent_error", message: msg });
             setConversationId(result.conversation_id ?? null);
+            setPendingConfirmation(null);
             onDone?.("", { code: result.code ?? "agent_error", message: msg });
             return;
           }
@@ -92,6 +113,7 @@ export function useAgentChat(): UseAgentChatResult {
           setSteps(result.steps);
           setSources(result.sources);
           setConversationId(result.conversation_id ?? null);
+          setPendingConfirmation(result.pending_confirmation ?? null);
           onDone?.(result.content, null);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
@@ -120,6 +142,7 @@ export function useAgentChat(): UseAgentChatResult {
     sources,
     unavailableReason,
     conversationId,
+    pendingConfirmation,
     send,
     abort,
   };

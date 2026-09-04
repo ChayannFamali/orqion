@@ -219,4 +219,135 @@ describe("Т-502: агентный диалог в ChatPage", () => {
       expect(screen.getByText(/orqion\[agent\]/)).toBeInTheDocument();
     });
   });
+
+  /** Ответ с запросом подтверждения деструктивного инструмента. */
+  function pendingConfirmationResponse() {
+    return {
+      available: true,
+      type: "complete",
+      content: "Инструмент запросил подтверждение. Действие не выполнено.",
+      conversation_id: "conv-agent",
+      model: "local/agent-model",
+      usage: { tokens_in: 10, tokens_out: 5 },
+      steps: [
+        { index: 1, kind: "model", name: null, summary: "Запрошены инструменты", decision: null },
+        {
+          index: 2,
+          kind: "confirmation",
+          name: "demo-build.drop_cache",
+          summary: "Ожидает подтверждения пользователя",
+          decision: "pending",
+        },
+      ],
+      sources: [],
+      trace_id: "trace-1",
+      pending_confirmation: {
+        call_id: "call-danger",
+        tool: "demo-build.drop_cache",
+        args: { item: "x" },
+      },
+    } as any;
+  }
+
+  it("пункт 9: запрос подтверждения показывает карточку, одобрение уходит решением", async () => {
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat)
+      .mockResolvedValueOnce(pendingConfirmationResponse())
+      .mockResolvedValueOnce({
+        available: true,
+        type: "complete",
+        content: "Кэш удалён.",
+        conversation_id: "conv-agent",
+        model: "local/agent-model",
+        usage: { tokens_in: 12, tokens_out: 6 },
+        steps: [],
+        sources: [],
+        trace_id: "trace-2",
+        pending_confirmation: null,
+      } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Удали кэш");
+    await user.click(screen.getByText("Отправить"));
+
+    // Карточка запроса подтверждения с инструментом и параметрами.
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-confirmation-card")).toBeInTheDocument();
+      expect(screen.getByText(/demo-build\.drop_cache/)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("confirmation-approve"));
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(2);
+    });
+    const request = vi.mocked(agentChat).mock.calls[1][0];
+    expect(request.confirmation_decision).toBe("approve");
+    expect(request.confirmation).toEqual({
+      call_id: "call-danger",
+      tool: "demo-build.drop_cache",
+      args: { item: "x" },
+    });
+    // Новое сообщение пользователя не добавлялось — тот же буфер.
+    const userMsgs = request.messages.filter((m: any) => m.role === "user");
+    expect(userMsgs).toHaveLength(1);
+
+    // После исполнения карточка исчезает.
+    await waitFor(() => {
+      expect(screen.queryByTestId("agent-confirmation-card")).not.toBeInTheDocument();
+      expect(screen.getByText("Кэш удалён.")).toBeInTheDocument();
+    });
+  });
+
+  it("пункт 9: отмена подтверждения уходит решением «отклонить»", async () => {
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat)
+      .mockResolvedValueOnce(pendingConfirmationResponse())
+      .mockResolvedValueOnce({
+        available: true,
+        type: "complete",
+        content: "Действие отменено. Инструмент не выполнялся.",
+        conversation_id: "conv-agent",
+        model: "local/agent-model",
+        usage: { tokens_in: 0, tokens_out: 0 },
+        steps: [
+          {
+            index: 1,
+            kind: "confirmation",
+            name: "demo-build.drop_cache",
+            summary: "Отменено пользователем",
+            decision: "reject",
+          },
+        ],
+        sources: [],
+        trace_id: "trace-2",
+        pending_confirmation: null,
+      } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Удали кэш");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-confirmation-card")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("confirmation-reject"));
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(2);
+    });
+    const request = vi.mocked(agentChat).mock.calls[1][0];
+    expect(request.confirmation_decision).toBe("reject");
+
+    await waitFor(() => {
+      expect(screen.getByText("Действие отменено. Инструмент не выполнялся.")).toBeInTheDocument();
+    });
+  });
 });

@@ -4152,6 +4152,27 @@
               }
             ],
             "title": "Max Tokens"
+          },
+          "confirmation_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Decision"
+          },
+          "confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingConfirmation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -7448,7 +7469,7 @@
           "args"
         ],
         "title": "PendingConfirmation",
-        "description": "Запрос подтверждения деструктивного действия (пункт 9).\n\nМеханизм заложен в Т-502; в этой задаче деструктивных инструментов\nнет, поле всегда ``null``. Реальное использование проверяется в\nТ-503/Т-508."
+        "description": "Запрос подтверждения деструктивного действия (пункт 9 ревью Т-502).\n\nВозвращается, когда модель запросила деструктивный инструмент:\nпрогон остановлен до выполнения, клиент показывает пользователю\nинструмент и аргументы, решение возвращается следующим запросом\n(поле ``confirmation_decision``)."
       },
       "PromptTemplateCreate": {
         "properties": {

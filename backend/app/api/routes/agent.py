@@ -22,9 +22,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import AgentRunConfig, run_agent_loop
@@ -39,7 +40,7 @@ from app.api.schemas.chat import ChatSourceEntry, ChatUsage
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.chat.service import ChatContext, save_messages
-from app.db.models import Conversation, Corpus, Model, Provider, User
+from app.db.models import Conversation, Corpus, Message, Model, Provider, User
 from app.db.session import get_session
 from app.errors import (
     AgentRunLimitExceeded,
@@ -260,13 +261,97 @@ async def agent_chat(
         tools_registry=tools_registry,
     )
 
+    # Клиент шлёт буфер диалога целиком; уже сохранённые сообщения не
+    # пишутся повторно (хвост новых — считаем по числу строк диалога).
+    existing_messages = (
+        await session.scalar(
+            select(func.count(Message.id)).where(Message.conversation_id == conversation.id)
+        )
+        or 0
+    )
+    new_message_dicts = messages_dicts[existing_messages:]
+
+    # Цикл подтверждения деструктивного инструмента (пункт 9 ревью Т-502):
+    # клиент возвращает запрос подтверждения из прошлого ответа вместе с
+    # решением. ``reject`` отменяет действие без вызова модели;
+    # ``approve`` исполняет инструмент при повторном запросе модели —
+    # разрешение действует на конкретный вызов (имя и аргументы должны
+    # совпасть с показанными пользователю).
+    approved_tool_call: dict[str, Any] | None = None
+    if body.confirmation_decision == "reject" and body.confirmation is not None:
+        confirmed = body.confirmation
+        server_name = confirmed.tool.split(".", 1)[0] if "." in confirmed.tool else None
+        async with span(
+            trace_ctx,
+            f"agent.tool.confirmation.{confirmed.tool}",
+            payload={
+                "decision": "reject",
+                "tool": confirmed.tool,
+                "args": dict(confirmed.args),
+                "call_id": confirmed.call_id,
+                "data_class": corpus_data_class,
+            },
+        ):
+            await write_audit(
+                session,
+                workspace_id=workspace_id,
+                actor_user_id=user.id,
+                action="agent.tool.confirmation",
+                object_type="agent_tool",
+                object_id=conversation.id,
+                meta={
+                    "decision": "reject",
+                    "data_class": corpus_data_class,
+                    "tool": confirmed.tool,
+                    "server_name": server_name,
+                },
+            )
+        reject_content = "Действие отменено. Инструмент не выполнялся."
+        chat_ctx = _build_chat_context(cfg, new_message_dicts, reject_content)
+        conv_id, msg_id = await save_messages(session, chat_ctx, model, workspace_id)
+        await finalize_trace(
+            session,
+            trace_ctx,
+            conversation_id=conv_id,
+            message_id=msg_id,
+            error=False,
+        )
+        return AgentChatResponse(
+            available=True,
+            type="complete",
+            content=reject_content,
+            conversation_id=conv_id,
+            model=model.alias,
+            usage=ChatUsage(tokens_in=0, tokens_out=0),
+            steps=[
+                AgentStepEntry(
+                    index=1,
+                    kind="confirmation",
+                    name=confirmed.tool,
+                    summary="Отменено пользователем",
+                    decision="reject",
+                )
+            ],
+            sources=[],
+            trace_id=trace_ctx.trace_id,
+            pending_confirmation=None,
+        )
+    if body.confirmation_decision == "approve" and body.confirmation is not None:
+        approved_tool_call = {
+            "tool": body.confirmation.tool,
+            "args": dict(body.confirmation.args),
+            "call_id": body.confirmation.call_id,
+        }
+
     try:
         async with span(trace_ctx, "agent.run"):
-            result = await run_agent_loop(cfg, messages_dicts)
+            result = await run_agent_loop(
+                cfg, messages_dicts, approved_tool_call=approved_tool_call
+            )
     except (AgentRunLimitExceeded, OrqionError) as exc:
         # Сообщение пользователя сохраняем даже при остановке прогона —
         # диалог не теряет вопрос (ошибка — событием, не потерей данных).
-        await _save_turn_on_error(session, cfg, messages_dicts, workspace_id)
+        await _save_turn_on_error(session, cfg, new_message_dicts, workspace_id)
         await finalize_trace(
             session,
             trace_ctx,
@@ -309,8 +394,9 @@ async def agent_chat(
             )
         )
 
-    # Сохранение сообщений — общий механизм чата (включая FTS и заголовок).
-    chat_ctx = _build_chat_context(cfg, messages_dicts, result.content)
+    # Сохранение сообщений — общий механизм чата (включая FTS и заголовок);
+    # только хвост новых сообщений буфера (см. выше).
+    chat_ctx = _build_chat_context(cfg, new_message_dicts, result.content)
     conv_id, msg_id = await save_messages(
         session, chat_ctx, model, workspace_id, sources=result.sources
     )

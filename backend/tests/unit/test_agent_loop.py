@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from app.agent.loop import AgentRunConfig, run_agent_loop
-from app.agent.tools import AGENT_TOOL_SPECS, ResolvedTools, ToolSpec
+from app.agent.tools import AGENT_TOOL_SPECS, ResolvedTools, ServerEndpoint, ToolSpec
 from app.auth.passwords import hash_password
 from app.config import Settings
 from app.db.models import (
@@ -378,4 +378,200 @@ async def test_destructive_tool_requests_confirmation(
     assert result.pending_confirmation is not None
     assert result.pending_confirmation["tool"] == "delete_everything"
     assert result.pending_confirmation["call_id"] == "call-danger"
-    assert result.content == ""
+    # Прогон остановлен до выполнения: пользователю показан запрос
+    # подтверждения (шаг и текст), действие не выполнено.
+    assert result.content
+    assert "подтверждение" in result.content.lower()
+    confirmation_steps = [s for s in result.steps if s.kind == "confirmation"]
+    assert len(confirmation_steps) == 1
+    assert confirmation_steps[0].decision == "pending"
+    assert confirmation_steps[0].name == "delete_everything"
+
+
+@pytest.mark.asyncio
+async def test_destructive_tool_approved_executes(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+    test_settings: Settings,
+    tmp_path: Any,
+    vector_stores: list[SQLiteVectorStore],
+) -> None:
+    """Пункт 9: одобренный деструктивный инструмент исполняется.
+
+    Разрешение действует на конкретный вызов: имя и аргументы должны
+    совпасть с показанными пользователю; факт одобрения — дуальный
+    аудит (шаг прогона, запись в журнале, спан трассировки).
+    """
+    pytest.importorskip("langgraph")
+    workspace_id, user_id, model, provider = await _seed(db_session)
+    user = await db_session.get(User, user_id)
+    assert user is not None
+    registry = ResolvedTools(
+        specs=[
+            ToolSpec(
+                name="wiki.purge_cache",
+                description="деструктивная заглушка",
+                parameters={"type": "object", "properties": {"item": {"type": "string"}}},
+                destructive=True,
+                source="mcp:wiki",
+                server_name="wiki",
+                mcp_tool_name="purge_cache",
+            )
+        ],
+        servers={"wiki": ServerEndpoint(url="http://127.0.0.1:1/mcp", api_key_enc=None)},
+    )
+    cfg = _make_config(
+        db_session,
+        test_settings,
+        tmp_path,
+        workspace_id,
+        user,
+        model,
+        provider,
+        vector_stores,
+        tools_registry=registry,
+    )
+
+    destructive_call = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-danger",
+                            "type": "function",
+                            "function": {
+                                "name": "wiki.purge_cache",
+                                "arguments": '{"item": "x"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+    }
+    final_call = {
+        "choices": [{"message": {"content": _FINAL_ANSWER}}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+    }
+    _patch_model(monkeypatch, [destructive_call, final_call])
+
+    from app.mcp.client import ToolCallResult
+
+    executed: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_call_tool(
+        conn: object, tool_name: str, arguments: dict[str, object], timeout: float
+    ) -> ToolCallResult:
+        executed.append((tool_name, arguments))
+        return ToolCallResult(text="кэш очищен", is_error=False)
+
+    monkeypatch.setattr("app.mcp.client.call_tool", fake_call_tool)
+
+    result = await run_agent_loop(
+        cfg,
+        [{"role": "user", "content": "вопрос"}],
+        approved_tool_call={
+            "tool": "wiki.purge_cache",
+            "args": {"item": "x"},
+            "call_id": "call-danger",
+        },
+    )
+
+    # Запрос подтверждения не возвращается — действие исполнено.
+    assert result.pending_confirmation is None
+    assert executed == [("purge_cache", {"item": "x"})]
+    assert result.content == _FINAL_ANSWER
+    approve_steps = [
+        s for s in result.steps if s.kind == "confirmation" and s.decision == "approve"
+    ]
+    assert len(approve_steps) == 1
+
+    # Дуальный аудит: одобрение и сам вызов — в журнале.
+    rows = (await db_session.execute(select(AuditLog))).scalars().all()
+    confirmations = [r for r in rows if r.action == "agent.tool.confirmation"]
+    assert len(confirmations) == 1
+    assert confirmations[0].meta is not None
+    assert confirmations[0].meta["decision"] == "approve"
+    assert confirmations[0].meta["tool"] == "wiki.purge_cache"
+    tool_calls = [r for r in rows if r.action == "agent.tool.mcp"]
+    assert len(tool_calls) == 1
+    assert tool_calls[0].meta is not None
+    assert tool_calls[0].meta["decision"] == "allow"
+
+
+@pytest.mark.asyncio
+async def test_destructive_tool_approval_mismatch_stops(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+    test_settings: Settings,
+    tmp_path: Any,
+    vector_stores: list[SQLiteVectorStore],
+) -> None:
+    """Одобрение с другими аргументами не действует — прогон останавливается."""
+    pytest.importorskip("langgraph")
+    workspace_id, user_id, model, provider = await _seed(db_session)
+    user = await db_session.get(User, user_id)
+    assert user is not None
+    registry = ResolvedTools(
+        specs=[
+            ToolSpec(
+                name="wiki.purge_cache",
+                description="деструктивная заглушка",
+                parameters={"type": "object", "properties": {"item": {"type": "string"}}},
+                destructive=True,
+                source="mcp:wiki",
+                server_name="wiki",
+                mcp_tool_name="purge_cache",
+            )
+        ],
+        servers={"wiki": ServerEndpoint(url="http://127.0.0.1:1/mcp", api_key_enc=None)},
+    )
+    cfg = _make_config(
+        db_session,
+        test_settings,
+        tmp_path,
+        workspace_id,
+        user,
+        model,
+        provider,
+        vector_stores,
+        tools_registry=registry,
+    )
+
+    destructive_call = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-danger",
+                            "type": "function",
+                            "function": {
+                                "name": "wiki.purge_cache",
+                                "arguments": '{"item": "x"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+    }
+    _patch_model(monkeypatch, [destructive_call])
+
+    result = await run_agent_loop(
+        cfg,
+        [{"role": "user", "content": "вопрос"}],
+        approved_tool_call={
+            "tool": "wiki.purge_cache",
+            "args": {"item": "другое"},
+            "call_id": "call-danger",
+        },
+    )
+
+    assert result.pending_confirmation is not None
+    assert result.pending_confirmation["tool"] == "wiki.purge_cache"

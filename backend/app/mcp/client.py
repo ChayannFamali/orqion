@@ -32,6 +32,10 @@ class DiscoveredTool:
     server_tool_name: str
     description: str
     input_schema: dict[str, object]
+    # Флаг деструктивности приходит из протокола (аннотация
+    # ``destructiveHint``), а не из настроек: сервер сам заявляет, что
+    # инструмент меняет внешний мир.
+    destructive: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,11 +76,14 @@ async def discover_tools(conn: ServerConnection, timeout: float) -> list[Discove
     tools: list[DiscoveredTool] = []
     for t in result.tools:
         schema = t.inputSchema if isinstance(t.inputSchema, dict) else {}
+        annotations = t.annotations
+        destructive = bool(getattr(annotations, "destructiveHint", False) if annotations else False)
         tools.append(
             DiscoveredTool(
                 server_tool_name=t.name,
                 description=t.description or "",
                 input_schema=schema,
+                destructive=destructive,
             )
         )
     return tools

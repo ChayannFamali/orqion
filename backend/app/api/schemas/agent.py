@@ -7,6 +7,20 @@ from pydantic import BaseModel
 from app.api.schemas.chat import ChatMessage, ChatSourceEntry, ChatUsage
 
 
+class PendingConfirmation(BaseModel):
+    """Запрос подтверждения деструктивного действия (пункт 9 ревью Т-502).
+
+    Возвращается, когда модель запросила деструктивный инструмент:
+    прогон остановлен до выполнения, клиент показывает пользователю
+    инструмент и аргументы, решение возвращается следующим запросом
+    (поле ``confirmation_decision``).
+    """
+
+    call_id: str
+    tool: str
+    args: dict[str, object]
+
+
 class AgentChatRequest(BaseModel):
     """Запрос агентного прогона.
 
@@ -21,29 +35,22 @@ class AgentChatRequest(BaseModel):
     model_alias: str
     corpus_names: list[str] | None = None
     max_tokens: int | None = None
+    # Цикл подтверждения деструктивного инструмента (пункт 9): клиент
+    # возвращает запрос подтверждения из прошлого ответа вместе с
+    # решением. ``approve`` исполняет инструмент, ``reject`` отменяет
+    # действие без вызова модели.
+    confirmation_decision: str | None = None
+    confirmation: PendingConfirmation | None = None
 
 
 class AgentStepEntry(BaseModel):
     """Шаг прогона для ленты агентного диалога."""
 
     index: int
-    kind: str  # "model" | "tool"
+    kind: str  # "model" | "tool" | "confirmation"
     name: str | None = None
     summary: str = ""
-    decision: str | None = None  # для инструментов: "allow" | "deny"
-
-
-class PendingConfirmation(BaseModel):
-    """Запрос подтверждения деструктивного действия (пункт 9).
-
-    Механизм заложен в Т-502; в этой задаче деструктивных инструментов
-    нет, поле всегда ``null``. Реальное использование проверяется в
-    Т-503/Т-508.
-    """
-
-    call_id: str
-    tool: str
-    args: dict[str, object]
+    decision: str | None = None  # "allow" | "deny" | "approve" | "reject" | "pending"
 
 
 class AgentChatResponse(BaseModel):

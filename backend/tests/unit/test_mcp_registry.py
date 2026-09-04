@@ -56,11 +56,14 @@ async def vector_stores() -> AsyncIterator[list[SQLiteVectorStore]]:
 async def live_mcp_server() -> AsyncIterator[str]:
     """Реальный сервер протокола (FastMCP) на свободном порту.
 
-    Один инструмент ``echo``; транспорт — streamable HTTP, путь ``/mcp``.
+    Два инструмента: ``echo`` и деструктивный ``drop_cache`` (заявлен
+    аннотацией протокола ``destructiveHint``); транспорт — streamable
+    HTTP, путь ``/mcp``.
     """
     pytest.importorskip("mcp")
     import uvicorn
     from mcp.server.fastmcp import FastMCP
+    from mcp.types import ToolAnnotations
 
     server = FastMCP("demo-server")
 
@@ -69,6 +72,12 @@ async def live_mcp_server() -> AsyncIterator[str]:
         return f"echo: {text}"
 
     server.tool()(echo)
+
+    def drop_cache(item: str) -> str:
+        """Удаляет элемент кэша (деструктивное действие)."""
+        return f"deleted: {item}"
+
+    server.tool(annotations=ToolAnnotations(destructiveHint=True))(drop_cache)
 
     app = server.streamable_http_app()
     probe = socket.socket()
@@ -332,10 +341,19 @@ async def test_resolve_tools_live_server_namespaced(
     assert echo.source == "mcp:demo"
     assert echo.server_name == "demo"
     assert echo.mcp_tool_name == "echo"
+    assert echo.destructive is False
     assert registry.servers["demo"].url == live_mcp_server
+
+    # Пункт 9: деструктивность приходит из протокола (аннотация
+    # ``destructiveHint``), а не из настроек.
+    assert "demo.drop_cache" in names
+    drop = registry.spec_by_name("demo.drop_cache")
+    assert drop is not None
+    assert drop.destructive is True
 
     schemas = registry.schemas()
     assert "demo.echo" in [s["function"]["name"] for s in schemas]
+    assert "demo.drop_cache" in [s["function"]["name"] for s in schemas]
 
 
 @pytest.mark.asyncio

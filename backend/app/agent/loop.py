@@ -31,10 +31,12 @@ from app.agent.tools import (
     ResolvedTools,
     ToolOutcome,
     ToolRunContext,
+    ToolSpec,
     build_tool_schemas,
     execute_mcp_tool,
     execute_search_corpus,
 )
+from app.audit.service import write_audit
 from app.config import Settings
 from app.db.models import Corpus, Model, Provider, User
 from app.errors import AgentRunLimitExceeded
@@ -344,9 +346,47 @@ def _parse_tool_calls(raw_calls: list[Any]) -> list[dict[str, Any]]:
     return parsed
 
 
+async def _audit_confirmation(
+    tctx: ToolRunContext,
+    spec: ToolSpec,
+    args: dict[str, Any],
+    call_id: str,
+    decision: str,
+) -> None:
+    """Дуальный аудит факта подтверждения деструктивного инструмента.
+
+    Полный состав — в спан трассировки; компактный факт — в журнал
+    аудита бессрочно (паттерн детекторов, пункт 7 АДР-21).
+    """
+    payload: dict[str, object] = {
+        "decision": decision,
+        "tool": spec.name,
+        "server": spec.server_name,
+        "args": args,
+        "call_id": call_id,
+        "data_class": tctx.corpus_data_class,
+    }
+    async with span(tctx.trace_ctx, f"agent.tool.confirmation.{spec.name}", payload=payload):
+        await write_audit(
+            tctx.session,
+            workspace_id=tctx.workspace_id,
+            actor_user_id=tctx.user_id,
+            action="agent.tool.confirmation",
+            object_type="agent_tool",
+            object_id=tctx.conversation_id,
+            meta={
+                "decision": decision,
+                "data_class": tctx.corpus_data_class,
+                "tool": spec.name,
+                "server_name": spec.server_name,
+            },
+        )
+
+
 async def run_agent_loop(
     cfg: AgentRunConfig,
     history: list[dict[str, str]],
+    approved_tool_call: dict[str, Any] | None = None,
 ) -> AgentRunResult:
     """Синхронный цикл «модель → инструменты → модель» в одном запросе.
 
@@ -439,13 +479,33 @@ async def run_agent_loop(
                 continue
 
             # Пункт 9: деструктивный инструмент — остановка до выполнения.
+            # Прогон продолжается только после явного подтверждения
+            # пользователя, пришедшего в запросе вместе с самим запросом
+            # подтверждения (имя инструмента и аргументы должны совпасть
+            # с показанными пользователю).
             if spec.destructive:
-                rs.pending_confirmation = {
-                    "call_id": call_id,
-                    "tool": name,
-                    "args": args,
-                }
-                raise _ConfirmationStop()
+                approved = (
+                    approved_tool_call is not None
+                    and approved_tool_call.get("tool") == name
+                    and approved_tool_call.get("args") == args
+                )
+                if not approved:
+                    rs.pending_confirmation = {
+                        "call_id": call_id,
+                        "tool": name,
+                        "args": args,
+                    }
+                    raise _ConfirmationStop()
+                result.steps.append(
+                    AgentStep(
+                        index=len(result.steps) + 1,
+                        kind="confirmation",
+                        name=name,
+                        summary="Подтверждено пользователем",
+                        decision="approve",
+                    )
+                )
+                await _audit_confirmation(tctx, spec, args, call_id, "approve")
 
             # Т-503: инструмент внешнего сервера — исполнение по протоколу
             # с теми же гарантиями ADR-21, что у встроенного поиска
@@ -528,9 +588,25 @@ async def run_agent_loop(
         ) from exc
     except _ConfirmationStop:
         result.pending_confirmation = rs.pending_confirmation
+        pending = rs.pending_confirmation or {}
+        result.steps.append(
+            AgentStep(
+                index=len(result.steps) + 1,
+                kind="confirmation",
+                name=str(pending.get("tool") or ""),
+                summary="Ожидает подтверждения пользователя",
+                decision="pending",
+            )
+        )
+        if not result.content:
+            result.content = (
+                f"Инструмент '{pending.get('tool')}' запросил подтверждение. "
+                "Действие не выполнено. Подтвердите или отмените выполнение."
+            )
         _log.info(
-            "agent run stopped on destructive tool confirmation: user=%s",
+            "agent run stopped on destructive tool confirmation: user=%s tool=%s",
             cfg.user.id,
+            pending.get("tool"),
         )
         return result
 

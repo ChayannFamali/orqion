@@ -1521,6 +1521,9 @@ export interface components {
             corpus_names?: string[] | null;
             /** Max Tokens */
             max_tokens?: number | null;
+            /** Confirmation Decision */
+            confirmation_decision?: string | null;
+            confirmation?: components["schemas"]["PendingConfirmation"] | null;
         };
         /**
          * AgentChatResponse
@@ -2802,11 +2805,12 @@ export interface components {
         };
         /**
          * PendingConfirmation
-         * @description Запрос подтверждения деструктивного действия (пункт 9).
+         * @description Запрос подтверждения деструктивного действия (пункт 9 ревью Т-502).
          *
-         *     Механизм заложен в Т-502; в этой задаче деструктивных инструментов
-         *     нет, поле всегда ``null``. Реальное использование проверяется в
-         *     Т-503/Т-508.
+         *     Возвращается, когда модель запросила деструктивный инструмент:
+         *     прогон остановлен до выполнения, клиент показывает пользователю
+         *     инструмент и аргументы, решение возвращается следующим запросом
+         *     (поле ``confirmation_decision``).
          */
         PendingConfirmation: {
             /** Call Id */
