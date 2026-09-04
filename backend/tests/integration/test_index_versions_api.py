@@ -240,21 +240,30 @@ async def test_rollback_index_version(
     await _login_with_role(api_client, app_fixture, role_name="admin")
     corpus_id = await _create_corpus(app_fixture)
 
+    async def _post_expect(url: str, expect: int) -> dict[str, Any]:
+        # Флакующий тест (однократный сбой 400 вместо 200, запись в
+        # бэклоге планинга): при любом будущем падении тело ответа
+        # эндпоинта фиксируется в сообщении автоматически — поимка не
+        # зависит от того, кто и когда прогоняет. Сборка возвращает 202,
+        # активация и откат — 200.
+        r = await api_client.post(url)
+        assert r.status_code == expect, f"{url} → {r.status_code}: {r.text[:500]}"
+        body: dict[str, Any] = r.json()
+        return body
+
     # Build and activate v1
-    build1 = await api_client.post(f"/api/corpora/{corpus_id}/index-versions")
-    v1_id = build1.json()["index_version_id"]
-    await api_client.post(f"/api/corpora/{corpus_id}/index-versions/{v1_id}/activate")
+    build1 = await _post_expect(f"/api/corpora/{corpus_id}/index-versions", 202)
+    v1_id = build1["index_version_id"]
+    await _post_expect(f"/api/corpora/{corpus_id}/index-versions/{v1_id}/activate", 200)
 
     # Build and activate v2
-    build2 = await api_client.post(f"/api/corpora/{corpus_id}/index-versions")
-    v2_id = build2.json()["index_version_id"]
-    await api_client.post(f"/api/corpora/{corpus_id}/index-versions/{v2_id}/activate")
+    build2 = await _post_expect(f"/api/corpora/{corpus_id}/index-versions", 202)
+    v2_id = build2["index_version_id"]
+    await _post_expect(f"/api/corpora/{corpus_id}/index-versions/{v2_id}/activate", 200)
 
     # Rollback
-    resp = await api_client.post(f"/api/corpora/{corpus_id}/index-versions/rollback")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["active_version_id"] == v1_id
+    data = await _post_expect(f"/api/corpora/{corpus_id}/index-versions/rollback", 200)
+    assert data["active_version_id"] == v1_id, f"rollback вернул не ту версию: {data}"
 
 
 @pytest.mark.asyncio
