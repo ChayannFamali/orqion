@@ -219,6 +219,7 @@ def create_app() -> FastAPI:
         rag_settings_router,
         roles_router,
         routing_router,
+        skills_router,
         traces_router,
         users_router,
     )
@@ -250,6 +251,7 @@ def create_app() -> FastAPI:
     app.include_router(rag_settings_router)
     app.include_router(roles_router)
     app.include_router(routing_router)
+    app.include_router(skills_router)
     app.include_router(traces_router)
     app.include_router(users_router)
 

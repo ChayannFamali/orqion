@@ -13,6 +13,7 @@ import { useChat } from "../hooks/useChat";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useCurrentUser } from "../hooks/useAuth";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
+import { useAvailableSkills } from "../hooks/useSkills";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
@@ -40,6 +41,10 @@ export function ChatPage() {
   const [agentMode, setAgentMode] = useState(false);
   const [agentConvId, setAgentConvId] = useState<string | null>(null);
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
+  // Т-508: выбранный скилл. Выбор приходит на каждый запрос, а не хранится
+  // на диалоге (решение 5) — профиль агента из Т-509 подставит свой скилл в
+  // то же поле. Несуществующий/отключённый скилл сервер отклоняет явно.
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
 
   const currentUser = useCurrentUser();
   const reasoningPolicy = currentUser.data?.reasoning ?? "off";
@@ -61,6 +66,8 @@ export function ChatPage() {
   const deleteConv = useDeleteConversation();
   const chat = useChat();
   const agent = useAgentChat();
+  // Т-508: список скиллов для выбора — только в агентном режиме.
+  const availableSkills = useAvailableSkills(agentMode);
 
   // Т-502: модели с флагом пригодности к инструментам (решение 3). Точка
   // создания агентного диалога видна только при наличии хотя бы одной.
@@ -173,6 +180,7 @@ export function ChatPage() {
           modelAlias: selectedModel,
           conversationId: agentConvId,
           corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+          skillId: selectedSkillId,
           onDone: (fullContent) => {
             const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
             setLocalMessages(updated);
@@ -202,7 +210,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, agentMode, agentConvId, agent, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, agentMode, agentConvId, selectedSkillId, agent, chat, conversations, conversation],
   );
 
   const handleAbort = useCallback(() => {
@@ -281,6 +289,12 @@ export function ChatPage() {
   // до выполнения и запрашивает подтверждение. Решение уходит следующим
   // запросом вместе с тем же буфером сообщений — без нового сообщения
   // пользователя.
+  //
+  // Выбор корпусов и скилла передаётся тот же, что в исходном запросе:
+  // сужение и класс данных вычисляются на каждый запрос заново, поэтому
+  // без них продолжение одобренного прогона шло бы с полным реестром
+  // инструментов и с классом данных «не выбран» — ослабление обеих
+  // гарантий (Т-508, решения 2 и 5).
   const handleAgentConfirmation = useCallback(
     (decision: "approve" | "reject") => {
       const pending = agent.pendingConfirmation;
@@ -290,6 +304,8 @@ export function ChatPage() {
         messages: messagesToSend,
         modelAlias: selectedModel,
         conversationId: agentConvId,
+        corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
+        skillId: selectedSkillId,
         confirmation: { decision, pending },
         onDone: (fullContent) => {
           const updated = [...messagesToSend, { role: "assistant", content: fullContent }];
@@ -301,7 +317,17 @@ export function ChatPage() {
         },
       });
     },
-    [agent, selectedModel, localMessages, agentConvId, conversations, conversation, activeId],
+    [
+      agent,
+      selectedModel,
+      localMessages,
+      agentConvId,
+      selectedCorpora,
+      selectedSkillId,
+      conversations,
+      conversation,
+      activeId,
+    ],
   );
 
   const handleEdit = useCallback(
@@ -389,6 +415,32 @@ export function ChatPage() {
             onChange={setSelectedModel}
             disabled={isBusy}
           />
+          {/* Т-508: выбор скилла виден только в агентном режиме и только
+              когда есть из чего выбирать. Выбор приходит на каждый запрос,
+              а не хранится на диалоге (решение 5). Пока ждёт решения по
+              подтверждению деструктивного действия селектор заблокирован:
+              смена скилла могла бы убрать из прогона одобряемый инструмент. */}
+          {agentMode && availableSkills.data && availableSkills.data.skills.length > 0 && (
+            <select
+              value={selectedSkillId ?? ""}
+              onChange={(e) => setSelectedSkillId(e.target.value || null)}
+              disabled={isBusy || !!agent.pendingConfirmation}
+              data-testid="agent-skill-select"
+              title="Скилл: дополнительные инструкции агенту и разрешённый набор инструментов"
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            >
+              <option value="">Без скилла</option>
+              {selectedSkillId &&
+                !availableSkills.data.skills.some((s) => s.id === selectedSkillId) && (
+                  <option value={selectedSkillId}>Скилл недоступен</option>
+                )}
+              {availableSkills.data.skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
           {/* Т-445 (Г1): переключатель рассуждения виден только при политике
               "optional"; при off/on режим фиксирован политикой. В агентном
               режиме (Т-502) рассуждение не управляется — скрыт. */}
@@ -443,6 +495,19 @@ export function ChatPage() {
 
         {/* Т-502: сводка шагов последнего агентного прогона */}
         {agentMode && agent.steps.length > 0 && <AgentRunSummary steps={agent.steps} />}
+        {/* Т-508 (решение 6): честное сообщение о том, какие инструменты
+            выбранного скилла в этом прогоне недоступны — «обещано N,
+            доступно M» по образцу усечения Т-504. Причина (сервер
+            недоступен, класс данных, инструмент не зарегистрирован) в
+            трассировке. */}
+        {agentMode && agent.skillToolsUnavailable.length > 0 && (
+          <div
+            className="mx-4 mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400"
+            data-testid="agent-skill-tools-unavailable"
+          >
+            Недоступные инструменты скилла: {agent.skillToolsUnavailable.join(", ")}
+          </div>
+        )}
 
         {/* Messages */}
         <ChatMessages

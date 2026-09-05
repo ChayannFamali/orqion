@@ -80,4 +80,8 @@ export const queryKeys = {
   mcpServers: {
     all: ["mcp-servers"] as const,
   },
+  skills: {
+    all: ["skills"] as const,
+    available: ["skills", "available"] as const,
+  },
 } as const;

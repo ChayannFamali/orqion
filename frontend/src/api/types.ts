@@ -110,3 +110,11 @@ export type McpServerListResponse = components["schemas"]["McpServerListResponse
 export type McpServerCreate = components["schemas"]["McpServerCreate"];
 export type McpServerUpdate = components["schemas"]["McpServerUpdate"];
 export type McpServerDeleteResponse = components["schemas"]["McpServerDeleteResponse"];
+/** Скиллы — пакеты конфигурации агентного прогона (Т-508). */
+export type SkillResponse = components["schemas"]["SkillResponse"];
+export type SkillListResponse = components["schemas"]["SkillListResponse"];
+export type SkillCreate = components["schemas"]["SkillCreate"];
+export type SkillUpdate = components["schemas"]["SkillUpdate"];
+export type SkillAvailableResponse = components["schemas"]["SkillAvailableResponse"];
+export type SkillAvailableListResponse = components["schemas"]["SkillAvailableListResponse"];
+export type SkillDeleteResponse = components["schemas"]["SkillDeleteResponse"];

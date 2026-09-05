@@ -1382,6 +1382,73 @@ export interface paths {
         patch: operations["update_routing_rule_api_routing_rules__rule_id__patch"];
         trace?: never;
     };
+    "/api/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Skills
+         * @description Админский каталог: все скиллы рабочей области, включая выключенные.
+         */
+        get: operations["list_skills_api_skills_get"];
+        put?: never;
+        /** Create Skill */
+        post: operations["create_skill_api_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Available Skills
+         * @description Список для выбора в диалоге: только включённые, только нужные поля.
+         */
+        get: operations["list_available_skills_api_skills_available_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Skill */
+        put: operations["update_skill_api_skills__skill_id__put"];
+        post?: never;
+        /**
+         * Delete Skill
+         * @description Удаление скилла из каталога.
+         *
+         *     Исторических ссылок на скилл нет: выбор приходит в запросе
+         *     (``skill_id``), а не хранится на диалоге, поэтому удаление не
+         *     оставляет битых ссылок — следующий запрос с этим id получит явный
+         *     отказ. Основной путь «временно выключить» — PUT enabled=false.
+         */
+        delete: operations["delete_skill_api_skills__skill_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/traces": {
         parameters: {
             query?: never;
@@ -1521,6 +1588,8 @@ export interface components {
             corpus_names?: string[] | null;
             /** Max Tokens */
             max_tokens?: number | null;
+            /** Skill Id */
+            skill_id?: string | null;
             /** Confirmation Decision */
             confirmation_decision?: string | null;
             confirmation?: components["schemas"]["PendingConfirmation"] | null;
@@ -1568,6 +1637,11 @@ export interface components {
             /** Trace Id */
             trace_id?: string | null;
             pending_confirmation?: components["schemas"]["PendingConfirmation"] | null;
+            /**
+             * Skill Tools Unavailable
+             * @default []
+             */
+            skill_tools_unavailable: string[];
             /** Code */
             code?: string | null;
             /** Constraint */
@@ -3114,6 +3188,113 @@ export interface components {
             reranker_enabled: boolean;
             /** Steps */
             steps: string[];
+        };
+        /** SkillAvailableListResponse */
+        SkillAvailableListResponse: {
+            /** Skills */
+            skills: components["schemas"]["SkillAvailableResponse"][];
+        };
+        /**
+         * SkillAvailableResponse
+         * @description Список для выбора в диалоге: только то, что нужно для выбора.
+         */
+        SkillAvailableResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
+        /** SkillCreate */
+        SkillCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Prompt Text
+             * @default
+             */
+            prompt_text: string;
+            /** Tools */
+            tools?: string[];
+            /** Default Max Tokens */
+            default_max_tokens?: number | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** SkillDeleteResponse */
+        SkillDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+        };
+        /** SkillListResponse */
+        SkillListResponse: {
+            /** Skills */
+            skills: components["schemas"]["SkillResponse"][];
+        };
+        /**
+         * SkillResponse
+         * @description Админский каталог: полные поля, включая выключенные скиллы.
+         */
+        SkillResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Prompt Text */
+            prompt_text: string;
+            /** Tools */
+            tools: string[];
+            /** Default Max Tokens */
+            default_max_tokens: number | null;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SkillUpdate
+         * @description Полная замена полей скилла (по образцу шаблонов промптов, Т-507).
+         *
+         *     Имя в отличие от сервера протокола переименовывать можно: оно
+         *     отображаемое, а ссылкой служит ``skill_id``, поэтому переименование
+         *     не меняет ни имён инструментов в реестре, ни записей аудита.
+         */
+        SkillUpdate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Prompt Text
+             * @default
+             */
+            prompt_text: string;
+            /** Tools */
+            tools?: string[];
+            /** Default Max Tokens */
+            default_max_tokens?: number | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /**
          * SpanResponse
@@ -5915,6 +6096,145 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoutingRuleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_skills_api_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillListResponse"];
+                };
+            };
+        };
+    };
+    create_skill_api_skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_available_skills_api_skills_available_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillAvailableListResponse"];
+                };
+            };
+        };
+    };
+    update_skill_api_skills__skill_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_skill_api_skills__skill_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDeleteResponse"];
                 };
             };
             /** @description Validation Error */

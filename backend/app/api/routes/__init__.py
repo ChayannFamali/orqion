@@ -22,6 +22,7 @@ from app.api.routes.providers import router as providers_router
 from app.api.routes.rag_settings import router as rag_settings_router
 from app.api.routes.roles import router as roles_router
 from app.api.routes.routing import router as routing_router
+from app.api.routes.skills import router as skills_router
 from app.api.routes.traces import router as traces_router
 from app.api.routes.users import router as users_router
 
@@ -48,6 +49,7 @@ __all__ = [
     "rag_settings_router",
     "roles_router",
     "routing_router",
+    "skills_router",
     "traces_router",
     "users_router",
 ]

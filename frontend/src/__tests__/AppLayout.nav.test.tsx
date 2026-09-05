@@ -24,6 +24,9 @@ vi.mock("../pages/DocumentGraphPage", () => ({
 vi.mock("../pages/McpServersPage", () => ({
   McpServersPage: () => <div>MCP_SERVERS_PAGE</div>,
 }));
+vi.mock("../pages/SkillsPage", () => ({
+  SkillsPage: () => <div>SKILLS_PAGE</div>,
+}));
 vi.mock("../pages/PlaceholderPage", () => ({ PlaceholderPage: () => <div>PLACEHOLDER</div> }));
 vi.mock("../components/Topbar", () => ({ Topbar: () => <div>TOPBAR</div> }));
 vi.mock("../hooks/useUsers", () => ({
@@ -136,5 +139,23 @@ describe("AppLayout navigation persistence", () => {
     window.location.hash = "#/mcp-servers";
     renderLayout(["*"]);
     expect(screen.getByText("MCP_SERVERS_PAGE")).toBeInTheDocument();
+  });
+
+  it("Т-508: скиллы недоступны без способности и доступны через *", () => {
+    window.location.hash = "#/skills";
+    const { unmount } = renderLayout(["chat", "upload"]);
+    expect(screen.queryByText("SKILLS_PAGE")).not.toBeInTheDocument();
+    expect(screen.getByText("CHAT_PAGE")).toBeInTheDocument();
+    unmount();
+
+    window.location.hash = "#/skills";
+    renderLayout(["*"]);
+    expect(screen.getByText("SKILLS_PAGE")).toBeInTheDocument();
+  });
+
+  it("Т-508: скиллы доступны по явной способности manage_skills", () => {
+    window.location.hash = "#/skills";
+    renderLayout(["chat", "manage_skills"]);
+    expect(screen.getByText("SKILLS_PAGE")).toBeInTheDocument();
   });
 });

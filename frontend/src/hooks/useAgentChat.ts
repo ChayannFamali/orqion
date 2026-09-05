@@ -30,12 +30,15 @@ interface UseAgentChatResult {
   conversationId: string | null;
   /** Запрос подтверждения деструктивного действия, если прогон остановлен */
   pendingConfirmation: PendingConfirmation | null;
+  /** Инструменты выбранного скилла, недоступные в этом прогоне (Т-508) */
+  skillToolsUnavailable: string[];
   /** Запустить прогон */
   send: (params: {
     messages: ChatMessage[];
     modelAlias: string;
     conversationId?: string | null;
     corpusNames?: string[] | null;
+    skillId?: string | null;
     confirmation?: ConfirmationParams | null;
     onDone?: (content: string, error: { code: string; message: string } | null) => void;
   }) => void;
@@ -50,6 +53,10 @@ interface UseAgentChatResult {
  * Цикл подтверждения (пункт 9): если ответ содержит запрос
  * подтверждения, клиент показывает карточку решения и отправляет его
  * следующим запросом вместе с тем же буфером сообщений.
+ * Скилл (Т-508): выбор приходит на каждый запрос (``skillId``), а не
+ * хранится на диалоге, — так профиль агента из Т-509 сможет подставлять
+ * свой скилл в то же поле. Сервер отвечает списком инструментов скилла,
+ * недоступных в этом прогоне (``skillToolsUnavailable``).
  */
 export function useAgentChat(): UseAgentChatResult {
   const [isRunning, setIsRunning] = useState(false);
@@ -60,6 +67,7 @@ export function useAgentChat(): UseAgentChatResult {
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [skillToolsUnavailable, setSkillToolsUnavailable] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const abort = useCallback(() => {
@@ -71,12 +79,21 @@ export function useAgentChat(): UseAgentChatResult {
   }, []);
 
   const send = useCallback<UseAgentChatResult["send"]>(
-    ({ messages, modelAlias, conversationId: convId, corpusNames, confirmation, onDone }) => {
+    ({
+      messages,
+      modelAlias,
+      conversationId: convId,
+      corpusNames,
+      skillId,
+      confirmation,
+      onDone,
+    }) => {
       setError(null);
       setContent("");
       setSteps([]);
       setSources(null);
       setUnavailableReason(null);
+      setSkillToolsUnavailable([]);
       setIsRunning(true);
 
       const controller = new AbortController();
@@ -90,6 +107,7 @@ export function useAgentChat(): UseAgentChatResult {
               model_alias: modelAlias,
               conversation_id: convId ?? null,
               corpus_names: corpusNames && corpusNames.length > 0 ? corpusNames : null,
+              skill_id: skillId ?? null,
               confirmation_decision: confirmation?.decision ?? null,
               confirmation: confirmation?.pending ?? null,
             },
@@ -114,6 +132,7 @@ export function useAgentChat(): UseAgentChatResult {
           setSources(result.sources);
           setConversationId(result.conversation_id ?? null);
           setPendingConfirmation(result.pending_confirmation ?? null);
+          setSkillToolsUnavailable(result.skill_tools_unavailable ?? []);
           onDone?.(result.content, null);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
@@ -143,6 +162,7 @@ export function useAgentChat(): UseAgentChatResult {
     unavailableReason,
     conversationId,
     pendingConfirmation,
+    skillToolsUnavailable,
     send,
     abort,
   };

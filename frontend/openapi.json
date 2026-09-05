@@ -3749,6 +3749,182 @@
         }
       }
     },
+    "/api/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Skills",
+        "description": "Админский каталог: все скиллы рабочей области, включая выключенные.",
+        "operationId": "list_skills_api_skills_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create Skill",
+        "operationId": "create_skill_api_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/available": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Available Skills",
+        "description": "Список для выбора в диалоге: только включённые, только нужные поля.",
+        "operationId": "list_available_skills_api_skills_available_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillAvailableListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/{skill_id}": {
+      "put": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Skill",
+        "operationId": "update_skill_api_skills__skill_id__put",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Delete Skill",
+        "description": "Удаление скилла из каталога.\n\nИсторических ссылок на скилл нет: выбор приходит в запросе\n(``skill_id``), а не хранится на диалоге, поэтому удаление не\nоставляет битых ссылок — следующий запрос с этим id получит явный\nотказ. Основной путь «временно выключить» — PUT enabled=false.",
+        "operationId": "delete_skill_api_skills__skill_id__delete",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/traces": {
       "get": {
         "tags": [
@@ -4153,6 +4329,17 @@
             ],
             "title": "Max Tokens"
           },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
           "confirmation_decision": {
             "anyOf": [
               {
@@ -4279,6 +4466,14 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_tools_unavailable": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skill Tools Unavailable",
+            "default": []
           },
           "code": {
             "anyOf": [
@@ -8349,6 +8544,238 @@
         ],
         "title": "RunMetadataRead",
         "description": "Метаданные одного прогона в сравнении."
+      },
+      "SkillAvailableListResponse": {
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAvailableResponse"
+            },
+            "type": "array",
+            "title": "Skills"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skills"
+        ],
+        "title": "SkillAvailableListResponse"
+      },
+      "SkillAvailableResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "title": "SkillAvailableResponse",
+        "description": "Список для выбора в диалоге: только то, что нужно для выбора."
+      },
+      "SkillCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Description",
+            "default": ""
+          },
+          "prompt_text": {
+            "type": "string",
+            "title": "Prompt Text",
+            "default": ""
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "default_max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Max Tokens"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SkillCreate"
+      },
+      "SkillDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "SkillDeleteResponse"
+      },
+      "SkillListResponse": {
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillResponse"
+            },
+            "type": "array",
+            "title": "Skills"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skills"
+        ],
+        "title": "SkillListResponse"
+      },
+      "SkillResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "prompt_text": {
+            "type": "string",
+            "title": "Prompt Text"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "default_max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Max Tokens"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "prompt_text",
+          "tools",
+          "default_max_tokens",
+          "enabled",
+          "created_at"
+        ],
+        "title": "SkillResponse",
+        "description": "Админский каталог: полные поля, включая выключенные скиллы."
+      },
+      "SkillUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Description",
+            "default": ""
+          },
+          "prompt_text": {
+            "type": "string",
+            "title": "Prompt Text",
+            "default": ""
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "default_max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Max Tokens"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SkillUpdate",
+        "description": "Полная замена полей скилла (по образцу шаблонов промптов, Т-507).\n\nИмя в отличие от сервера протокола переименовывать можно: оно\nотображаемое, а ссылкой служит ``skill_id``, поэтому переименование\nне меняет ни имён инструментов в реестре, ни записей аудита."
       },
       "SpanResponse": {
         "properties": {

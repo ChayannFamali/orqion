@@ -35,6 +35,12 @@ class AgentChatRequest(BaseModel):
     model_alias: str
     corpus_names: list[str] | None = None
     max_tokens: int | None = None
+    # Скилл — пакет конфигурации прогона (Т-508): выбор приходит на
+    # запрос, а не хранится на диалоге, чтобы не столкнуться с будущим
+    # ``agent_profile_id`` из Т-509 (решение 5). Несуществующий или
+    # отключённый ``skill_id`` — явный отказ 400, не тихий откат к прогону
+    # без скилла (решение 5, правка пользователя).
+    skill_id: str | None = None
     # Цикл подтверждения деструктивного инструмента (пункт 9): клиент
     # возвращает запрос подтверждения из прошлого ответа вместе с
     # решением. ``approve`` исполняет инструмент, ``reject`` отменяет
@@ -47,7 +53,7 @@ class AgentStepEntry(BaseModel):
     """Шаг прогона для ленты агентного диалога."""
 
     index: int
-    kind: str  # "model" | "tool" | "confirmation"
+    kind: str  # "model" | "tool" | "confirmation" | "skill"
     name: str | None = None
     summary: str = ""
     decision: str | None = None  # "allow" | "deny" | "approve" | "reject" | "pending"
@@ -71,6 +77,10 @@ class AgentChatResponse(BaseModel):
     sources: list[ChatSourceEntry] = []
     trace_id: str | None = None
     pending_confirmation: PendingConfirmation | None = None
+    # Инструменты скилла, недоступные в этом прогоне (решение 6): честное
+    # сообщение «скилл обещал N, доступно M» по паттерну усечения Т-504.
+    # Пусто, если скилл не выбран или все его инструменты доступны.
+    skill_tools_unavailable: list[str] = []
     # Поля ошибки — как у ответа чата (единый обработчик доменных ошибок
     # возвращает их же для исключений, не перехваченных роутом).
     code: str | None = None

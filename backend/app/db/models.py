@@ -257,6 +257,47 @@ class McpServer(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class AgentSkill(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Скилл — именованный пакет конфигурации агентного прогона (Т-508).
+
+    Декларативный по решению 1 мини-дизайн-ревью: фрагмент системного
+    промпта (``prompt_text``) + подмножество инструментов единого реестра
+    (``tools``) + дефолт ``max_tokens``. Исполняемого содержимого нет и
+    путь к нему не закладывается: санкционированный путь исполнения уже
+    существует — реестр MCP-серверов (Т-503) со всеми его защитами
+    (шифрованный секрет, отказ К2/К3 до транспорта, подтверждение
+    деструктивных, дуальный аудит).
+
+    ``tools`` — имена инструментов единого реестра: встроенные без
+    префикса (``search_corpus``), внешние в формате ``<сервер>.<инструмент>``.
+    **Пустой список означает НОЛЬ инструментов** (максимально
+    ограничительно), а не «не сужать»: расширение доступа должно быть
+    явным перечислением имён в момент правки скилла, а не молчаливым
+    следствием регистрации нового сервера (решение 6, правка пользователя).
+
+    Имена инструментов при сохранении не проверяются на существование —
+    внешние имена существуют только в момент обнаружения, сервер может
+    быть зарегистрирован позже скилла, а при К2/К3 их нет вовсе.
+    Расходование происходит деградацией в прогоне (решение 6).
+    """
+
+    __tablename__ = "agent_skill"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_agent_skill_workspace_name"),
+    )
+
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    prompt_text: Mapped[str] = mapped_column(String, nullable=False, default="")
+    tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Дефолт max_tokens на прогон: применяется, только если клиент не
+    # задал свой в запросе. Это дефолт, а не переопределение потолка —
+    # значение уходит в тот же enforce_all, поэтому превышение лимита
+    # политики даёт обычный отказ (решение 2, пункт 8 приёмки).
+    default_max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class RoutingRule(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Правило маршрутизации. arch.md §7.2, S-12.
 

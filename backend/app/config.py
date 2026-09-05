@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     mcp_discovery_timeout: float = 10.0
     mcp_call_timeout: float = 30.0
 
+    # Скиллы — пакеты конфигурации агентного прогона (Т-508, решение 6
+    # мини-дизайн-ревью). Лимиты в конфиге, не в интерфейсе — по образцу
+    # Т-507 и лимитов прогона Т-502.
+    agent_skills_max_per_workspace: int = 50
+    skill_prompt_max_chars: int = 8192
+
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""

@@ -86,8 +86,14 @@ class AgentRunConfig:
     max_steps: int
     max_tokens_per_run: int
     # Единый реестр инструментов прогона (Т-503): встроенные + внешние
-    # с меткой источника; собирает эндпоинт до запуска цикла.
+    # с меткой источника; собирает эндпоинт до запуска цикла. При выборе
+    # скилла (Т-508) реестр уже сужен ``apply_skill`` до его инструментов.
     tools_registry: ResolvedTools
+    # Скилл (Т-508): фрагмент системного промпта, дописываемый к базовому
+    # (не заменяющий его), и отображаемое имя для шага ленты. Оба None,
+    # если скилл не выбран.
+    skill_prompt: str | None = None
+    skill_name: str | None = None
 
 
 @dataclass
@@ -177,11 +183,27 @@ def _lc_messages_to_openai(messages: list[Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _history_to_lc_messages(history: list[dict[str, str]]) -> list[Any]:
+def _system_content(skill_prompt: str | None) -> str:
+    """Базовый системный промпт + фрагмент скилла (решение 5, Т-508).
+
+    Фрагмент ДОПИСЫВАЕТСЯ к базовому, а не заменяет его, и идёт вторым
+    одним системным сообщением: в ``AGENT_SYSTEM_PROMPT`` зашиты гарантии
+    поведения при отказе («честно сообщите… ничего не выдумывайте»,
+    «отвечайте на языке пользователя»), и замена позволила бы админской
+    строке текста их снять.
+    """
+    if skill_prompt and skill_prompt.strip():
+        return f"{AGENT_SYSTEM_PROMPT}\n\n{skill_prompt.strip()}"
+    return AGENT_SYSTEM_PROMPT
+
+
+def _history_to_lc_messages(
+    history: list[dict[str, str]], skill_prompt: str | None = None
+) -> list[Any]:
     """История из запроса (роль/контент) → сообщения LangChain."""
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-    messages: list[Any] = [SystemMessage(content=AGENT_SYSTEM_PROMPT)]
+    messages: list[Any] = [SystemMessage(content=_system_content(skill_prompt))]
     for m in history:
         if m["role"] == "assistant":
             messages.append(AIMessage(content=m["content"]))
@@ -420,6 +442,19 @@ async def run_agent_loop(
     )
     rs = _RunState(cfg=cfg, tctx=tctx, result=result)
 
+    # Шаг скилла (Т-508, решение 5): первым в ленте, до вызовов модели.
+    # Честно отражает итог сужения — сколько инструментов реально в
+    # прогоне (ноль при пустом списке скилла, решение 6).
+    if cfg.skill_name is not None:
+        result.steps.append(
+            AgentStep(
+                index=len(result.steps) + 1,
+                kind="skill",
+                name=cfg.skill_name,
+                summary=f"Инструментов в прогоне: {len(cfg.tools_registry.specs)}",
+            )
+        )
+
     async def model_node(state: Any) -> dict[str, list[Any]]:
         result.model_calls += 1
         # Пункт 4: число шагов — предохранитель поверх биллинга.
@@ -570,7 +605,7 @@ async def run_agent_loop(
     builder.add_conditional_edges("model", route_after_model)
     builder.add_edge("tools", "model")
 
-    initial_messages = _history_to_lc_messages(history)
+    initial_messages = _history_to_lc_messages(history, cfg.skill_prompt)
     if approved_tool_call is not None:
         # Пункт 9: по подтверждению вызов исполняется НАПРЯМУЮ — модель не
         # обязана запрашивать его повторно. В состояние предзаполняется

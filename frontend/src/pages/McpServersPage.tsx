@@ -120,7 +120,7 @@ function McpServerCard({
             <span
               className={`rounded px-1.5 py-0.5 text-xs ${
                 server.enabled
-                  ? "bg-success/15 text-success"
+                  ? "bg-green-500/10 text-green-600"
                   : "bg-muted text-muted-foreground"
               }`}
             >

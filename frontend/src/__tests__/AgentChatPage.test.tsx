@@ -46,6 +46,16 @@ vi.mock("../api/agent", () => ({
   agentChat: vi.fn(),
 }));
 
+// Т-508: ChatPage запрашивает список скиллов для выбора в агентном режиме.
+// Без мока ушёл бы настоящий fetch.
+vi.mock("../api/skills", () => ({
+  apiListSkills: vi.fn().mockResolvedValue({ skills: [] }),
+  apiListAvailableSkills: vi.fn().mockResolvedValue({ skills: [] }),
+  apiCreateSkill: vi.fn(),
+  apiUpdateSkill: vi.fn(),
+  apiDeleteSkill: vi.fn(),
+}));
+
 /** Модель с флагом инструментов и модель без него. */
 const AGENT_MODEL = {
   id: "m1",
@@ -96,6 +106,9 @@ describe("Т-502: агентный диалог в ChatPage", () => {
     // через clearAllMocks).
     const { apiListAvailableModels } = await import("../api/models");
     vi.mocked(apiListAvailableModels).mockResolvedValue([AGENT_MODEL, PLAIN_MODEL] as any);
+    // Скиллов по умолчанию нет: селектор не показывается.
+    const { apiListAvailableSkills } = await import("../api/skills");
+    vi.mocked(apiListAvailableSkills).mockResolvedValue({ skills: [] } as any);
   });
 
   /** Открывает модалку агентного диалога и возвращает её. */
@@ -274,9 +287,14 @@ describe("Т-502: агентный диалог в ChatPage", () => {
     await user.click(screen.getByText("Отправить"));
 
     // Карточка запроса подтверждения с инструментом и параметрами.
+    // Имя инструмента проверяется ВНУТРИ карточки: после попутного фикса
+    // ленты шагов (Т-508) имя подтверждённого инструмента видно и там —
+    // «Подтверждение demo-build.drop_cache» вместо прежнего «Модель»,
+    // поэтому глобальный поиск по имени стал неоднозначным.
     await waitFor(() => {
-      expect(screen.getByTestId("agent-confirmation-card")).toBeInTheDocument();
-      expect(screen.getByText(/demo-build\.drop_cache/)).toBeInTheDocument();
+      const card = screen.getByTestId("agent-confirmation-card");
+      expect(card).toBeInTheDocument();
+      expect(within(card).getByText(/demo-build\.drop_cache/)).toBeInTheDocument();
     });
 
     await user.click(screen.getByTestId("confirmation-approve"));
@@ -349,5 +367,180 @@ describe("Т-502: агентный диалог в ChatPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Действие отменено. Инструмент не выполнялся.")).toBeInTheDocument();
     });
+  });
+
+  /** Два скилла в списке выбора. */
+  async function seedSkills() {
+    const { apiListAvailableSkills } = await import("../api/skills");
+    vi.mocked(apiListAvailableSkills).mockResolvedValue({
+      skills: [
+        { id: "sk-1", name: "Разбор", description: "По документам" },
+        { id: "sk-2", name: "Сборка", description: "" },
+      ],
+    } as any);
+  }
+
+  it("Т-508: селектор скилла скрыт, пока скиллов нет", async () => {
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+
+    expect(screen.queryByTestId("agent-skill-select")).not.toBeInTheDocument();
+  });
+
+  it("Т-508: селектор скилла виден в агентном режиме и выбор уходит в запрос", async () => {
+    await seedSkills();
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat).mockResolvedValue({
+      available: true,
+      type: "complete",
+      content: "Ответ по скиллу",
+      conversation_id: "conv-skill",
+      model: "local/agent-model",
+      usage: { tokens_in: 10, tokens_out: 5 },
+      steps: [
+        { index: 1, kind: "skill", name: "Разбор", summary: "Инструментов в прогоне: 1", decision: null },
+        { index: 2, kind: "model", name: null, summary: "Финальный ответ", decision: null },
+      ],
+      sources: [],
+      trace_id: "trace-skill",
+      pending_confirmation: null,
+      skill_tools_unavailable: [],
+    } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+
+    const selector = await screen.findByTestId("agent-skill-select");
+    await user.selectOptions(selector, "sk-1");
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Вопрос");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(1);
+    });
+    const request = vi.mocked(agentChat).mock.calls[0][0];
+    expect(request.skill_id).toBe("sk-1");
+
+    // Шаг скилла подписан «Скилл», а не «Модель» (попутный фикс ленты).
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-run-summary")).toBeInTheDocument();
+      expect(screen.getByText("Скилл Разбор")).toBeInTheDocument();
+      expect(screen.getByText(/Инструментов в прогоне: 1/)).toBeInTheDocument();
+    });
+  });
+
+  it("Т-508: без выбора скилла в запрос уходит null", async () => {
+    await seedSkills();
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat).mockResolvedValue({
+      available: true,
+      type: "complete",
+      content: "Обычный ответ",
+      conversation_id: "conv-plain",
+      model: "local/agent-model",
+      usage: { tokens_in: 10, tokens_out: 5 },
+      steps: [],
+      sources: [],
+      trace_id: "trace-plain",
+      pending_confirmation: null,
+      skill_tools_unavailable: [],
+    } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+    await screen.findByTestId("agent-skill-select");
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Вопрос");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(agentChat).mock.calls[0][0].skill_id).toBeNull();
+  });
+
+  it("Т-508: недоступные инструменты скилла показаны явно", async () => {
+    await seedSkills();
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat).mockResolvedValue({
+      available: true,
+      type: "complete",
+      content: "Ответ без части инструментов",
+      conversation_id: "conv-skill",
+      model: "local/agent-model",
+      usage: { tokens_in: 10, tokens_out: 5 },
+      steps: [
+        { index: 1, kind: "skill", name: "Разбор", summary: "Инструментов в прогоне: 1", decision: null },
+      ],
+      sources: [],
+      trace_id: "trace-skill",
+      pending_confirmation: null,
+      skill_tools_unavailable: ["wiki.lookup", "demo.echo"],
+    } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+    await user.selectOptions(await screen.findByTestId("agent-skill-select"), "sk-1");
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Вопрос");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      const banner = screen.getByTestId("agent-skill-tools-unavailable");
+      expect(banner).toHaveTextContent("wiki.lookup");
+      expect(banner).toHaveTextContent("demo.echo");
+    });
+  });
+
+  it("Т-508: решение по подтверждению уходит с тем же скиллом", async () => {
+    await seedSkills();
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat)
+      .mockResolvedValueOnce({
+        ...pendingConfirmationResponse(),
+        skill_tools_unavailable: [],
+      })
+      .mockResolvedValueOnce({
+        available: true,
+        type: "complete",
+        content: "Кэш удалён.",
+        conversation_id: "conv-agent",
+        model: "local/agent-model",
+        usage: { tokens_in: 12, tokens_out: 6 },
+        steps: [],
+        sources: [],
+        trace_id: "trace-2",
+        pending_confirmation: null,
+        skill_tools_unavailable: [],
+      } as any);
+
+    renderChatPage();
+    const user = userEvent.setup();
+    await createAgentDialog(user);
+    await user.selectOptions(await screen.findByTestId("agent-skill-select"), "sk-2");
+
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), "Удали кэш");
+    await user.click(screen.getByText("Отправить"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-confirmation-card")).toBeInTheDocument();
+    });
+    // Пока ждёт решения, сменить скилл нельзя: иначе одобряемый инструмент
+    // мог бы исчезнуть из прогона.
+    expect(screen.getByTestId("agent-skill-select")).toBeDisabled();
+
+    await user.click(screen.getByTestId("confirmation-approve"));
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(2);
+    });
+    const request = vi.mocked(agentChat).mock.calls[1][0];
+    expect(request.skill_id).toBe("sk-2");
+    expect(request.confirmation_decision).toBe("approve");
   });
 });

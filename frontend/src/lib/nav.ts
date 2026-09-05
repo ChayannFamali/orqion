@@ -13,6 +13,7 @@ import {
   Network,
   Settings,
   Cable,
+  Sparkles,
 } from "lucide-react";
 
 /**
@@ -33,6 +34,11 @@ import {
  *
  * manage_mcp_servers — enforced на backend (Т-503), не в посевных
  * пресетах, только admin через "*" (паттерн manage_providers).
+ *
+ * manage_skills — enforced на backend (Т-508), не в посевных пресетах,
+ * только admin через "*" (паттерн manage_mcp_servers). Сам раздел —
+ * админский каталог скиллов; список для выбора в диалоге
+ * (/api/skills/available) доступен всем аутентифицированным.
  *
  * Capabilities для будущих разделов (manage_users, view_audit) ещё не
  * определены в seed-пресетах ролей. Они появятся в T-308+.
@@ -77,6 +83,17 @@ export const navItems: NavItem[] = [
     label: "Серверы инструментов",
     icon: Cable,
     capability: "manage_mcp_servers",
+  },
+  // Т-508: скиллы — пакеты конфигурации агентного прогона (фрагмент
+  // системного промпта + подмножество инструментов). Метка намеренно
+  // «Скиллы», а не «Агенты»: раздел «Агенты» зарезервирован Т-509 под
+  // каталог переиспользуемых конфигураций. manage_skills — enforced на
+  // backend, не в посевных пресетах, только admin через "*".
+  {
+    key: "skills",
+    label: "Скиллы",
+    icon: Sparkles,
+    capability: "manage_skills",
   },
   // T-506: общие настройки (поиск по документам); видны всем, право на
   // изменение проверяется внутри. Будущие вкладки темы/языка — сюда же.

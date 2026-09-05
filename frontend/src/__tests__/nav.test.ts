@@ -41,6 +41,7 @@ describe("isNavVisible", () => {
       "code-graph",
       "document-graph",
       "mcp-servers",
+      "skills",
       "settings",
     ]);
   });
@@ -79,6 +80,24 @@ describe("isNavVisible", () => {
     expect(isNavVisible(item, ["manage_mcp_servers"])).toBe(true);
     expect(isNavVisible(item, ["chat", "manage_providers"])).toBe(false);
     expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("Т-508: скиллы видны только с manage_skills или *", () => {
+    const item = navItems.find((i) => i.key === "skills")!;
+    expect(item.capability).toBe("manage_skills");
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    expect(isNavVisible(item, ["manage_skills"])).toBe(true);
+    expect(isNavVisible(item, ["chat", "manage_mcp_servers"])).toBe(false);
+    expect(isNavVisible(item, [])).toBe(false);
+  });
+
+  it("Т-508: раздел называется «Скиллы», а не «Агенты» (зарезервировано Т-509)", () => {
+    const item = navItems.find((i) => i.key === "skills")!;
+    expect(item.label).toBe("Скиллы");
+    expect(navItems.some((i) => i.label === "Агенты")).toBe(false);
+    // Скиллы идут сразу за серверами инструментов — оба агентных раздела рядом.
+    const keys = navItems.map((i) => i.key);
+    expect(keys.indexOf("skills")).toBe(keys.indexOf("mcp-servers") + 1);
   });
 
   it("T-506: настройки — последний раздел, видны всем без права", () => {

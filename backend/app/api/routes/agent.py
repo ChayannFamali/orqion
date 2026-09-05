@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import AgentRunConfig, run_agent_loop
 from app.agent.runtime import is_agent_available
+from app.agent.skills import apply_skill, resolve_skill_for_run, skill_drop_reason
 from app.api.schemas.agent import (
     AgentChatRequest,
     AgentChatResponse,
@@ -40,7 +41,7 @@ from app.api.schemas.chat import ChatSourceEntry, ChatUsage
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.chat.service import ChatContext, save_messages
-from app.db.models import Conversation, Corpus, Message, Model, Provider, User
+from app.db.models import AgentSkill, Conversation, Corpus, Message, Model, Provider, User
 from app.db.session import get_session
 from app.errors import (
     AgentRunLimitExceeded,
@@ -141,9 +142,24 @@ async def agent_chat(
             hint="Провайдер модели не найден или отключён",
         )
 
+    # Скилл (Т-508, решение 5): загружается ДО enforce_all, потому что его
+    # дефолт max_tokens участвует в оценке лимитов политики (решение 2 —
+    # дефолт, а не переопределение потолка). Несуществующий/отключённый
+    # skill_id — явный отказ 400, не тихий откат к прогону без скилла
+    # (правка пользователя; прецеденты fail-closed — resolve_corpora Е1
+    # Т-439, пустое имя корпуса и конфликт пинов в chat.py).
+    skill: AgentSkill | None = None
+    if body.skill_id is not None:
+        skill = await resolve_skill_for_run(session, workspace_id, body.skill_id)
+
     messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
     input_tokens = count_tokens("".join(m["content"] for m in messages_dicts))
-    output_tokens = body.max_tokens or model.max_output_tokens or 1024
+    output_tokens = (
+        body.max_tokens
+        or (skill.default_max_tokens if skill is not None else None)
+        or model.max_output_tokens
+        or 1024
+    )
 
     # Запрос уровня политики — идентично обычному чату (пункт 8): та же
     # проверка класса данных, корпусов, модели, лимитов и бюджета.
@@ -239,6 +255,36 @@ async def agent_chat(
             corpus_data_class=corpus_data_class,
         )
 
+    # Скилл (Т-508, решение 2): сужение реестра отдельной чистой функцией
+    # ПОСЛЕ resolve_tools — гарантии Т-503 (сборка, отказ К2/К3, аудит
+    # недоступности) не трогаем. Скилл не добавляет инструмент вне реестра
+    # и не меняет класс данных. Факт — в спане agent.skill.apply: что
+    # запрошено, что реально в прогоне, что отброшено и почему. Новый
+    # аудит на каждый скилл не пишем (ADR-21 п. 2 — защита журнала от
+    # распухания); отказ К2/К3 уже покрыт mcp.tools.blocked.
+    skill_tools_unavailable: list[str] = []
+    if skill is not None:
+        requested_tools = list(dict.fromkeys(skill.tools or []))
+        tools_before = [s.name for s in tools_registry.specs]
+        tools_registry, skill_tools_unavailable = apply_skill(tools_registry, skill)
+        async with span(
+            trace_ctx,
+            "agent.skill.apply",
+            payload={
+                "skill_id": skill.id,
+                "skill_name": skill.name,
+                "requested_tools": requested_tools,
+                "registry_tools_before": tools_before,
+                "effective_tools": [s.name for s in tools_registry.specs],
+                "dropped": [
+                    {"name": n, "reason": skill_drop_reason(n, tools_registry)}
+                    for n in skill_tools_unavailable
+                ],
+                "blocked_external": tools_registry.blocked_external,
+            },
+        ):
+            pass
+
     cfg = AgentRunConfig(
         session=session,
         settings=request.app.state.settings,
@@ -259,6 +305,8 @@ async def agent_chat(
         max_steps=request.app.state.settings.agent_max_steps,
         max_tokens_per_run=request.app.state.settings.agent_max_tokens_per_run,
         tools_registry=tools_registry,
+        skill_prompt=(skill.prompt_text if skill is not None else None),
+        skill_name=(skill.name if skill is not None else None),
     )
 
     # Клиент шлёт буфер диалога целиком; уже сохранённые сообщения не
@@ -317,6 +365,27 @@ async def agent_chat(
             message_id=msg_id,
             error=False,
         )
+        # Шаг скилла (Т-508) — и в ленте отмены, если скилл был применён:
+        # клиент шлёт skill_id с решением, сужение уже выполнено выше.
+        reject_steps: list[AgentStepEntry] = []
+        if skill is not None:
+            reject_steps.append(
+                AgentStepEntry(
+                    index=1,
+                    kind="skill",
+                    name=skill.name,
+                    summary=f"Инструментов в прогоне: {len(tools_registry.specs)}",
+                )
+            )
+        reject_steps.append(
+            AgentStepEntry(
+                index=len(reject_steps) + 1,
+                kind="confirmation",
+                name=confirmed.tool,
+                summary="Отменено пользователем",
+                decision="reject",
+            )
+        )
         return AgentChatResponse(
             available=True,
             type="complete",
@@ -324,18 +393,11 @@ async def agent_chat(
             conversation_id=conv_id,
             model=model.alias,
             usage=ChatUsage(tokens_in=0, tokens_out=0),
-            steps=[
-                AgentStepEntry(
-                    index=1,
-                    kind="confirmation",
-                    name=confirmed.tool,
-                    summary="Отменено пользователем",
-                    decision="reject",
-                )
-            ],
+            steps=reject_steps,
             sources=[],
             trace_id=trace_ctx.trace_id,
             pending_confirmation=None,
+            skill_tools_unavailable=skill_tools_unavailable,
         )
     if body.confirmation_decision == "approve" and body.confirmation is not None:
         approved_tool_call = {
@@ -440,6 +502,7 @@ async def agent_chat(
         sources=sources,
         trace_id=trace_ctx.trace_id,
         pending_confirmation=pending,
+        skill_tools_unavailable=skill_tools_unavailable,
     )
 
 
