@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agent.profiles import consume_stop_request, is_stop_requested
 from app.agent.tools import (
     SEARCH_CORPUS_SPEC,
     ResolvedTools,
@@ -118,10 +119,26 @@ class AgentRunResult:
     tokens_out: int = 0
     model_calls: int = 0
     pending_confirmation: dict[str, Any] | None = None
+    # Т-509 (решение 7): прогон остановлен по запросу пользователя между
+    # шагами. Отдельный признак, а не ``type`` ошибки: остановка — не сбой,
+    # расход уже оплаченных вызовов модели сохранён побиллингово.
+    stopped: bool = False
 
 
 class _ConfirmationStop(Exception):
     """Деструктивный инструмент запросил подтверждение — прогон остановлен."""
+
+
+class _StopRequested(Exception):
+    """Пользователь запросил остановку — цикл завершается между шагами."""
+
+
+# Ответ остановленного прогона. Пишется в диалог вместо пустого сообщения:
+# вопрос пользователя сохранён, и лента честно показывает, чем прогон
+# закончился, а не обрывается на половине.
+STOPPED_CONTENT = (
+    "Прогон остановлен по запросу пользователя: текущий шаг доработан, следующий не начинался."
+)
 
 
 @dataclass
@@ -405,6 +422,40 @@ async def _audit_confirmation(
         )
 
 
+async def _audit_stop(
+    tctx: ToolRunContext,
+    model_calls: int,
+    tokens_in: int,
+    tokens_out: int,
+) -> None:
+    """Дуальный аудит факта остановки прогона (Т-509, решение 7).
+
+    Полный состав — в спан трассировки; компактный факт — в журнал аудита
+    бессрочно (тот же паттерн, что у подтверждения деструктивного
+    инструмента). Содержимого переписки нет: только счётчики прогона.
+    """
+    payload: dict[str, object] = {
+        "model_calls": model_calls,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "data_class": tctx.corpus_data_class,
+    }
+    async with span(tctx.trace_ctx, "agent.conversation.stopped", payload=payload):
+        await write_audit(
+            tctx.session,
+            workspace_id=tctx.workspace_id,
+            actor_user_id=tctx.user_id,
+            action="agent.conversation.stopped",
+            object_type="conversation",
+            object_id=tctx.conversation_id,
+            meta={
+                "model_calls": model_calls,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+            },
+        )
+
+
 async def run_agent_loop(
     cfg: AgentRunConfig,
     history: list[dict[str, str]],
@@ -416,6 +467,13 @@ async def run_agent_loop(
     (пункт 4) и доменные исключения биллинга/политики — идентично чату
     (пункт 8). Возвращает результат с шагами, источниками и, при
     остановке на деструктивном инструменте, запросом подтверждения.
+
+    Остановка по запросу пользователя (Т-509, решение 7): флаг
+    ``conversation.stop_requested`` проверяется МЕЖДУ шагами — перед
+    вызовом модели и перед партией инструментов. Текущий шаг не
+    обрывается: прерванный вызов инструмента мог уже начать действие на
+    внешнем сервере, а оборванный вызов модели оставил бы оплаченный
+    расход без результата. Итог возвращается с ``stopped=True``.
     """
     from langchain_core.messages import AIMessage, ToolMessage
     from langgraph.errors import GraphRecursionError
@@ -456,6 +514,12 @@ async def run_agent_loop(
         )
 
     async def model_node(state: Any) -> dict[str, list[Any]]:
+        # Т-509 (решение 7): флаг остановки читается МЕЖДУ шагами — до
+        # начала вызова модели, а не во время него. Прерывать текущий вызов
+        # нельзя: расход на него уже начислен, а результата прогон
+        # предъявить не сможет.
+        if await is_stop_requested(cfg.session, cfg.conversation_id):
+            raise _StopRequested()
         result.model_calls += 1
         # Пункт 4: число шагов — предохранитель поверх биллинга.
         if result.model_calls > cfg.max_steps:
@@ -495,6 +559,11 @@ async def run_agent_loop(
         return {"messages": [AIMessage(content=content)]}
 
     async def tools_node(state: Any) -> dict[str, list[Any]]:
+        # Т-509 (решение 7): остановка до начала партии инструментов.
+        # Партия, уже отправленная внешним серверам, дорабатывает —
+        # обрыв оставил бы на сервере действие, о котором прогон не знает.
+        if await is_stop_requested(cfg.session, cfg.conversation_id):
+            raise _StopRequested()
         last = state["messages"][-1]
         tool_calls = getattr(last, "tool_calls", None) or []
         outs: list[Any] = []
@@ -663,6 +732,31 @@ async def run_agent_loop(
             "agent run stopped on destructive tool confirmation: user=%s tool=%s",
             cfg.user.id,
             pending.get("tool"),
+        )
+        return result
+    except _StopRequested:
+        # Т-509 (решение 7): прогон завершён между шагами. Уже выполненные
+        # шаги и расход сохранены (каждый вызов модели записан
+        # побиллингово), следующий шаг не начинался.
+        result.stopped = True
+        result.steps.append(
+            AgentStep(
+                index=len(result.steps) + 1,
+                kind="stop",
+                summary="Прогон остановлен по запросу пользователя",
+            )
+        )
+        if not result.content:
+            result.content = STOPPED_CONTENT
+        await _audit_stop(tctx, result.model_calls, result.tokens_in, result.tokens_out)
+        # Флаг потреблён этим прогоном: следующий стартует с чистого
+        # состояния, иначе нажатие «стоп» в отсутствие прогона оборвало бы
+        # первое же следующее сообщение.
+        await consume_stop_request(cfg.session, cfg.conversation_id)
+        _log.info(
+            "agent run stopped by user request: user=%s model_calls=%d",
+            cfg.user.id,
+            result.model_calls,
         )
         return result
 

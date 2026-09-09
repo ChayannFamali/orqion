@@ -84,4 +84,10 @@ export const queryKeys = {
     all: ["skills"] as const,
     available: ["skills", "available"] as const,
   },
+  agentProfiles: {
+    all: ["agent-profiles"] as const,
+    available: ["agent-profiles", "available"] as const,
+    conversations: (profileId: string) =>
+      ["agent-profiles", profileId, "conversations"] as const,
+  },
 } as const;

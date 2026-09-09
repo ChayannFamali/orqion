@@ -14,6 +14,13 @@
 - пункт 10 — отдельная точка входа: разговоры агента создаются в режиме
   ``agent``, обычный чат поведение не меняет.
 
+Т-509 добавляет профиль агента как второй способ задать конфигурацию
+прогона (решения 1–3): профиль фиксирует модель и скилл, диалог,
+созданный от профиля, их не переопределяет, а ad-hoc путь (ручной выбор
+модели и скилла) сохраняется. Профиль не добавляет ни инструментов, ни
+прав, ни послаблений политики — модель и скилл проходят те же проверки,
+что и при ручном выборе.
+
 Честная деградация (паттерн Т-444/Т-505): без дополнения
 ``orqion[agent]`` эндпоинт отвечает 200 с ``available=false`` и явной
 причиной, а не падает.
@@ -29,6 +36,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.loop import AgentRunConfig, run_agent_loop
+from app.agent.profiles import resolve_profile_for_run
 from app.agent.runtime import is_agent_available
 from app.agent.skills import apply_skill, resolve_skill_for_run, skill_drop_reason
 from app.api.schemas.agent import (
@@ -41,11 +49,22 @@ from app.api.schemas.chat import ChatSourceEntry, ChatUsage
 from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.chat.service import ChatContext, save_messages
-from app.db.models import AgentSkill, Conversation, Corpus, Message, Model, Provider, User
+from app.db.models import (
+    AgentProfile,
+    AgentSkill,
+    Conversation,
+    Corpus,
+    Message,
+    Model,
+    Provider,
+    User,
+)
 from app.db.session import get_session
 from app.errors import (
+    AgentProfileConflict,
     AgentRunLimitExceeded,
     BadRequest,
+    ConversationArchived,
     DataClassViolation,
     NotFound,
     OrqionError,
@@ -117,20 +136,107 @@ async def agent_chat(
             corpora = await resolve_corpora(session, workspace_id, requested_names)
         corpus_data_class = strictest_data_class([c.data_class for c in corpora])
 
-    # Модель: явный выбор точки входа, только с флагом администратора.
-    model_result = await session.execute(
-        select(Model).where(Model.workspace_id == workspace_id, Model.alias == body.model_alias)
+    # Диалог грузится ДО разрешения конфигурации (Т-509, решение 2):
+    # профиль может быть зафиксирован самим диалогом, а архивированный
+    # диалог новые сообщения не принимает вовсе (решение 6). Проверка до
+    # ``enforce_all`` — невалидный запрос не расходует квоту лимитатора.
+    conversation: Conversation | None = None
+    if body.conversation_id is not None:
+        conv_result = await session.execute(
+            select(Conversation).where(
+                Conversation.id == body.conversation_id,
+                Conversation.workspace_id == workspace_id,
+                Conversation.user_id == user.id,
+            )
+        )
+        conversation = conv_result.scalar_one_or_none()
+        if conversation is None:
+            raise NotFound(
+                constraint={"object": "conversation", "id": body.conversation_id},
+                hint="Диалог не найден",
+            )
+        if conversation.mode != "agent":
+            raise BadRequest(
+                "Диалог не в агентном режиме",
+                constraint={"mode": conversation.mode},
+                hint="Создайте агентный диалог отдельной точкой входа",
+            )
+        if conversation.archived:
+            raise ConversationArchived(constraint={"conversation_id": conversation.id})
+        if conversation.stop_requested:
+            # Решение 7: флаг принадлежит предыдущему прогону. «Стоп»,
+            # нажатый в отсутствие прогона, не должен обрывать первое же
+            # следующее сообщение — новый прогон стартует с чистого флага.
+            # Присваивание безопасно: объект загружен в этой же сессии и
+            # значение уходит в базу до первой проверки цикла.
+            conversation.stop_requested = False
+            await session.flush()
+
+    # Профиль агента (Т-509, решения 2 и 3): источник модели и скилла
+    # прогона. Приоритет — у диалога: конфигурация фиксируется в момент
+    # создания диалога (аналог ``corpus.pinned_model_id``, решение Д1 в
+    # чате — пин переопределяет выбор пользователя, конфликт пинов явная
+    # ошибка). Поэтому:
+    #
+    # - существующий диалог → профиль берётся с диалога, а профиль из
+    #   запроса обязан совпасть с ним (или отсутствовать). Другой профиль
+    #   в запросе — попытка переопределить закреплённую конфигурацию:
+    #   явный 400, а не молчаливая подмена. Нужно другое сочетание —
+    #   создаётся другой диалог от другого профиля;
+    # - ad-hoc диалог (профиля нет) → профиль из запроса тоже отклоняется:
+    #   он сменил бы модель существующего диалога и задним числом
+    #   перенёс бы его историю в drill-down другого профиля;
+    # - нового диалога нет → профиль из запроса задаёт конфигурацию.
+    #
+    # Переопределить модель или скилл в запросе при выбранном профиле
+    # нельзя по той же причине: отказ явный, иначе клиент не узнал бы, что
+    # прогон прошёл не с той конфигурацией, которую просил.
+    if conversation is not None:
+        profile_id = conversation.agent_profile_id
+        if body.agent_profile_id is not None and body.agent_profile_id != profile_id:
+            raise AgentProfileConflict(
+                constraint={
+                    "reason": "conversation_profile",
+                    "conversation_id": conversation.id,
+                    "agent_profile_id": profile_id,
+                    "requested_agent_profile_id": body.agent_profile_id,
+                }
+            )
+    else:
+        profile_id = body.agent_profile_id
+    if profile_id is not None and (body.model_alias is not None or body.skill_id is not None):
+        raise AgentProfileConflict(
+            constraint={
+                "agent_profile_id": profile_id,
+                "model_alias": body.model_alias,
+                "skill_id": body.skill_id,
+            }
+        )
+    profile: AgentProfile | None = None
+    if profile_id is not None:
+        profile = await resolve_profile_for_run(session, workspace_id, profile_id)
+
+    # Модель: явный выбор точки входа (ad-hoc) или закреплённая профилем;
+    # в обоих случаях — только с флагом администратора (решение 3 Т-502).
+    # Профиль не добавляет послаблений: проверка ``supports_tools`` и
+    # ``enforce_all`` те же, что для ad-hoc прогона.
+    model_ref: str | None = profile.model_id if profile is not None else body.model_alias
+    model_stmt = select(Model).where(Model.workspace_id == workspace_id)
+    model_stmt = (
+        model_stmt.where(Model.id == model_ref)
+        if profile is not None
+        else model_stmt.where(Model.alias == model_ref)
     )
-    model = model_result.scalar_one_or_none()
+    model = (await session.execute(model_stmt)).scalar_one_or_none()
     if model is None or not model.enabled:
         raise NotFound(
-            constraint={"object": "model", "alias": body.model_alias},
+            constraint={"object": "model", "alias": model_ref},
             hint="Модель не найдена или отключена",
         )
     if not model.supports_tools:
         raise BadRequest(
             "Модель не отмечена как пригодная для агентного режима",
-            constraint={"model": body.model_alias},
+            constraint={"model": model_ref},
             hint="Администратор должен включить флаг «Модель подходит для агентного режима»",
         )
     provider = (
@@ -138,7 +244,7 @@ async def agent_chat(
     ).scalar_one_or_none()
     if provider is None or not provider.enabled:
         raise NotFound(
-            constraint={"object": "provider", "model": body.model_alias},
+            constraint={"object": "provider", "model": model.alias},
             hint="Провайдер модели не найден или отключён",
         )
 
@@ -148,9 +254,12 @@ async def agent_chat(
     # skill_id — явный отказ 400, не тихий откат к прогону без скилла
     # (правка пользователя; прецеденты fail-closed — resolve_corpora Е1
     # Т-439, пустое имя корпуса и конфликт пинов в chat.py).
+    # Источник скилла (Т-509, решение 2): профиль, если он задан, иначе
+    # запрос — диалог от профиля свой скилл не переопределяет.
     skill: AgentSkill | None = None
-    if body.skill_id is not None:
-        skill = await resolve_skill_for_run(session, workspace_id, body.skill_id)
+    skill_id = profile.skill_id if profile is not None else body.skill_id
+    if skill_id is not None:
+        skill = await resolve_skill_for_run(session, workspace_id, skill_id)
 
     messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
     input_tokens = count_tokens("".join(m["content"] for m in messages_dicts))
@@ -195,43 +304,26 @@ async def agent_chat(
                 "error": exc.error_code,
                 "reason": exc.reason,
                 "constraint": exc.constraint,
-                "model_alias": body.model_alias,
+                "model_alias": model.alias,
                 "corpus_names": requested_names or None,
             },
         )
         await session.commit()
         raise
 
-    # Разговор агентного режима: создаётся лениво при первом прогоне,
-    # как разговор чата; существующий обязан быть в режиме "agent".
-    if body.conversation_id is not None:
-        conv_result = await session.execute(
-            select(Conversation).where(
-                Conversation.id == body.conversation_id,
-                Conversation.workspace_id == workspace_id,
-                Conversation.user_id == user.id,
-            )
-        )
-        conv = conv_result.scalar_one_or_none()
-        if conv is None:
-            raise NotFound(
-                constraint={"object": "conversation", "id": body.conversation_id},
-                hint="Диалог не найден",
-            )
-        if conv.mode != "agent":
-            raise BadRequest(
-                "Диалог не в агентном режиме",
-                constraint={"mode": conv.mode},
-                hint="Создайте агентный диалог отдельной точкой входа",
-            )
-        conversation = conv
-    else:
+    # Разговор агентного режима: создаётся лениво при первом прогоне, как
+    # разговор чата; существующий загружен и проверен выше (режим, архив).
+    # Профиль записывается на диалог (решение 2): дальше источник
+    # конфигурации — сам диалог, поэтому профильный диалог продолжает ту же
+    # модель и скилл и после перезапуска клиента.
+    if conversation is None:
         conversation = Conversation(
             workspace_id=workspace_id,
             user_id=user.id,
             title=messages_dicts[-1]["content"][:80],
             archived=False,
             mode="agent",
+            agent_profile_id=profile.id if profile is not None else None,
         )
         session.add(conversation)
         await session.flush()
@@ -484,7 +576,10 @@ async def agent_chat(
 
     return AgentChatResponse(
         available=True,
-        type="complete",
+        # Т-509 (решение 7): остановка по запросу — отдельный тип ответа,
+        # а не ошибка: прогон завершён штатно, расход выполненных шагов
+        # сохранён побиллингово, следующий шаг не начинался.
+        type="stopped" if result.stopped else "complete",
         content=result.content,
         conversation_id=conv_id,
         model=model.alias,

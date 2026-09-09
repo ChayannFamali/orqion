@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.api.schemas.chat import ChatMessage, ChatSourceEntry, ChatUsage
 
@@ -28,11 +28,19 @@ class AgentChatRequest(BaseModel):
     которых администратор включил флаг ``supports_tools`` (решение 3).
     ``messages`` — буфер диалога, как в обычном чате (клиент управляет
     историей); последнее сообщение — вопрос пользователя.
+
+    Профиль агента (Т-509, решение 2) — второй способ задать
+    конфигурацию прогона: он фиксирует модель и скилл, поэтому при
+    выбранном профиле поля ``model_alias`` и ``skill_id`` в запросе
+    запрещены (переопределение — явный отказ, а не молчаливое
+    игнорирование). Диалог, уже созданный от профиля, продолжает его:
+    профиль берётся с диалога, а не из запроса.
     """
 
     conversation_id: str | None = None
     messages: list[ChatMessage]
-    model_alias: str
+    model_alias: str | None = None
+    agent_profile_id: str | None = None
     corpus_names: list[str] | None = None
     max_tokens: int | None = None
     # Скилл — пакет конфигурации прогона (Т-508): выбор приходит на
@@ -48,12 +56,33 @@ class AgentChatRequest(BaseModel):
     confirmation_decision: str | None = None
     confirmation: PendingConfirmation | None = None
 
+    @model_validator(mode="after")
+    def _require_model_or_profile(self) -> AgentChatRequest:
+        """Модель нужна, только если конфигурацию не задаёт профиль/диалог.
+
+        Проверка на схеме, а не в маршруте: отказ приходит обычным 422 с
+        указанием поля, до создания трассировки и обращения к политике.
+        Продолжение существующего диалога (``conversation_id``) модель в
+        запросе не обязано нести — для профильного диалога её источник
+        профиль, для ad-hoc диалога клиент её передаёт сам.
+        """
+        if (
+            self.model_alias is None
+            and self.agent_profile_id is None
+            and self.conversation_id is None
+        ):
+            raise ValueError(
+                "Укажите model_alias или agent_profile_id: "
+                "конфигурация прогона должна быть задана явно"
+            )
+        return self
+
 
 class AgentStepEntry(BaseModel):
     """Шаг прогона для ленты агентного диалога."""
 
     index: int
-    kind: str  # "model" | "tool" | "confirmation" | "skill"
+    kind: str  # "model" | "tool" | "confirmation" | "skill" | "stop"
     name: str | None = None
     summary: str = ""
     decision: str | None = None  # "allow" | "deny" | "approve" | "reject" | "pending"
@@ -64,6 +93,10 @@ class AgentChatResponse(BaseModel):
 
     Честная деградация (паттерн Т-444/Т-505): без дополнения
     ``orqion[agent]`` — 200 с ``available=false`` и явной причиной.
+
+    ``type``: ``complete`` — прогон дошёл до финального ответа;
+    ``stopped`` — прогон остановлен по запросу пользователя между шагами
+    (Т-509, решение 7); ``error`` — исчерпан лимит прогона.
     """
 
     available: bool = True

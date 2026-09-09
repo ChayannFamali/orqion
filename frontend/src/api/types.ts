@@ -118,3 +118,17 @@ export type SkillUpdate = components["schemas"]["SkillUpdate"];
 export type SkillAvailableResponse = components["schemas"]["SkillAvailableResponse"];
 export type SkillAvailableListResponse = components["schemas"]["SkillAvailableListResponse"];
 export type SkillDeleteResponse = components["schemas"]["SkillDeleteResponse"];
+/** Профили агентов — переиспользуемые конфигурации диалога (Т-509). */
+export type AgentProfileResponse = components["schemas"]["AgentProfileResponse"];
+export type AgentProfileListResponse = components["schemas"]["AgentProfileListResponse"];
+export type AgentProfileCreate = components["schemas"]["AgentProfileCreate"];
+export type AgentProfileUpdate = components["schemas"]["AgentProfileUpdate"];
+export type AgentProfileAvailableResponse =
+  components["schemas"]["AgentProfileAvailableResponse"];
+export type AgentProfileAvailableListResponse =
+  components["schemas"]["AgentProfileAvailableListResponse"];
+export type AgentProfileDeleteResponse = components["schemas"]["AgentProfileDeleteResponse"];
+export type AgentProfileConversationEntry =
+  components["schemas"]["AgentProfileConversationEntry"];
+export type AgentProfileConversationListResponse =
+  components["schemas"]["AgentProfileConversationListResponse"];

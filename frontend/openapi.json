@@ -330,6 +330,249 @@
         }
       }
     },
+    "/api/agent-profiles": {
+      "get": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "List Agent Profiles",
+        "description": "Админский каталог: все профили рабочей области, включая отключённые.",
+        "operationId": "list_agent_profiles_api_agent_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "Create Agent Profile",
+        "operationId": "create_agent_profile_api_agent_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-profiles/available": {
+      "get": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "List Available Agent Profiles",
+        "description": "Список для старта диалога: только включённые, только поля выбора.",
+        "operationId": "list_available_agent_profiles_api_agent_profiles_available_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileAvailableListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-profiles/{profile_id}": {
+      "put": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "Update Agent Profile",
+        "description": "Правка профиля.\n\nРешение 2: модель и скилл зафиксированы профилем, поэтому их смена\nменяет поведение ВСЕХ существующих диалогов профиля — это не скрытый\nпобочный эффект, а смысл поля: диалог ссылается на профиль, а не\nхранит копию конфигурации. Факт смены остаётся в журнале аудита.",
+        "operationId": "update_agent_profile_api_agent_profiles__profile_id__put",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "Delete Agent Profile",
+        "description": "Удаление профиля из каталога.\n\nРешение 8: при наличии диалогов с этим ``agent_profile_id`` — 409, не\nкаскад. Диалог без профиля потерял бы зафиксированную конфигурацию и\nмолча продолжился бы как ad-hoc; удаление диалогов вместе с профилем\nуничтожило бы чужую переписку и расход админским действием. Основной\nпуть «убрать из выбора» — ``enabled=false``.",
+        "operationId": "delete_agent_profile_api_agent_profiles__profile_id__delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-profiles/{profile_id}/conversations": {
+      "get": {
+        "tags": [
+          "agent-profiles"
+        ],
+        "summary": "List Agent Profile Conversations",
+        "description": "Диалоги профиля: метаданные и расход, без содержимого переписки.\n\nРешение 5 — двух вариантов охвата ровно два, третьего не дано: без\n``manage_agents`` в выдачу попадают только собственные диалоги\nпользователя, с правом — все диалоги рабочей области, но теми же\nполями метаданных. Право не расширяет состав полей, только охват\nстрок.",
+        "operationId": "list_agent_profile_conversations_api_agent_profiles__profile_id__conversations_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileConversationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics": {
       "get": {
         "tags": [
@@ -1329,6 +1572,49 @@
         "summary": "Reset Context",
         "description": "Мягкий сброс контекста диалога (T-442). Только свои.\n\nУстанавливает маркер context_reset_at = текущий момент. Сообщения не\nудаляются: видимая лента сохраняется, но в историю для модели на будущих\nходах попадают только сообщения после маркера (сборка payload фильтрует\nпо маркеру; см. планинг T-442). Повторный сброс сдвигает маркер вперёд.\nБюджет и RAG-параметры запроса сброс не затрагивает.",
         "operationId": "reset_context_api_conversations__conversation_id__reset_context_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{conversation_id}/stop": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Stop Conversation",
+        "description": "Запрос остановки агентного прогона (Т-509, решение 7). Только свои.\n\nСтавит ``stop_requested=true`` и отвечает немедленно: цикл проверяет\nфлаг МЕЖДУ шагами и не обрывает текущий вызов модели или инструмента\n(оборванный вызов внешнего сервера мог уже начать действие, а\nоборванный вызов модели оставил бы оплаченный расход без результата).\nПоэтому ответ — «запрос принят», а не «прогон остановлен»: факт\nостановки фиксирует сам прогон записью\n``agent.conversation.stopped``.\n\nФлаг общий для любого агентного диалога, профильного или ad-hoc:\nостанавливают длинный прогон, а не конкретную конфигурацию. Диалогу\nобычного чата нечего останавливать — явный 400 вместо принятого\nвпустую запроса.",
+        "operationId": "stop_conversation_api_conversations__conversation_id__stop_post",
         "parameters": [
           {
             "name": "conversation_id",
@@ -4301,8 +4587,26 @@
             "title": "Messages"
           },
           "model_alias": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Model Alias"
+          },
+          "agent_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Id"
           },
           "corpus_names": {
             "anyOf": [
@@ -4364,11 +4668,10 @@
         },
         "type": "object",
         "required": [
-          "messages",
-          "model_alias"
+          "messages"
         ],
         "title": "AgentChatRequest",
-        "description": "Запрос агентного прогона.\n\nМодель обязательна: агентный цикл работает только с моделями, у\nкоторых администратор включил флаг ``supports_tools`` (решение 3).\n``messages`` — буфер диалога, как в обычном чате (клиент управляет\nисторией); последнее сообщение — вопрос пользователя."
+        "description": "Запрос агентного прогона.\n\nМодель обязательна: агентный цикл работает только с моделями, у\nкоторых администратор включил флаг ``supports_tools`` (решение 3).\n``messages`` — буфер диалога, как в обычном чате (клиент управляет\nисторией); последнее сообщение — вопрос пользователя.\n\nПрофиль агента (Т-509, решение 2) — второй способ задать\nконфигурацию прогона: он фиксирует модель и скилл, поэтому при\nвыбранном профиле поля ``model_alias`` и ``skill_id`` в запросе\nзапрещены (переопределение — явный отказ, а не молчаливое\nигнорирование). Диалог, уже созданный от профиля, продолжает его:\nпрофиль берётся с диалога, а не из запроса."
       },
       "AgentChatResponse": {
         "properties": {
@@ -4512,7 +4815,326 @@
         },
         "type": "object",
         "title": "AgentChatResponse",
-        "description": "Ответ POST /api/agent/chat.\n\nЧестная деградация (паттерн Т-444/Т-505): без дополнения\n``orqion[agent]`` — 200 с ``available=false`` и явной причиной."
+        "description": "Ответ POST /api/agent/chat.\n\nЧестная деградация (паттерн Т-444/Т-505): без дополнения\n``orqion[agent]`` — 200 с ``available=false`` и явной причиной.\n\n``type``: ``complete`` — прогон дошёл до финального ответа;\n``stopped`` — прогон остановлен по запросу пользователя между шагами\n(Т-509, решение 7); ``error`` — исчерпан лимит прогона."
+      },
+      "AgentProfileAvailableListResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileAvailableResponse"
+            },
+            "type": "array",
+            "title": "Profiles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profiles"
+        ],
+        "title": "AgentProfileAvailableListResponse"
+      },
+      "AgentProfileAvailableResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "title": "AgentProfileAvailableResponse",
+        "description": "Список для выбора при старте диалога: только нужное для выбора."
+      },
+      "AgentProfileConversationEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Activity At"
+          },
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "default": 0
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In",
+            "default": 0
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out",
+            "default": 0
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "title",
+          "archived",
+          "created_at",
+          "last_activity_at"
+        ],
+        "title": "AgentProfileConversationEntry",
+        "description": "Диалог профиля в drill-down: метаданные и расход, без переписки.\n\nРасход — агрегат существующего ``usage_event.conversation_id``\n(решение 5): новая таблица накопления не заводится."
+      },
+      "AgentProfileConversationListResponse": {
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileConversationEntry"
+            },
+            "type": "array",
+            "title": "Conversations"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversations",
+          "total",
+          "scope"
+        ],
+        "title": "AgentProfileConversationListResponse"
+      },
+      "AgentProfileCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Description",
+            "default": ""
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "model_id"
+        ],
+        "title": "AgentProfileCreate"
+      },
+      "AgentProfileDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "AgentProfileDeleteResponse"
+      },
+      "AgentProfileListResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileResponse"
+            },
+            "type": "array",
+            "title": "Profiles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profiles"
+        ],
+        "title": "AgentProfileListResponse"
+      },
+      "AgentProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "skill_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "model_id",
+          "model_alias",
+          "skill_id",
+          "skill_name",
+          "enabled",
+          "created_at"
+        ],
+        "title": "AgentProfileResponse",
+        "description": "Админский каталог: полные поля, включая отключённые профили."
+      },
+      "AgentProfileUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Description",
+            "default": ""
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "model_id"
+        ],
+        "title": "AgentProfileUpdate",
+        "description": "Полная замена полей профиля (по образцу скиллов, Т-508).\n\nИмя переименовывать можно: оно отображаемое, ссылкой служит\n``agent_profile_id`` на диалоге, поэтому переименование не меняет ни\nзаписей аудита, ни привязки существующих диалогов."
       },
       "AgentStepEntry": {
         "properties": {
@@ -5403,6 +6025,22 @@
             "title": "Mode",
             "default": "chat"
           },
+          "agent_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Id"
+          },
+          "stop_requested": {
+            "type": "boolean",
+            "title": "Stop Requested",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -5482,6 +6120,22 @@
             "type": "string",
             "title": "Mode",
             "default": "chat"
+          },
+          "agent_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Id"
+          },
+          "stop_requested": {
+            "type": "boolean",
+            "title": "Stop Requested",
+            "default": false
           },
           "created_at": {
             "type": "string",

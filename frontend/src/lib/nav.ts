@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   MessageSquare,
+  Bot,
   Database,
   Activity,
   BarChart3,
@@ -40,6 +41,13 @@ import {
  * админский каталог скиллов; список для выбора в диалоге
  * (/api/skills/available) доступен всем аутентифицированным.
  *
+ * manage_agents — enforced на backend (Т-509), не в посевных пресетах,
+ * только admin через "*" (паттерн manage_skills). Правит каталог профилей
+ * (/api/agent-profiles) и drill-down по чужим диалогам. Раздел «Агенты»
+ * при этом виден всем (capability: undefined): старт диалога от профиля —
+ * не админское действие, а список выбора (/api/agent-profiles/available)
+ * доступен всем аутентифицированным.
+ *
  * Capabilities для будущих разделов (manage_users, view_audit) ещё не
  * определены в seed-пресетах ролей. Они появятся в T-308+.
  * Пока эти разделы видны только admin (через "*").
@@ -55,6 +63,13 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { key: "chat", label: "Чат", icon: MessageSquare, capability: undefined },
+  // Т-509: каталог профилей агентов и точка входа для старта диалога.
+  // Раздел виден ВСЕМ аутентифицированным (capability: undefined): старт
+  // диалога от профиля — не админское действие. Кнопки управления
+  // (создание/правка/удаление профиля, drill-down по чужим диалогам)
+  // скрыты внутри раздела без способности manage_agents, а право
+  // проверяется и на сервере (без него — 404 на каталог и записи).
+  { key: "agents", label: "Агенты", icon: Bot, capability: undefined },
   { key: "corpora", label: "Корпуса", icon: Database, capability: "upload" },
   { key: "traces", label: "Трассировки", icon: Activity, capability: "view_traces" },
   { key: "analytics", label: "Аналитика", icon: BarChart3, capability: "view_analytics" },

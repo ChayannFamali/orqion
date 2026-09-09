@@ -26,6 +26,7 @@ vi.mock("../api/conversations", () => ({
   apiUpdateConversation: vi.fn(),
   apiDeleteConversation: vi.fn(),
   apiResetConversationContext: vi.fn(),
+  apiStopConversation: vi.fn(),
   apiSearchConversations: vi.fn().mockResolvedValue([]),
 }));
 
@@ -54,6 +55,20 @@ vi.mock("../api/skills", () => ({
   apiCreateSkill: vi.fn(),
   apiUpdateSkill: vi.fn(),
   apiDeleteSkill: vi.fn(),
+}));
+
+// Т-509: ChatPage запрашивает список профилей для подписи активного профиля.
+vi.mock("../api/agent-profiles", () => ({
+  apiListAgentProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
+  apiListAvailableAgentProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
+  apiCreateAgentProfile: vi.fn(),
+  apiUpdateAgentProfile: vi.fn(),
+  apiDeleteAgentProfile: vi.fn(),
+  apiListAgentProfileConversations: vi.fn().mockResolvedValue({
+    conversations: [],
+    total: 0,
+    scope: "own",
+  }),
 }));
 
 /** Модель с флагом инструментов и модель без него. */
@@ -542,5 +557,263 @@ describe("Т-502: агентный диалог в ChatPage", () => {
     const request = vi.mocked(agentChat).mock.calls[1][0];
     expect(request.skill_id).toBe("sk-2");
     expect(request.confirmation_decision).toBe("approve");
+  });
+});
+
+describe("Т-509: профиль агента и остановка прогона в ChatPage", () => {
+  const PROFILE = { id: "p1", name: "Аналитик", description: "Отчёты по корпусу" };
+
+  /** Агентный диалог, уже созданный от профиля. */
+  const PROFILE_CONVERSATION = {
+    id: "conv-profile",
+    title: "Профильный диалог",
+    archived: false,
+    mode: "agent",
+    agent_profile_id: "p1",
+    stop_requested: false,
+    created_at: "2026-09-09T10:00:00Z",
+    message_count: 0,
+    context_reset_at: null,
+    messages: [],
+  };
+
+  function completeResponse(overrides: Record<string, unknown> = {}) {
+    return {
+      available: true,
+      type: "complete",
+      content: "Ответ по профилю",
+      conversation_id: "conv-profile",
+      model: "local/agent-model",
+      usage: { tokens_in: 10, tokens_out: 5 },
+      steps: [],
+      sources: [],
+      trace_id: "trace-profile",
+      pending_confirmation: null,
+      skill_tools_unavailable: [],
+      ...overrides,
+    } as any;
+  }
+
+  async function seedProfiles(profiles = [PROFILE]) {
+    const { apiListAvailableAgentProfiles } = await import("../api/agent-profiles");
+    vi.mocked(apiListAvailableAgentProfiles).mockResolvedValue({ profiles } as any);
+  }
+
+  async function seedSkills() {
+    const { apiListAvailableSkills } = await import("../api/skills");
+    vi.mocked(apiListAvailableSkills).mockResolvedValue({
+      skills: [{ id: "sk-1", name: "Разбор", description: "" }],
+    } as any);
+  }
+
+  function renderChatPageWith(agentStart: { profileId: string | null; nonce: number }) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ChatPage agentStart={agentStart} />
+      </QueryClientProvider>,
+    );
+    return client;
+  }
+
+  /**
+   * Вводит текст и ждёт, пока кнопка отправки станет активной, затем жмёт её.
+   *
+   * Порядок существенен: кнопка неактивна при пустом поле ввода, поэтому
+   * ждать готовности до ввода бессмысленно. Ожидание после ввода покрывает
+   * и асинхронную загрузку списка моделей.
+   */
+  async function typeAndSend(user: ReturnType<typeof userEvent.setup>, text: string) {
+    await user.type(screen.getByPlaceholderText(/Введите сообщение/), text);
+    await waitFor(() => {
+      expect(screen.getByText("Отправить")).not.toBeDisabled();
+    });
+    await user.click(screen.getByText("Отправить"));
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { apiListAvailableModels } = await import("../api/models");
+    vi.mocked(apiListAvailableModels).mockResolvedValue([AGENT_MODEL, PLAIN_MODEL] as any);
+    const { apiListConversations } = await import("../api/conversations");
+    vi.mocked(apiListConversations).mockResolvedValue({ conversations: [], total: 0 } as any);
+    await seedProfiles([]);
+    await seedSkills();
+  });
+
+  it("решение 2: профиль фиксирует модель и скилл — селекторы скрыты, видна подпись", async () => {
+    await seedProfiles();
+    renderChatPageWith({ profileId: "p1", nonce: 1 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-profile-badge")).toHaveTextContent("Аналитик");
+    });
+    // Селектора скилла нет, хотя скиллы в списке выбора есть.
+    expect(screen.queryByTestId("agent-skill-select")).not.toBeInTheDocument();
+    // Селектора модели нет: модель задаёт профиль.
+    expect(screen.queryByRole("option", { name: /local\/agent-model/ })).not.toBeInTheDocument();
+  });
+
+  it("решение 2: прогон от профиля шлёт agent_profile_id и не шлёт model_alias/skill_id", async () => {
+    await seedProfiles();
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat).mockResolvedValue(completeResponse());
+
+    renderChatPageWith({ profileId: "p1", nonce: 1 });
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-profile-badge")).toBeInTheDocument();
+    });
+    await typeAndSend(user, "Вопрос по корпусу");
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(1);
+    });
+    const request = vi.mocked(agentChat).mock.calls[0][0];
+    expect(request.agent_profile_id).toBe("p1");
+    // Переопределение конфигурации профиля сервер отклоняет (400), поэтому
+    // клиент эти поля не отправляет вовсе.
+    expect(request.model_alias).toBeNull();
+    expect(request.skill_id).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText("Ответ по профилю")).toBeInTheDocument();
+    });
+  });
+
+  it("решение 2: диалог, созданный от профиля, продолжает его — профиль берётся с диалога", async () => {
+    await seedProfiles();
+    const { apiListConversations, apiGetConversation } = await import("../api/conversations");
+    vi.mocked(apiListConversations).mockResolvedValue({
+      conversations: [PROFILE_CONVERSATION],
+      total: 1,
+    } as any);
+    vi.mocked(apiGetConversation).mockResolvedValue(PROFILE_CONVERSATION as any);
+    const { agentChat } = await import("../api/agent");
+    vi.mocked(agentChat).mockResolvedValue(completeResponse());
+
+    renderChatPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByText("Профильный диалог"));
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-profile-badge")).toHaveTextContent("Аналитик");
+    });
+
+    await typeAndSend(user, "Продолжаем");
+
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(1);
+    });
+    const request = vi.mocked(agentChat).mock.calls[0][0];
+    expect(request.agent_profile_id).toBe("p1");
+    expect(request.conversation_id).toBe("conv-profile");
+    expect(request.model_alias).toBeNull();
+  });
+
+  it("решение 9: старт без профиля открывает выбор модели — ad-hoc путь сохранён", async () => {
+    renderChatPageWith({ profileId: null, nonce: 1 });
+
+    const dialog = await screen.findByRole("dialog");
+    // Модалка выбора модели: профиль не отобрал ручной путь. Ждём появления
+    // модели — список приходит асинхронно после открытия модалки.
+    expect(await within(dialog).findByText("local/agent-model")).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-profile-badge")).not.toBeInTheDocument();
+  });
+
+  it("решение 7: остановка во время прогона ставит флаг на сервере", async () => {
+    await seedProfiles();
+    const { apiListConversations, apiGetConversation, apiStopConversation } = await import(
+      "../api/conversations"
+    );
+    vi.mocked(apiListConversations).mockResolvedValue({
+      conversations: [PROFILE_CONVERSATION],
+      total: 1,
+    } as any);
+    vi.mocked(apiGetConversation).mockResolvedValue(PROFILE_CONVERSATION as any);
+    vi.mocked(apiStopConversation).mockResolvedValue({
+      ...PROFILE_CONVERSATION,
+      stop_requested: true,
+    } as any);
+
+    // Прогон не завершается, пока тест не разрешит промис: так кнопка
+    // остановки видна именно во время прогона.
+    const { agentChat } = await import("../api/agent");
+    let finishRun: (value: unknown) => void = () => {};
+    vi.mocked(agentChat).mockReturnValue(
+      new Promise((resolve) => {
+        finishRun = resolve;
+      }) as any,
+    );
+
+    renderChatPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByText("Профильный диалог"));
+    await typeAndSend(user, "Долгий вопрос");
+
+    const stop = await screen.findByTestId("agent-stop");
+    await user.click(stop);
+
+    await waitFor(() => {
+      expect(apiStopConversation).toHaveBeenCalledWith("conv-profile");
+    });
+
+    finishRun(
+      completeResponse({
+        type: "stopped",
+        content: "Прогон остановлен по запросу пользователя: текущий шаг доработан, следующий не начинался.",
+        steps: [
+          { index: 1, kind: "model", name: null, summary: "Запрошены инструменты", decision: null },
+          { index: 2, kind: "stop", name: null, summary: "Прогон остановлен по запросу пользователя", decision: null },
+        ],
+      }),
+    );
+
+    // Остановка — штатное завершение: ответ и лента шагов показаны, ошибки нет.
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-run-summary")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("agent-run-summary")).toHaveTextContent("Остановка");
+    // Текст ответа совпадает с подписью шага остановки, поэтому проверяется
+    // наличие, а не единственность совпадения.
+    expect(
+      screen.getAllByText(/Прогон остановлен по запросу пользователя/).length,
+    ).toBeGreaterThan(0);
+    // Ошибка не показана: остановка — не сбой, расход выполненных шагов сохранён.
+    expect(screen.queryByText("Ошибка:")).not.toBeInTheDocument();
+  });
+
+  it("решение 7: для первого сообщения кнопки остановки нет — диалога на сервере ещё нет", async () => {
+    await seedProfiles();
+    const { agentChat } = await import("../api/agent");
+    let finishRun: (value: unknown) => void = () => {};
+    vi.mocked(agentChat).mockReturnValue(
+      new Promise((resolve) => {
+        finishRun = resolve;
+      }) as any,
+    );
+
+    renderChatPageWith({ profileId: "p1", nonce: 1 });
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-profile-badge")).toBeInTheDocument();
+    });
+    await typeAndSend(user, "Первый вопрос");
+
+    // Прогон идёт, но идентификатор диалога появится только в ответе:
+    // ставить флаг остановки ещё не на что.
+    await waitFor(() => {
+      expect(agentChat).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("agent-stop")).not.toBeInTheDocument();
+
+    finishRun(completeResponse());
+    await waitFor(() => {
+      expect(screen.getByText("Ответ по профилю")).toBeInTheDocument();
+    });
   });
 });

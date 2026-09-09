@@ -23,6 +23,7 @@ const baseConversation = {
   title: "Test conversation",
   archived: false,
   mode: "chat",
+  stop_requested: false,
   created_at: "2026-08-08T09:00:00Z",
   message_count: 2,
   context_reset_at: null as string | null,
@@ -68,6 +69,7 @@ vi.mock("../api/conversations", () => ({
   apiUpdateConversation: vi.fn(),
   apiDeleteConversation: vi.fn(),
   apiResetConversationContext: vi.fn(),
+  apiStopConversation: vi.fn(),
 }));
 
 vi.mock("../api/models", () => ({

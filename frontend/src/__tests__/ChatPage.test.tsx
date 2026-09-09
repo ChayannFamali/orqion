@@ -63,6 +63,7 @@ vi.mock("../api/conversations", () => ({
     message_count: 2,
     context_reset_at: "2026-08-08T11:00:00Z",
   }),
+  apiStopConversation: vi.fn(),
 }));
 
 vi.mock("../api/models", () => ({

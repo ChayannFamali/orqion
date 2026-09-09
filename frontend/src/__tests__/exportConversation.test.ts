@@ -39,6 +39,7 @@ function makeConversation(
     title,
     archived: false,
     mode: "chat",
+    stop_requested: false,
     created_at: "2026-08-22T12:00:00Z",
     message_count: messages.length,
     messages,

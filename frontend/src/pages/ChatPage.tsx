@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bot, Download, Eraser } from "lucide-react";
+import { Bot, Download, Eraser, Square } from "lucide-react";
 import {
   useConversations,
   useConversation,
   useUpdateConversation,
   useResetConversationContext,
   useDeleteConversation,
+  useStopConversation,
 } from "../hooks/useConversations";
 import { useEnabledModels } from "../hooks/useModels";
 import { useAvailableCorpora } from "../hooks/useCorpora";
@@ -14,6 +15,7 @@ import { useAgentChat } from "../hooks/useAgentChat";
 import { useCurrentUser } from "../hooks/useAuth";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { useAvailableSkills } from "../hooks/useSkills";
+import { useAvailableAgentProfiles } from "../hooks/useAgentProfiles";
 import { ConversationList } from "../components/ConversationList";
 import { ChatMessages } from "../components/ChatMessages";
 import { ChatInput } from "../components/ChatInput";
@@ -25,7 +27,19 @@ import type { ChatMessage, MessageResponse } from "../api/types";
 import { conversationToMarkdown, downloadMarkdown, sanitizeFilename } from "../utils/exportConversation";
 import { estimateTokens } from "../utils/estimateTokens";
 
-export function ChatPage() {
+/** Запрос старта агентного диалога из раздела «Агенты» (Т-509). */
+export interface AgentStartRequest {
+  /** Идентификатор профиля; ``null`` — ad-hoc диалог с ручным выбором модели */
+  profileId: string | null;
+  /** Счётчик: повторный клик по тому же профилю обязан сработать снова */
+  nonce: number;
+}
+
+interface ChatPageProps {
+  agentStart?: AgentStartRequest | null;
+}
+
+export function ChatPage({ agentStart }: ChatPageProps = {}) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -42,9 +56,12 @@ export function ChatPage() {
   const [agentConvId, setAgentConvId] = useState<string | null>(null);
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
   // Т-508: выбранный скилл. Выбор приходит на каждый запрос, а не хранится
-  // на диалоге (решение 5) — профиль агента из Т-509 подставит свой скилл в
-  // то же поле. Несуществующий/отключённый скилл сервер отклоняет явно.
+  // на диалоге (решение 5).
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  // Т-509 (решение 2): профиль агента фиксирует модель и скилл диалога,
+  // поэтому при выбранном профиле селекторы модели и скилла скрыты и их
+  // значения не отправляются. Пустой — ad-hoc диалог с ручным выбором.
+  const [agentProfileId, setAgentProfileId] = useState<string | null>(null);
 
   const currentUser = useCurrentUser();
   const reasoningPolicy = currentUser.data?.reasoning ?? "off";
@@ -64,10 +81,22 @@ export function ChatPage() {
   const updateConv = useUpdateConversation();
   const resetContext = useResetConversationContext();
   const deleteConv = useDeleteConversation();
+  // Т-509 (решение 7): запрос остановки прогона. Мутация только ставит флаг
+  // на сервере — завершает прогон сам цикл между шагами.
+  const stopConversation = useStopConversation();
   const chat = useChat();
   const agent = useAgentChat();
   // Т-508: список скиллов для выбора — только в агентном режиме.
   const availableSkills = useAvailableSkills(agentMode);
+  // Т-509: имя профиля для подписи в шапке. Запрос только при активном
+  // профиле: список выбора доступен всем аутентифицированным, поэтому 404
+  // здесь невозможен.
+  const availableProfiles = useAvailableAgentProfiles(
+    agentMode && agentProfileId !== null,
+  );
+  const activeProfile = availableProfiles.data?.profiles.find(
+    (p) => p.id === agentProfileId,
+  );
 
   // Т-502: модели с флагом пригодности к инструментам (решение 3). Точка
   // создания агентного диалога видна только при наличии хотя бы одной.
@@ -90,15 +119,37 @@ export function ChatPage() {
 
   // Т-502: режим следует за загруженным разговором (поле ``mode``). Для
   // нового (ещё не сохранённого) диалога режим задаёт точка создания.
+  // Т-509 (решение 2): профиль тоже следует за разговором — модель и скилл
+  // зафиксированы им, поэтому селекторы для профильного диалога скрыты.
   useEffect(() => {
     if (activeId && conversation.data) {
       const isAgent = conversation.data.mode === "agent";
       setAgentMode(isAgent);
       if (isAgent) {
         setAgentConvId(activeId);
+        setAgentProfileId(conversation.data.agent_profile_id ?? null);
+      } else {
+        setAgentProfileId(null);
       }
     }
   }, [activeId, conversation.data]);
+
+  // Т-509: старт диалога из раздела «Агенты». С профилем — сразу агентный
+  // диалог с пустым буфером; без профиля (ad-hoc) — существующая модалка
+  // выбора модели: профили этот путь не отбирают (решение 9).
+  useEffect(() => {
+    if (!agentStart) return;
+    if (agentStart.profileId === null) {
+      setNewAgentChatOpen(true);
+      return;
+    }
+    setActiveId(null);
+    setLocalMessages([]);
+    setAgentConvId(null);
+    setAgentMode(true);
+    setAgentProfileId(agentStart.profileId);
+    setSelectedSkillId(null);
+  }, [agentStart]);
 
   // Т-502: сервер создаёт разговор при первом прогоне — фиксируем его
   // идентификатор, чтобы следующие сообщения продолжали тот же диалог.
@@ -124,11 +175,21 @@ export function ChatPage() {
   // Т-502: в агентном режиме — только модели с флагом, занятость от прогона.
   const selectorModels = agentMode ? agentModels : (models.data ?? []);
   const isBusy = agentMode ? agent.isRunning : chat.isStreaming;
+  // Т-509 (решение 2): для профильного диалога модель задаёт профиль, а не
+  // селектор, поэтому гейт «нет пригодных моделей в списке выбора» к нему не
+  // относится. Иначе интерфейс блокировал бы прогон, который сервер принял
+  // бы: модель профиля пригодна к инструментам по проверке на создании, а в
+  // список выбора пользователя попадает по политике — это разные множества.
+  const modelReady = agentProfileId !== null || selectorModels.length > 0;
 
   const handleSelect = useCallback((id: string) => {
     setActiveId(id);
     setLocalMessages([]);
     setAgentConvId(null);
+    // Профиль подтянется из загруженного диалога (эффект выше); до загрузки
+    // селекторы показывать нельзя — иначе выбор модели ушёл бы в запрос
+    // профильного диалога и получил 400.
+    setAgentProfileId(null);
   }, []);
 
   // T-439: переключение корпуса в мульти-селекторе
@@ -148,6 +209,7 @@ export function ChatPage() {
     setSelectedModel(alias);
     setAgentMode(false);
     setAgentConvId(null);
+    setAgentProfileId(null);
     setNewChatOpen(false);
   }, []);
 
@@ -156,12 +218,15 @@ export function ChatPage() {
     setNewAgentChatOpen(true);
   }, []);
 
+  // Т-509 (решение 9): ad-hoc агентный диалог — ручной выбор модели, без
+  // профиля. Профили этот путь не отбирают.
   const handleCreateAgent = useCallback((alias: string) => {
     setActiveId(null);
     setLocalMessages([]);
     setSelectedModel(alias);
     setAgentMode(true);
     setAgentConvId(null);
+    setAgentProfileId(null);
     setNewAgentChatOpen(false);
   }, []);
 
@@ -174,10 +239,14 @@ export function ChatPage() {
       setLocalMessages([...messagesToSend, assistantMsg]);
 
       // Т-502: агентный прогон — синхронный цикл, отдельный эндпоинт.
-      if (agentMode && selectedModel) {
+      // Т-509 (решение 2): при выбранном профиле модель и скилл задаёт
+      // сервер — в запрос уходит идентификатор профиля, а значения
+      // селекторов хук не отправляет (переопределение дало бы 400).
+      if (agentMode && (agentProfileId || selectedModel)) {
         agent.send({
           messages: messagesToSend,
           modelAlias: selectedModel,
+          agentProfileId,
           conversationId: agentConvId,
           corpusNames: selectedCorpora.length > 0 ? selectedCorpora : null,
           skillId: selectedSkillId,
@@ -210,7 +279,7 @@ export function ChatPage() {
         },
       });
     },
-    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, agentMode, agentConvId, selectedSkillId, agent, chat, conversations, conversation],
+    [localMessages, selectedModel, activeId, selectedCorpora, reasoningMode, agentMode, agentConvId, selectedSkillId, agentProfileId, agent, chat, conversations, conversation],
   );
 
   const handleAbort = useCallback(() => {
@@ -409,37 +478,77 @@ export function ChatPage() {
               {agentMode ? "Новый агентный диалог" : "Новый диалог"}
             </span>
           )}
-          <ModelSelector
-            models={selectorModels}
-            value={selectedModel}
-            onChange={setSelectedModel}
-            disabled={isBusy}
-          />
-          {/* Т-508: выбор скилла виден только в агентном режиме и только
-              когда есть из чего выбирать. Выбор приходит на каждый запрос,
-              а не хранится на диалоге (решение 5). Пока ждёт решения по
-              подтверждению деструктивного действия селектор заблокирован:
-              смена скилла могла бы убрать из прогона одобряемый инструмент. */}
-          {agentMode && availableSkills.data && availableSkills.data.skills.length > 0 && (
-            <select
-              value={selectedSkillId ?? ""}
-              onChange={(e) => setSelectedSkillId(e.target.value || null)}
-              disabled={isBusy || !!agent.pendingConfirmation}
-              data-testid="agent-skill-select"
-              title="Скилл: дополнительные инструкции агенту и разрешённый набор инструментов"
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          {/* Т-509 (решение 2): профиль фиксирует модель и скилл диалога,
+              поэтому для профильного диалога селекторы не показываются —
+              вместо них подпись профиля. Переопределение конфигурации
+              сервер отклоняет явно (400 agent_profile_conflict), так что
+              скрыть выбор — не косметика, а отражение фактического
+              поведения. */}
+          {agentMode && agentProfileId ? (
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-sm"
+              data-testid="agent-profile-badge"
+              title="Модель и скилл закреплены профилем агента"
             >
-              <option value="">Без скилла</option>
-              {selectedSkillId &&
-                !availableSkills.data.skills.some((s) => s.id === selectedSkillId) && (
-                  <option value={selectedSkillId}>Скилл недоступен</option>
-                )}
-              {availableSkills.data.skills.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              <Bot className="h-4 w-4 text-muted-foreground" />
+              Профиль: {activeProfile?.name ?? "недоступен"}
+            </span>
+          ) : (
+            <>
+              <ModelSelector
+                models={selectorModels}
+                value={selectedModel}
+                onChange={setSelectedModel}
+                disabled={isBusy}
+              />
+              {/* Т-508: выбор скилла виден только в агентном режиме и только
+                  когда есть из чего выбирать. Выбор приходит на каждый запрос,
+                  а не хранится на диалоге (решение 5). Пока ждёт решения по
+                  подтверждению деструктивного действия селектор заблокирован:
+                  смена скилла могла бы убрать из прогона одобряемый инструмент. */}
+              {agentMode && availableSkills.data && availableSkills.data.skills.length > 0 && (
+                <select
+                  value={selectedSkillId ?? ""}
+                  onChange={(e) => setSelectedSkillId(e.target.value || null)}
+                  disabled={isBusy || !!agent.pendingConfirmation}
+                  data-testid="agent-skill-select"
+                  title="Скилл: дополнительные инструкции агенту и разрешённый набор инструментов"
+                  className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                >
+                  <option value="">Без скилла</option>
+                  {selectedSkillId &&
+                    !availableSkills.data.skills.some((s) => s.id === selectedSkillId) && (
+                      <option value={selectedSkillId}>Скилл недоступен</option>
+                    )}
+                  {availableSkills.data.skills.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
+          )}
+          {/* Т-509 (решение 7): остановка прогона. Запрос ставит флаг на
+              сервере, а цикл проверяет его МЕЖДУ шагами — текущий вызов
+              модели или инструмента дорабатывает. Отличается от обрыва
+              запроса в браузере: прогон завершается штатно, расход
+              выполненных шагов сохраняется, лента показывает шаг
+              «Прогон остановлен». Кнопка появляется, только когда
+              идентификатор диалога уже известен: для самого первого
+              сообщения сервер создаёт диалог внутри запроса, и ставить
+              флаг ещё не на что. */}
+          {agentMode && agent.isRunning && agentConvId && (
+            <button
+              onClick={() => stopConversation.mutate(agentConvId)}
+              disabled={stopConversation.isPending}
+              data-testid="agent-stop"
+              className="flex shrink-0 items-center gap-1 rounded-md border border-destructive/40 px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+              title="Остановить прогон: текущий шаг доработает, следующий не начнётся"
+            >
+              <Square className="h-3.5 w-3.5" />
+              Остановить
+            </button>
           )}
           {/* Т-445 (Г1): переключатель рассуждения виден только при политике
               "optional"; при off/on режим фиксирован политикой. В агентном
@@ -570,7 +679,7 @@ export function ChatPage() {
             onSend={handleSend}
             onAbort={handleAbort}
             isStreaming={isBusy}
-            disabled={selectorModels.length === 0 || (agentMode && !!agent.pendingConfirmation)}
+            disabled={!modelReady || (agentMode && !!agent.pendingConfirmation)}
             contextUsage={contextUsage}
             templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
           />

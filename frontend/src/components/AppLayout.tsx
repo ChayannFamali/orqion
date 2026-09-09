@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { navItems, isNavVisible } from "../lib/nav";
-import { ChatPage } from "../pages/ChatPage";
+import { ChatPage, type AgentStartRequest } from "../pages/ChatPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { TraceListPage } from "../pages/TraceListPage";
 import { TraceDetailPage } from "../pages/TraceDetailPage";
@@ -18,6 +18,7 @@ import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { DocumentGraphPage } from "../pages/DocumentGraphPage";
 import { McpServersPage } from "../pages/McpServersPage";
 import { SkillsPage } from "../pages/SkillsPage";
+import { AgentProfilesPage } from "../pages/AgentProfilesPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { useExitImpersonation } from "../hooks/useUsers";
 
@@ -49,6 +50,16 @@ export function AppLayout({
   // назад/вперёд и прямые ссылки на разделы.
   const [activeSection, setActiveSection] = useState(sectionFromHash);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  // Т-509: старт агентного диалога из раздела «Агенты». Объект меняется
+  // целиком (со счётчиком), поэтому повторный клик по тому же профилю
+  // снова переключает чат на новый диалог.
+  const [agentStart, setAgentStart] = useState<AgentStartRequest | null>(null);
+
+  const handleStartAgentDialog = useCallback((profileId: string | null) => {
+    setAgentStart((prev) => ({ profileId, nonce: (prev?.nonce ?? 0) + 1 }));
+    setSelectedTraceId(null);
+    setActiveSection("chat");
+  }, []);
 
   const visibleItems = useMemo(
     () => navItems.filter((item) => isNavVisible(item, capabilities)),
@@ -79,7 +90,10 @@ export function AppLayout({
 
   const renderContent = () => {
     if (activeSection === "chat") {
-      return <ChatPage />;
+      return <ChatPage agentStart={agentStart} />;
+    }
+    if (activeSection === "agents") {
+      return <AgentProfilesPage onStartDialog={handleStartAgentDialog} />;
     }
     if (activeSection === "providers") {
       return <ProvidersPage />;

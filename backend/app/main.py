@@ -197,6 +197,7 @@ def create_app() -> FastAPI:
 
     from app.api.health import router as health_router
     from app.api.routes import (
+        agent_profiles_router,
         agent_router,
         analytics_router,
         audit_router,
@@ -230,6 +231,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(agent_router)
+    app.include_router(agent_profiles_router)
     app.include_router(analytics_router)
     app.include_router(audit_router)
     app.include_router(chat_router)

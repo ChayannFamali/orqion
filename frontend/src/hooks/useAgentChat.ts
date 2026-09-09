@@ -32,10 +32,15 @@ interface UseAgentChatResult {
   pendingConfirmation: PendingConfirmation | null;
   /** Инструменты выбранного скилла, недоступные в этом прогоне (Т-508) */
   skillToolsUnavailable: string[];
+  /** Прогон завершён остановкой по запросу пользователя (Т-509, решение 7) */
+  stopped: boolean;
   /** Запустить прогон */
   send: (params: {
     messages: ChatMessage[];
-    modelAlias: string;
+    /** Алиас модели для ad-hoc прогона; при профиле — null (модель фиксирует профиль) */
+    modelAlias: string | null;
+    /** Профиль агента (Т-509): фиксирует модель и скилл диалога */
+    agentProfileId?: string | null;
     conversationId?: string | null;
     corpusNames?: string[] | null;
     skillId?: string | null;
@@ -54,9 +59,15 @@ interface UseAgentChatResult {
  * подтверждения, клиент показывает карточку решения и отправляет его
  * следующим запросом вместе с тем же буфером сообщений.
  * Скилл (Т-508): выбор приходит на каждый запрос (``skillId``), а не
- * хранится на диалоге, — так профиль агента из Т-509 сможет подставлять
- * свой скилл в то же поле. Сервер отвечает списком инструментов скилла,
- * недоступных в этом прогоне (``skillToolsUnavailable``).
+ * хранится на диалоге. Профиль агента (Т-509) задаёт модель и скилл на
+ * сервере — при выбранном профиле клиент не отправляет ни ``modelAlias``,
+ * ни ``skillId``: переопределение конфигурации профиля — явный отказ 400,
+ * а не молчаливое игнорирование полей.
+ * Остановка (Т-509, решение 7): запрос ``POST /api/conversations/{id}/stop``
+ * ставит на сервере флаг, который цикл проверяет между шагами, поэтому
+ * ответ приходит с ``type="stopped"`` — прогон завершён штатно, расход
+ * выполненных шагов сохранён. Отличается от ``abort()``: тот обрывает fetch
+ * на клиенте, не доходя до сервера.
  */
 export function useAgentChat(): UseAgentChatResult {
   const [isRunning, setIsRunning] = useState(false);
@@ -68,6 +79,7 @@ export function useAgentChat(): UseAgentChatResult {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [skillToolsUnavailable, setSkillToolsUnavailable] = useState<string[]>([]);
+  const [stopped, setStopped] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const abort = useCallback(() => {
@@ -82,6 +94,7 @@ export function useAgentChat(): UseAgentChatResult {
     ({
       messages,
       modelAlias,
+      agentProfileId,
       conversationId: convId,
       corpusNames,
       skillId,
@@ -94,6 +107,7 @@ export function useAgentChat(): UseAgentChatResult {
       setSources(null);
       setUnavailableReason(null);
       setSkillToolsUnavailable([]);
+      setStopped(false);
       setIsRunning(true);
 
       const controller = new AbortController();
@@ -104,10 +118,14 @@ export function useAgentChat(): UseAgentChatResult {
           const result = await agentChat(
             {
               messages,
-              model_alias: modelAlias,
+              // Профиль фиксирует модель и скилл (решение 2): при выбранном
+              // профиле эти поля не отправляются вовсе — иначе сервер
+              // отвечает 400 agent_profile_conflict.
+              model_alias: agentProfileId ? null : modelAlias,
+              agent_profile_id: agentProfileId ?? null,
               conversation_id: convId ?? null,
               corpus_names: corpusNames && corpusNames.length > 0 ? corpusNames : null,
-              skill_id: skillId ?? null,
+              skill_id: agentProfileId ? null : (skillId ?? null),
               confirmation_decision: confirmation?.decision ?? null,
               confirmation: confirmation?.pending ?? null,
             },
@@ -133,6 +151,10 @@ export function useAgentChat(): UseAgentChatResult {
           setConversationId(result.conversation_id ?? null);
           setPendingConfirmation(result.pending_confirmation ?? null);
           setSkillToolsUnavailable(result.skill_tools_unavailable ?? []);
+          // Остановка по запросу (решение 7) — штатное завершение прогона,
+          // не ошибка: ответ и шаги сохраняются, лента показывает, чем
+          // прогон закончился.
+          setStopped(result.type === "stopped");
           onDone?.(result.content, null);
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
@@ -163,6 +185,7 @@ export function useAgentChat(): UseAgentChatResult {
     conversationId,
     pendingConfirmation,
     skillToolsUnavailable,
+    stopped,
     send,
     abort,
   };

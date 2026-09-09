@@ -298,6 +298,52 @@ class AgentSkill(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class AgentProfile(Base, IdMixin, TimestampMixin, WorkspaceMixin):
+    """Профиль агента — переиспользуемая конфигурация диалога (Т-509).
+
+    Решение 1 мини-дизайн-ревью: профиль — это **модель + скилл**, и
+    больше ничего. Отдельного поля системного промпта и отдельного
+    списка инструментов в профиле НЕТ: эту роль полностью выполняет
+    ``AgentSkill`` (Т-508), и заводить вторую сущность
+    «промпт + инструменты» рядом с первой значит плодить два источника
+    правды для одного поведения. Профиль без ``skill_id`` — агент без
+    сужения, то есть сегодняшний ad-hoc агентный диалог.
+
+    Решение 2: модель и скилл фиксированы профилем, диалог, созданный от
+    профиля, их не переопределяет (аналог ``Corpus.pinned_model_id``).
+    Нужно другое сочетание — создаётся другой профиль.
+
+    Решение 9: ad-hoc режим сохраняется — ``Conversation.agent_profile_id``
+    пустой у диалога, созданного ручным выбором модели и скилла.
+    """
+
+    __tablename__ = "agent_profile"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_agent_profile_workspace_name"),
+    )
+
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    model_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("model.id"),
+        nullable=False,
+    )
+    skill_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_skill.id"),
+        nullable=True,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Nullable с ondelete="SET NULL" по паттерну User.team_id: удаление
+    # учётной записи не блокируется профилями.
+    created_by: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
 class RoutingRule(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Правило маршрутизации. arch.md §7.2, S-12.
 
@@ -343,6 +389,21 @@ class Conversation(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     # агентный модуль — отдельная карточка (решение 10 дизайн-ревью),
     # обычный чат поведение не меняет.
     mode: Mapped[str] = mapped_column(String(10), nullable=False, default="chat")
+    # Т-509 (решение 2): профиль агента фиксирует модель и скилл диалога —
+    # аналог Corpus.pinned_model_id. Пустой у ad-hoc агентного диалога и у
+    # обычного чата (решение 9 — ad-hoc путь сохраняется).
+    agent_profile_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("agent_profile.id"),
+        nullable=True,
+        index=True,
+    )
+    # Т-509 (решение 7): запрос остановки прогона. Поле общее для ЛЮБОГО
+    # агентного диалога, не только профильного: цикл проверяет флаг между
+    # шагами и не обрывает текущий вызов модели или инструмента.
+    stop_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     last_activity_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

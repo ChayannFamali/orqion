@@ -20,11 +20,12 @@ from app.api.schemas.conversation import (
     MessageResponse,
     MessageSearchResult,
 )
+from app.audit.service import write_audit
 from app.auth.dependencies import current_user
 from app.db.base import _utcnow
 from app.db.models import Conversation, Message, User
 from app.db.session import get_session
-from app.errors import FeatureNotSupported, NotFound
+from app.errors import BadRequest, FeatureNotSupported, NotFound
 
 router = APIRouter(
     prefix="/api/conversations", tags=["conversations"], dependencies=[Depends(current_user)]
@@ -40,6 +41,8 @@ def _conversation_to_response(
         title=conv.title,
         archived=conv.archived,
         mode=conv.mode,
+        agent_profile_id=conv.agent_profile_id,
+        stop_requested=conv.stop_requested,
         created_at=conv.created_at,
         message_count=message_count,
         context_reset_at=conv.context_reset_at,
@@ -127,6 +130,8 @@ async def create_conversation(
         title=conv.title,
         archived=conv.archived,
         mode=conv.mode,
+        agent_profile_id=conv.agent_profile_id,
+        stop_requested=conv.stop_requested,
         created_at=conv.created_at,
         message_count=0,
         context_reset_at=conv.context_reset_at,
@@ -206,6 +211,8 @@ async def get_conversation(
         title=conv.title,
         archived=conv.archived,
         mode=conv.mode,
+        agent_profile_id=conv.agent_profile_id,
+        stop_requested=conv.stop_requested,
         created_at=conv.created_at,
         message_count=len(conv.messages),
         context_reset_at=conv.context_reset_at,
@@ -281,6 +288,72 @@ async def reset_context(
     await session.refresh(conv)
     # message_count=0 — прецедент PATCH: клиент рефетчит детали сам
     # (иначе потребовалась бы загрузка сообщений в ответе).
+    return _conversation_to_response(conv, 0)
+
+
+@router.post("/{conversation_id}/stop", response_model=ConversationResponse)
+async def stop_conversation(
+    conversation_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ConversationResponse:
+    """Запрос остановки агентного прогона (Т-509, решение 7). Только свои.
+
+    Ставит ``stop_requested=true`` и отвечает немедленно: цикл проверяет
+    флаг МЕЖДУ шагами и не обрывает текущий вызов модели или инструмента
+    (оборванный вызов внешнего сервера мог уже начать действие, а
+    оборванный вызов модели оставил бы оплаченный расход без результата).
+    Поэтому ответ — «запрос принят», а не «прогон остановлен»: факт
+    остановки фиксирует сам прогон записью
+    ``agent.conversation.stopped``.
+
+    Флаг общий для любого агентного диалога, профильного или ad-hoc:
+    останавливают длинный прогон, а не конкретную конфигурацию. Диалогу
+    обычного чата нечего останавливать — явный 400 вместо принятого
+    впустую запроса.
+    """
+    workspace_id = request.app.state.workspace_id
+    result = await session.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.workspace_id == workspace_id,
+            Conversation.user_id == user.id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        raise NotFound(
+            constraint={"object": "conversation", "id": conversation_id},
+            hint="Диалог не найден",
+        )
+    if conv.mode != "agent":
+        raise BadRequest(
+            "Диалог не в агентном режиме: прогон не выполняется",
+            constraint={"mode": conv.mode},
+            hint="Остановка доступна для агентных диалогов",
+        )
+
+    already_requested = conv.stop_requested
+    conv.stop_requested = True
+    await session.flush()
+    if not already_requested:
+        # Дуальный аудит (решение 7): запрос остановки — событие
+        # ``stop_requested``, факт остановки пишет прогон. Повторное
+        # нажатие записи не плодит (паттерн no-op в скиллах, Т-508).
+        await write_audit(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            action="agent.conversation.stop_requested",
+            object_type="conversation",
+            object_id=conv.id,
+            meta={"agent_profile_id": conv.agent_profile_id},
+        )
+    await session.commit()
+    await session.refresh(conv)
+    # message_count=0 — прецедент PATCH и сброса контекста: клиент
+    # перечитывает детали сам.
     return _conversation_to_response(conv, 0)
 
 

@@ -53,6 +53,22 @@ export async function apiResetConversationContext(id: string): Promise<Conversat
   });
 }
 
+/**
+ * Т-509 (решение 7): запрос остановки агентного прогона.
+ *
+ * Ставит на сервере флаг `stop_requested`; цикл проверяет его МЕЖДУ
+ * шагами и не обрывает текущий вызов модели или инструмента. Поэтому
+ * ответ — «запрос принят», а не «прогон остановлен»: факт остановки
+ * фиксирует сам прогон. Отличается от клиентского `abort()` (обрыв
+ * fetch): остановка доходит до сервера и завершает прогон штатно,
+ * сохраняя расход выполненных шагов.
+ */
+export async function apiStopConversation(id: string): Promise<ConversationResponse> {
+  return apiFetch<ConversationResponse>(`/api/conversations/${id}/stop`, {
+    method: "POST",
+  });
+}
+
 export interface MessageSearchResult {
   message_id: string;
   conversation_id: string;

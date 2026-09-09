@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     agent_skills_max_per_workspace: int = 50
     skill_prompt_max_chars: int = 8192
 
+    # Профили агентов — переиспользуемые конфигурации диалога (Т-509).
+    # Лимит по образцу скиллов Т-508: в конфиге, не в интерфейсе.
+    agent_profiles_max_per_workspace: int = 50
+
     # Переформулировка запроса (T-218)
     rag_query_reformulation_enabled: bool = False
     rag_reformulation_model_alias: str = ""

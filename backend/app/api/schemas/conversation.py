@@ -24,6 +24,11 @@ class ConversationResponse(BaseModel):
     archived: bool
     # Т-502: режим разговора — "chat" или "agent" (агентный диалог).
     mode: str = "chat"
+    # Т-509 (решение 2): профиль, зафиксировавший модель и скилл диалога.
+    # Пустой у ad-hoc агентного диалога и у обычного чата.
+    agent_profile_id: str | None = None
+    # Т-509 (решение 7): запрошена ли остановка прогона.
+    stop_requested: bool = False
     created_at: datetime
     message_count: int = 0
     # T-442: маркер мягкого сброса контекста (до этой отметки история

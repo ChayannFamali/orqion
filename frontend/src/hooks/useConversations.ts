@@ -6,6 +6,7 @@ import {
   apiUpdateConversation,
   apiDeleteConversation,
   apiResetConversationContext,
+  apiStopConversation,
 } from "../api/conversations";
 import { queryKeys } from "../api/query-keys";
 
@@ -73,5 +74,19 @@ export function useResetConversationContext() {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
+  });
+}
+
+/**
+ * Т-509 (решение 7): запрос остановки агентного прогона.
+ *
+ * Мутация только отправляет запрос — сервер ставит флаг, а завершает
+ * прогон сам цикл между шагами. Инвалидация деталей не нужна: факт
+ * остановки приходит в ответе прогона (`type="stopped"`), а флаг сервер
+ * потребляет, поэтому перечитывать его бессмысленно.
+ */
+export function useStopConversation() {
+  return useMutation({
+    mutationFn: (id: string) => apiStopConversation(id),
   });
 }

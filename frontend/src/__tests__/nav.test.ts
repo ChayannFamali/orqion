@@ -4,32 +4,39 @@ import { navItems, isNavVisible } from "../lib/nav";
 describe("isNavVisible", () => {
   it("shows items without capability requirement when capabilities is empty", () => {
     const visible = navItems.filter((item) => isNavVisible(item, []));
-    expect(visible.map((i) => i.key)).toEqual(["chat", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings"]);
   });
 
   it("shows only chat and settings for support-level capabilities", () => {
     const visible = navItems.filter((item) => isNavVisible(item, ["chat"]));
-    expect(visible.map((i) => i.key)).toEqual(["chat", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings"]);
   });
 
   it("shows chat, corpora and settings for architect-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "manage_corpora", "share"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "corpora", "settings"]);
   });
 
   it("shows chat, corpora, analytics and settings for manager-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "view_analytics"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "corpora", "analytics", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual([
+      "chat",
+      "agents",
+      "corpora",
+      "analytics",
+      "settings",
+    ]);
   });
 
   it("shows all items for admin wildcard capabilities", () => {
     const visible = navItems.filter((item) => isNavVisible(item, ["*"]));
     expect(visible.map((i) => i.key)).toEqual([
       "chat",
+      "agents",
       "corpora",
       "traces",
       "analytics",
@@ -91,13 +98,30 @@ describe("isNavVisible", () => {
     expect(isNavVisible(item, [])).toBe(false);
   });
 
-  it("Т-508: раздел называется «Скиллы», а не «Агенты» (зарезервировано Т-509)", () => {
-    const item = navItems.find((i) => i.key === "skills")!;
-    expect(item.label).toBe("Скиллы");
-    expect(navItems.some((i) => i.label === "Агенты")).toBe(false);
-    // Скиллы идут сразу за серверами инструментов — оба агентных раздела рядом.
+  it("Т-508/Т-509: «Скиллы» и «Агенты» — два разных раздела", () => {
+    const skills = navItems.find((i) => i.key === "skills")!;
+    expect(skills.label).toBe("Скиллы");
+    // Скиллы идут сразу за серверами инструментов — оба админских раздела
+    // агентной линии рядом.
     const keys = navItems.map((i) => i.key);
     expect(keys.indexOf("skills")).toBe(keys.indexOf("mcp-servers") + 1);
+    // Раздел профилей агентов реализован (Т-509) и не совпадает со скиллами.
+    expect(keys.indexOf("agents")).not.toBe(keys.indexOf("skills"));
+  });
+
+  it("Т-509: раздел «Агенты» виден всем аутентифицированным", () => {
+    const item = navItems.find((i) => i.key === "agents")!;
+    expect(item.label).toBe("Агенты");
+    // Старт диалога от профиля — не админское действие, поэтому у раздела нет
+    // требования к способности; управление профилями гейтится на сервере и
+    // внутри раздела.
+    expect(item.capability).toBeUndefined();
+    expect(isNavVisible(item, [])).toBe(true);
+    expect(isNavVisible(item, ["chat"])).toBe(true);
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    // Раздел стоит сразу за чатом: это вторая точка входа в диалог.
+    const keys = navItems.map((i) => i.key);
+    expect(keys.indexOf("agents")).toBe(keys.indexOf("chat") + 1);
   });
 
   it("T-506: настройки — последний раздел, видны всем без права", () => {

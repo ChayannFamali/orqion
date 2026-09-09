@@ -230,6 +230,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Profiles
+         * @description Админский каталог: все профили рабочей области, включая отключённые.
+         */
+        get: operations["list_agent_profiles_api_agent_profiles_get"];
+        put?: never;
+        /** Create Agent Profile */
+        post: operations["create_agent_profile_api_agent_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-profiles/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Available Agent Profiles
+         * @description Список для старта диалога: только включённые, только поля выбора.
+         */
+        get: operations["list_available_agent_profiles_api_agent_profiles_available_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Agent Profile
+         * @description Правка профиля.
+         *
+         *     Решение 2: модель и скилл зафиксированы профилем, поэтому их смена
+         *     меняет поведение ВСЕХ существующих диалогов профиля — это не скрытый
+         *     побочный эффект, а смысл поля: диалог ссылается на профиль, а не
+         *     хранит копию конфигурации. Факт смены остаётся в журнале аудита.
+         */
+        put: operations["update_agent_profile_api_agent_profiles__profile_id__put"];
+        post?: never;
+        /**
+         * Delete Agent Profile
+         * @description Удаление профиля из каталога.
+         *
+         *     Решение 8: при наличии диалогов с этим ``agent_profile_id`` — 409, не
+         *     каскад. Диалог без профиля потерял бы зафиксированную конфигурацию и
+         *     молча продолжился бы как ad-hoc; удаление диалогов вместе с профилем
+         *     уничтожило бы чужую переписку и расход админским действием. Основной
+         *     путь «убрать из выбора» — ``enabled=false``.
+         */
+        delete: operations["delete_agent_profile_api_agent_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-profiles/{profile_id}/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Profile Conversations
+         * @description Диалоги профиля: метаданные и расход, без содержимого переписки.
+         *
+         *     Решение 5 — двух вариантов охвата ровно два, третьего не дано: без
+         *     ``manage_agents`` в выдачу попадают только собственные диалоги
+         *     пользователя, с правом — все диалоги рабочей области, но теми же
+         *     полями метаданных. Право не расширяет состав полей, только охват
+         *     строк.
+         */
+        get: operations["list_agent_profile_conversations_api_agent_profiles__profile_id__conversations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics": {
         parameters: {
             query?: never;
@@ -513,6 +615,39 @@ export interface paths {
          *     Бюджет и RAG-параметры запроса сброс не затрагивает.
          */
         post: operations["reset_context_api_conversations__conversation_id__reset_context_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{conversation_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Conversation
+         * @description Запрос остановки агентного прогона (Т-509, решение 7). Только свои.
+         *
+         *     Ставит ``stop_requested=true`` и отвечает немедленно: цикл проверяет
+         *     флаг МЕЖДУ шагами и не обрывает текущий вызов модели или инструмента
+         *     (оборванный вызов внешнего сервера мог уже начать действие, а
+         *     оборванный вызов модели оставил бы оплаченный расход без результата).
+         *     Поэтому ответ — «запрос принят», а не «прогон остановлен»: факт
+         *     остановки фиксирует сам прогон записью
+         *     ``agent.conversation.stopped``.
+         *
+         *     Флаг общий для любого агентного диалога, профильного или ad-hoc:
+         *     останавливают длинный прогон, а не конкретную конфигурацию. Диалогу
+         *     обычного чата нечего останавливать — явный 400 вместо принятого
+         *     впустую запроса.
+         */
+        post: operations["stop_conversation_api_conversations__conversation_id__stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1576,6 +1711,13 @@ export interface components {
          *     которых администратор включил флаг ``supports_tools`` (решение 3).
          *     ``messages`` — буфер диалога, как в обычном чате (клиент управляет
          *     историей); последнее сообщение — вопрос пользователя.
+         *
+         *     Профиль агента (Т-509, решение 2) — второй способ задать
+         *     конфигурацию прогона: он фиксирует модель и скилл, поэтому при
+         *     выбранном профиле поля ``model_alias`` и ``skill_id`` в запросе
+         *     запрещены (переопределение — явный отказ, а не молчаливое
+         *     игнорирование). Диалог, уже созданный от профиля, продолжает его:
+         *     профиль берётся с диалога, а не из запроса.
          */
         AgentChatRequest: {
             /** Conversation Id */
@@ -1583,7 +1725,9 @@ export interface components {
             /** Messages */
             messages: components["schemas"]["ChatMessage"][];
             /** Model Alias */
-            model_alias: string;
+            model_alias?: string | null;
+            /** Agent Profile Id */
+            agent_profile_id?: string | null;
             /** Corpus Names */
             corpus_names?: string[] | null;
             /** Max Tokens */
@@ -1600,6 +1744,10 @@ export interface components {
          *
          *     Честная деградация (паттерн Т-444/Т-505): без дополнения
          *     ``orqion[agent]`` — 200 с ``available=false`` и явной причиной.
+         *
+         *     ``type``: ``complete`` — прогон дошёл до финального ответа;
+         *     ``stopped`` — прогон остановлен по запросу пользователя между шагами
+         *     (Т-509, решение 7); ``error`` — исчерпан лимит прогона.
          */
         AgentChatResponse: {
             /**
@@ -1650,6 +1798,161 @@ export interface components {
             } | null;
             /** Hint */
             hint?: string | null;
+        };
+        /** AgentProfileAvailableListResponse */
+        AgentProfileAvailableListResponse: {
+            /** Profiles */
+            profiles: components["schemas"]["AgentProfileAvailableResponse"][];
+        };
+        /**
+         * AgentProfileAvailableResponse
+         * @description Список для выбора при старте диалога: только нужное для выбора.
+         */
+        AgentProfileAvailableResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
+        /**
+         * AgentProfileConversationEntry
+         * @description Диалог профиля в drill-down: метаданные и расход, без переписки.
+         *
+         *     Расход — агрегат существующего ``usage_event.conversation_id``
+         *     (решение 5): новая таблица накопления не заводится.
+         */
+        AgentProfileConversationEntry: {
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Title */
+            title: string | null;
+            /** Archived */
+            archived: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /**
+             * Requests
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Tokens In
+             * @default 0
+             */
+            tokens_in: number;
+            /**
+             * Tokens Out
+             * @default 0
+             */
+            tokens_out: number;
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+        };
+        /** AgentProfileConversationListResponse */
+        AgentProfileConversationListResponse: {
+            /** Conversations */
+            conversations: components["schemas"]["AgentProfileConversationEntry"][];
+            /** Total */
+            total: number;
+            /** Scope */
+            scope: string;
+        };
+        /** AgentProfileCreate */
+        AgentProfileCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Model Id */
+            model_id: string;
+            /** Skill Id */
+            skill_id?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** AgentProfileDeleteResponse */
+        AgentProfileDeleteResponse: {
+            /** Deleted */
+            deleted: boolean;
+        };
+        /** AgentProfileListResponse */
+        AgentProfileListResponse: {
+            /** Profiles */
+            profiles: components["schemas"]["AgentProfileResponse"][];
+        };
+        /**
+         * AgentProfileResponse
+         * @description Админский каталог: полные поля, включая отключённые профили.
+         */
+        AgentProfileResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Model Id */
+            model_id: string;
+            /** Model Alias */
+            model_alias: string;
+            /** Skill Id */
+            skill_id: string | null;
+            /** Skill Name */
+            skill_name: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AgentProfileUpdate
+         * @description Полная замена полей профиля (по образцу скиллов, Т-508).
+         *
+         *     Имя переименовывать можно: оно отображаемое, ссылкой служит
+         *     ``agent_profile_id`` на диалоге, поэтому переименование не меняет ни
+         *     записей аудита, ни привязки существующих диалогов.
+         */
+        AgentProfileUpdate: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Model Id */
+            model_id: string;
+            /** Skill Id */
+            skill_id?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /**
          * AgentStepEntry
@@ -1998,6 +2301,13 @@ export interface components {
              * @default chat
              */
             mode: string;
+            /** Agent Profile Id */
+            agent_profile_id?: string | null;
+            /**
+             * Stop Requested
+             * @default false
+             */
+            stop_requested: boolean;
             /**
              * Created At
              * Format: date-time
@@ -2036,6 +2346,13 @@ export interface components {
              * @default chat
              */
             mode: string;
+            /** Agent Profile Id */
+            agent_profile_id?: string | null;
+            /**
+             * Stop Requested
+             * @default false
+             */
+            stop_requested: boolean;
             /**
              * Created At
              * Format: date-time
@@ -3830,6 +4147,179 @@ export interface operations {
             };
         };
     };
+    list_agent_profiles_api_agent_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileListResponse"];
+                };
+            };
+        };
+    };
+    create_agent_profile_api_agent_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_available_agent_profiles_api_agent_profiles_available_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileAvailableListResponse"];
+                };
+            };
+        };
+    };
+    update_agent_profile_api_agent_profiles__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_profile_api_agent_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileDeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_profile_conversations_api_agent_profiles__profile_id__conversations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileConversationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_analytics_api_analytics_get: {
         parameters: {
             query?: {
@@ -4317,6 +4807,37 @@ export interface operations {
         };
     };
     reset_context_api_conversations__conversation_id__reset_context_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_conversation_api_conversations__conversation_id__stop_post: {
         parameters: {
             query?: never;
             header?: never;
