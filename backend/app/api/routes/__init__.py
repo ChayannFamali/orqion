@@ -26,6 +26,7 @@ from app.api.routes.routing import router as routing_router
 from app.api.routes.skills import router as skills_router
 from app.api.routes.traces import router as traces_router
 from app.api.routes.users import router as users_router
+from app.api.routes.workspace_settings import router as workspace_settings_router
 
 __all__ = [
     "agent_profiles_router",
@@ -54,4 +55,5 @@ __all__ = [
     "skills_router",
     "traces_router",
     "users_router",
+    "workspace_settings_router",
 ]

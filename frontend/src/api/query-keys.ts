@@ -90,4 +90,7 @@ export const queryKeys = {
     conversations: (profileId: string) =>
       ["agent-profiles", profileId, "conversations"] as const,
   },
+  workspaceSettings: {
+    all: ["workspace-settings"] as const,
+  },
 } as const;

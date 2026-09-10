@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, select
@@ -142,5 +143,64 @@ def test_usage_event_insert_after_migration(tmp_path: Path) -> None:
         result = session.execute(select(UsageEvent).where(UsageEvent.id == usage.id))
         saved = result.scalar_one()
         assert saved.created_at is not None
+
+    engine.dispose()
+
+
+def test_workspace_setting_insert_after_migration(tmp_path: Path) -> None:
+    """Строка настройки в БД из миграций: JSON-значение и составной PK.
+
+    Проверяет то, что даёт именно миграция, а не create_all: PK в схеме —
+    пара колонок, и вторая запись того же ключа отвергается самой базой.
+    Дубликат вставляется в отдельной сессии, чтобы в отказе не было вклада
+    identity map первой сессии.
+    """
+    from app.db.models import Workspace, WorkspaceSetting
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    db_url = f"sqlite:///{tmp_path}/migrate_settings_test.db"
+    config = _make_config(db_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(db_url)
+    with Session(engine) as session:
+        pk_columns = {
+            row[1]
+            for row in session.execute(text("PRAGMA table_info(workspace_settings)"))
+            if row[5] > 0
+        }
+        assert pk_columns == {"workspace_id", "key"}
+
+        ws = Workspace(name="test-ws")
+        session.add(ws)
+        session.flush()
+
+        setting = WorkspaceSetting(
+            workspace_id=ws.id,
+            key="probe_key",
+            value={"nested": [1, 2, 3], "flag": True},
+            updated_at=datetime.now(UTC),
+        )
+        session.add(setting)
+        session.commit()
+
+        saved = session.execute(
+            select(WorkspaceSetting).where(WorkspaceSetting.key == "probe_key")
+        ).scalar_one()
+        assert saved.value == {"nested": [1, 2, 3], "flag": True}
+        assert saved.updated_by is None
+        workspace_id = ws.id
+
+    with Session(engine) as other, pytest.raises(IntegrityError):
+        other.add(
+            WorkspaceSetting(
+                workspace_id=workspace_id,
+                key="probe_key",
+                value=1,
+                updated_at=datetime.now(UTC),
+            )
+        )
+        other.commit()
 
     engine.dispose()

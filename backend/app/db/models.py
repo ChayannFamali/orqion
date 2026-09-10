@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin, WorkspaceMixin, _utcnow
@@ -53,6 +55,48 @@ class RagSettings(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     relevance_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_fragments: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
     cluster_count: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+
+
+class WorkspaceSetting(Base):
+    """Служебная настройка рабочей области из реестра ``app/settings``.
+
+    Обобщённое хранилище вместо отдельной таблицы под каждую настройку:
+    описание ключей живёт в коде, в БД хранится только факт записи.
+
+    PK составной ``(workspace_id, key)`` — ``IdMixin`` не применяется:
+    личность строки и есть эта пара, она же даёт единственность записи на
+    ключ. ``WorkspaceMixin`` тоже не применяется: он объявляет
+    ``workspace_id`` без ``primary_key``, а переопределение колонки миксина
+    в подклассе декларативная база не допускает; колонка рабочей области
+    объявлена явно.
+
+    ``value`` — JSON с вариантом JSONB на PostgreSQL: в SQLite такого типа
+    нет.
+    """
+
+    __tablename__ = "workspace_settings"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workspace.id"),
+        primary_key=True,
+        index=True,
+    )
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[Any] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
+    updated_by: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
 
 class PromptTemplate(Base, IdMixin, TimestampMixin, WorkspaceMixin):

@@ -132,3 +132,8 @@ export type AgentProfileConversationEntry =
   components["schemas"]["AgentProfileConversationEntry"];
 export type AgentProfileConversationListResponse =
   components["schemas"]["AgentProfileConversationListResponse"];
+/** Реестр служебных настроек рабочей области. */
+export type WorkspaceSettingResponse = components["schemas"]["WorkspaceSettingResponse"];
+export type WorkspaceSettingListResponse =
+  components["schemas"]["WorkspaceSettingListResponse"];
+export type WorkspaceSettingUpdate = components["schemas"]["WorkspaceSettingUpdate"];

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRagSettings, useUpdateRagSettings } from "../hooks/useRagSettings";
@@ -8,22 +8,31 @@ import {
   usePromptTemplates,
   useUpdatePromptTemplate,
 } from "../hooks/usePromptTemplates";
+import {
+  useUpdateWorkspaceSetting,
+  useWorkspaceSettings,
+} from "../hooks/useWorkspaceSettings";
+import { SettingField, type SettingValue } from "../components/SettingField";
+import type { ApiError } from "../api/runtime";
+import type { WorkspaceSettingResponse } from "../api/types";
 
 /**
- * T-506/T-507: общие настройки.
+ * Общие настройки рабочей области.
  *
  * Вкладки:
- * - «Поиск по документам» (Т-506) — видна всем; право на изменение —
+ * - «Поиск по документам» — видна всем; право на изменение —
  *   `manage_corpora` (без него поля только для чтения).
- * - «Шаблоны промптов» (Т-507) — видна только со способностью
- *   `custom_prompts`; шаблоны личные, CRUD только у владельца.
+ * - «Общие» — реестр служебных настроек; видна всем, право на изменение
+ *   каждого ключа приходит из API отдельно (поле `editable`).
+ * - «Шаблоны промптов» — видна только со способностью `custom_prompts`;
+ *   шаблоны личные, CRUD только у владельца.
  *
  * Отдельный раздел, не смешивается с диагностикой окружения.
  */
 export function SettingsPage({ capabilities }: { capabilities: string[] }) {
   const canManage = capabilities.includes("*") || capabilities.includes("manage_corpora");
   const canPrompts = capabilities.includes("*") || capabilities.includes("custom_prompts");
-  const [tab, setTab] = useState<"search" | "prompts">("search");
+  const [tab, setTab] = useState<"search" | "general" | "prompts">("search");
 
   const tabClass = (active: boolean) =>
     "border-b-2 px-1 pb-2 text-sm font-medium " +
@@ -45,6 +54,14 @@ export function SettingsPage({ capabilities }: { capabilities: string[] }) {
           >
             Поиск по документам
           </button>
+          <button
+            type="button"
+            className={tabClass(tab === "general")}
+            onClick={() => setTab("general")}
+            data-testid="settings-tab-general"
+          >
+            Общие
+          </button>
           {canPrompts && (
             <button
               type="button"
@@ -59,9 +76,122 @@ export function SettingsPage({ capabilities }: { capabilities: string[] }) {
 
         {tab === "search" ? (
           <RagSearchSettings canManage={canManage} />
+        ) : tab === "general" ? (
+          <WorkspaceSettingsTab />
         ) : (
           <PromptTemplatesSettings />
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Вкладка реестра служебных настроек.
+ *
+ * Состав вкладки целиком определяется ответом API: категории становятся
+ * подвкладками, поля рисуются по описанию типа. Список категорий нигде не
+ * задан в коде, поэтому новый ключ в реестре появляется здесь сам.
+ */
+function WorkspaceSettingsTab() {
+  const { data, isLoading, isError } = useWorkspaceSettings();
+  const updateMutation = useUpdateWorkspaceSetting();
+  const [errorByKey, setErrorByKey] = useState<Record<string, string | null>>({});
+  const [category, setCategory] = useState<string | null>(null);
+
+  const categories = useMemo(
+    () => (data ? [...new Set(data.settings.map((item) => item.category))] : []),
+    [data],
+  );
+  const activeCategory = category ?? categories[0] ?? null;
+  const shown = useMemo(
+    () => (data ? data.settings.filter((item) => item.category === activeCategory) : []),
+    [data, activeCategory],
+  );
+
+  const handleCommit = (key: string, value: SettingValue) => {
+    setErrorByKey((prev) => ({ ...prev, [key]: null }));
+    updateMutation.mutate(
+      { key, value },
+      {
+        onSuccess: () => toast.success("Настройка сохранена"),
+        onError: (err) => {
+          // Ошибка API приходит плоским объектом, а не экземпляром Error.
+          const apiError = err as unknown as ApiError;
+          const message =
+            apiError.hint ?? apiError.reason ?? "Не удалось сохранить настройку";
+          setErrorByKey((prev) => ({ ...prev, [key]: message }));
+        },
+      },
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-8 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span>Загрузка настроек…</span>
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+        Не удалось загрузить настройки.
+      </div>
+    );
+  }
+
+  if (data.settings.length === 0) {
+    return (
+      <div
+        className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+        data-testid="workspace-settings-empty"
+      >
+        Настроек пока нет.
+      </div>
+    );
+  }
+
+  const pendingKey = updateMutation.isPending ? updateMutation.variables?.key : undefined;
+
+  return (
+    <div className="space-y-4">
+      {categories.length > 1 && (
+        <div className="flex flex-wrap gap-2" data-testid="workspace-settings-categories">
+          {categories.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setCategory(item)}
+              data-testid={`workspace-settings-category-${item}`}
+              className={
+                "rounded-md px-3 py-1.5 text-sm " +
+                (item === activeCategory
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border text-muted-foreground hover:bg-accent")
+              }
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-6 rounded-lg border border-border bg-card p-4">
+        {categories.length === 1 && (
+          <h3 className="text-sm font-semibold text-muted-foreground">{activeCategory}</h3>
+        )}
+        {shown.map((setting: WorkspaceSettingResponse) => (
+          <SettingField
+            key={setting.key}
+            setting={setting}
+            error={errorByKey[setting.key] ?? null}
+            pending={pendingKey === setting.key}
+            onCommit={(value) => handleCommit(setting.key, value)}
+          />
+        ))}
       </div>
     </div>
   );

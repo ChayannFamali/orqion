@@ -223,6 +223,7 @@ def create_app() -> FastAPI:
         skills_router,
         traces_router,
         users_router,
+        workspace_settings_router,
     )
 
     # T-437: скачивание моделей (роутер живёт в app.providers — доменный модуль)
@@ -256,6 +257,7 @@ def create_app() -> FastAPI:
     app.include_router(skills_router)
     app.include_router(traces_router)
     app.include_router(users_router)
+    app.include_router(workspace_settings_router)
 
     # T-407: /metrics endpoint — только если metrics_enabled
     from app.config import Settings
