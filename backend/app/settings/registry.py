@@ -21,10 +21,6 @@
 единственного поля ``value`` модели значения. Спека без ни того ни другого
 отвергается при создании: настройка без значения до первой записи
 неотличима от сломанной.
-
-Содержимое реестра пустое: механизм готов, первые ключи приходят
-отдельными задачами. ``GET /api/workspace/settings`` при этом честно
-отдаёт пустой список, а интерфейс показывает «Настроек пока нет».
 """
 
 from __future__ import annotations
@@ -32,7 +28,7 @@ from __future__ import annotations
 from types import NoneType, UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from app.config import Settings
 
@@ -157,6 +153,36 @@ class SettingSpec(BaseModel):
 #: поэтому добавление ключа (в том числе в тесте) подхватывается без
 #: перезапуска и без миграции.
 SETTINGS_REGISTRY: dict[str, SettingSpec] = {}
+
+
+# ---------------------------------------------------------------------------
+# Ключи реестра
+# ---------------------------------------------------------------------------
+
+
+class SessionTtlValue(BaseModel):
+    """Срок жизни сессии в днях."""
+
+    value: int = Field(ge=1, le=365)
+
+
+#: Ключ настройки: срок жизни сессии.
+#:
+#: Имя совпадает с полем env-конфига — так видно, что настройка заменяет
+#: собой статический параметр, а не вводится рядом с ним.
+SESSION_TTL_KEY = "session_ttl_days"
+
+SETTINGS_REGISTRY[SESSION_TTL_KEY] = SettingSpec(
+    key=SESSION_TTL_KEY,
+    title="Срок жизни сессии (дней)",
+    description=(
+        "Через сколько дней вход в систему перестаёт действовать и нужно "
+        "войти заново. Уже выданные сессии не изменяются."
+    ),
+    category="Сессии и безопасность",
+    value_model=SessionTtlValue,
+    default_from_env=SESSION_TTL_KEY,
+)
 
 
 def get_spec(key: str) -> SettingSpec | None:

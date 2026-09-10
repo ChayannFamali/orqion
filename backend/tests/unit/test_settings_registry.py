@@ -11,6 +11,7 @@ from app.config import Settings
 from app.policy.presets import BUILTIN_ROLES
 from app.settings.registry import (
     DEFAULT_WRITE_CAPABILITY,
+    SESSION_TTL_KEY,
     SETTINGS_REGISTRY,
     SettingSpec,
     _is_json_annotation,
@@ -262,6 +263,37 @@ def test_registry_lookup_and_ordering(registry: dict[str, SettingSpec]) -> None:
     assert [spec.key for spec in ordered_specs()] == ["y_key", "z_key", "a_key"]
 
 
-def test_registry_starts_empty() -> None:
-    """Прод-реестр пуст: ключи добавляются отдельными задачами."""
-    assert SETTINGS_REGISTRY == {}
+def test_session_ttl_key_is_registered() -> None:
+    """Первый рабочий ключ реестра: срок жизни сессии."""
+    spec = get_spec(SESSION_TTL_KEY)
+    assert spec is not None
+    assert spec.category == "Сессии и безопасность"
+    assert spec.default_from_env == SESSION_TTL_KEY
+    assert spec.write_capability == DEFAULT_WRITE_CAPABILITY
+    field = describe_value_field(spec)
+    assert field.type == "integer"
+    assert (field.min, field.max) == (1.0, 365.0)
+
+
+def test_every_registered_key_is_presentable() -> None:
+    """У каждого ключа есть что показать в интерфейсе и откуда взять дефолт.
+
+    Проверка идёт по фактическому содержимому реестра, поэтому новый ключ
+    без заголовка, описания, категории или разрешимого дефолта падает здесь,
+    а не пустым полем в интерфейсе.
+    """
+    assert SETTINGS_REGISTRY, "реестр не должен быть пустым"
+    settings = Settings()
+    for key, spec in SETTINGS_REGISTRY.items():
+        assert spec.key == key
+        assert spec.title.strip()
+        assert spec.description.strip()
+        assert spec.category.strip()
+        assert describe_value_field(spec).type in {
+            "integer",
+            "number",
+            "boolean",
+            "string",
+            "enum",
+        }
+        assert default_value(spec, settings) is not None

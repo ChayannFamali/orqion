@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import Session, User
+from app.settings.registry import SESSION_TTL_KEY
+from app.settings.service import read_setting_as
 
 COOKIE_NAME = "orqion_session"
 
@@ -23,11 +25,19 @@ async def create_session(
     """Создаёт сессию, возвращает ID для cookie.
 
     impersonated_by — ID родительской сессии при имперсонации (None для обычной).
+
+    Срок жизни берётся из служебных настроек рабочей области; пока значения
+    там нет, действует ``settings.session_ttl_days``, то есть поведение без
+    записи в БД не меняется. На уже выданные сессии настройка не влияет:
+    срок зафиксирован в ``expires_at`` в момент выдачи.
     """
+    ttl_days = await read_setting_as(
+        session, workspace_id, SESSION_TTL_KEY, int, app_settings=settings
+    )
     record = Session(
         workspace_id=workspace_id,
         user_id=user_id,
-        expires_at=datetime.now(UTC) + timedelta(days=settings.session_ttl_days),
+        expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
         impersonated_by=impersonated_by,
     )
     session.add(record)
