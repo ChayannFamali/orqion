@@ -101,12 +101,27 @@ def _value_hint(field: ValueFieldDescription) -> str:
     return f"Ожидается {kind}"
 
 
+def _validator_messages(exc: ValidationError) -> list[str]:
+    """Сообщения собственных валидаторов модели значения.
+
+    Берутся только они: остальные ошибки pydantic описаны по-английски, а
+    требование к значению пользователь читает на языке интерфейса. Свои
+    валидаторы пишутся сразу по-русски, поэтому показывается их текст.
+    """
+    return [
+        str(error["msg"]).removeprefix("Value error, ")
+        for error in exc.errors()
+        if error.get("type") == "value_error"
+    ]
+
+
 def _validate_value(spec: SettingSpec, raw: Any) -> Any:
     """Проверяет значение моделью спеки; отказ — 422 с требованием в ``hint``."""
     try:
         return coerce_value(spec, raw)
     except ValidationError as exc:
         field = describe_value_field(spec)
+        messages = _validator_messages(exc)
         raise SettingValueInvalid(
             constraint={
                 "key": spec.key,
@@ -115,7 +130,7 @@ def _validate_value(spec: SettingSpec, raw: Any) -> Any:
                 "max": field.max,
                 "enum_values": field.enum_values,
             },
-            hint=_value_hint(field),
+            hint="; ".join(messages) if messages else _value_hint(field),
         ) from exc
 
 

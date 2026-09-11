@@ -6,7 +6,7 @@ Service orchestrates BlobStore + DB, без обращений к БД из ро
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -46,7 +46,7 @@ async def upload_document(
     mime: str,
     content: AsyncIterator[bytes],
     max_size_bytes: int,
-    allowed_extensions: list[str],
+    allowed_extensions: Sequence[str],
     source_type: str = "upload",
 ) -> UploadResult:
     """Загружает документ в корпус.
@@ -138,16 +138,21 @@ async def list_documents(
     return list(result.scalars().all())
 
 
-def _check_extension(filename: str, allowed_extensions: list[str]) -> None:
+def _check_extension(filename: str, allowed_extensions: Sequence[str]) -> None:
     """Проверяет расширение файла по списку разрешённых."""
     lower = filename.lower()
     if not any(lower.endswith(ext) for ext in allowed_extensions):
+        listed = ", ".join(allowed_extensions)
         raise FileTypeNotAllowed(
             constraint={
                 "filename": filename,
-                "allowed_extensions": allowed_extensions,
+                "allowed_extensions": list(allowed_extensions),
             },
-            hint=f"Допустимые расширения: {', '.join(allowed_extensions)}",
+            hint=(
+                f"Допустимые расширения: {listed}"
+                if listed
+                else "Загрузка запрещена: список допустимых расширений пуст"
+            ),
         )
 
 

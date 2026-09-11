@@ -23,7 +23,7 @@ import mimetypes
 import os
 import shutil
 import tempfile
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,31 +34,6 @@ from app.rag.blob import BlobStore
 from app.rag.service import upload_document
 
 logger = logging.getLogger(__name__)
-
-# Объединённый список расширений: документы + код + SQL.
-# index_builder._CODE_EXTENSIONS + _SQL_EXTENSIONS + документы.
-DEFAULT_EXTENSIONS: list[str] = [
-    # Документы
-    ".pdf",
-    ".docx",
-    ".pptx",
-    ".xlsx",
-    ".md",
-    ".txt",
-    # Код (ADR-9: tree-sitter)
-    ".py",
-    ".cpp",
-    ".cc",
-    ".cxx",
-    ".h",
-    ".hpp",
-    ".ts",
-    ".tsx",
-    ".go",
-    ".java",
-    # SQL
-    ".sql",
-]
 
 # Лимит размера клона по умолчанию: 500 MB (рабочее дерево + .git).
 # Защита от случайного клонирования монорепо на несколько GB.
@@ -89,8 +64,8 @@ async def ingest_git_repository(
     workspace_id: str,
     corpus_id: str,
     repo_url: str,
-    allowed_extensions: list[str] | None = None,
-    max_file_size_bytes: int = 50 * 1024 * 1024,
+    allowed_extensions: Iterable[str],
+    max_file_size_bytes: int,
     depth: int = 1,
     clone_timeout_seconds: int = DEFAULT_CLONE_TIMEOUT_SECONDS,
     max_clone_size_mb: int = DEFAULT_MAX_CLONE_SIZE_MB,
@@ -104,15 +79,22 @@ async def ingest_git_repository(
     5. Cleanup временной директории
 
     Args:
+        allowed_extensions: разрешённые расширения, с ведущей точкой.
+        max_file_size_bytes: предел размера одного файла.
         depth: глубина clone. 1 = shallow (только последний commit).
                0 = полная история (не рекомендуется для ingestion).
         clone_timeout_seconds: таймаут на операцию clone.
         max_clone_size_mb: максимальный размер клона (рабочее дерево + .git).
 
+    Оба ограничения намеренно обязательные и без значения по умолчанию:
+    действующие значения знает вызывающий код (настройки рабочей области
+    или явный флаг командной строки), а встроенный список расходился бы с
+    ними молча.
+
     Returns:
         GitIngestResult со статистикой.
     """
-    extensions = allowed_extensions if allowed_extensions is not None else DEFAULT_EXTENSIONS
+    extensions = sorted(allowed_extensions)
     clone_dir: str | None = None
     total = 0
     ingested = 0

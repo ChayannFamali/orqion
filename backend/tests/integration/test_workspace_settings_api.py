@@ -29,7 +29,7 @@ from app.policy.models import Policy
 from app.policy.presets import BUILTIN_ROLES
 from app.settings.registry import SETTINGS_REGISTRY, SettingSpec
 from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 SETTINGS_PATH = "/api/workspace/settings"
@@ -49,6 +49,21 @@ class UploadLimitValue(BaseModel):
 
 class NoteValue(BaseModel):
     value: str = Field(default="", max_length=200)
+
+
+class DottedValue(BaseModel):
+    """Ключ с собственным валидатором: проверка требования к содержанию."""
+
+    value: str = Field(default="", max_length=200)
+
+    @field_validator("value")
+    @classmethod
+    def _check_dotted(cls, raw: str) -> str:
+        items = [item.strip() for item in raw.split(",") if item.strip()]
+        wrong = [item for item in items if not item.startswith(".")]
+        if wrong:
+            raise ValueError(f"элементы указываются с точкой: {', '.join(wrong)}")
+        return raw
 
 
 class ModeValue(BaseModel):
@@ -99,6 +114,14 @@ _SPECS: dict[str, SettingSpec] = {
         "Режим генерации",
         "Модель по умолчанию",
         ModeValue,
+    ),
+    # Ключ с собственным валидатором значения: его требование должно доходить
+    # до пользователя, а не тонуть в общем описании поля.
+    "suffix_list": _spec(
+        "suffix_list",
+        "Список окончаний",
+        "Общие",
+        DottedValue,
     ),
     "compact_sidebar": _spec(
         "compact_sidebar",
@@ -430,6 +453,33 @@ async def test_patch_rejects_unknown_enum_option(
     assert resp.status_code == 422
     hint = resp.json()["hint"]
     assert "fast" in hint and "thorough" in hint
+
+
+@pytest.mark.asyncio
+async def test_patch_hint_shows_own_validator_message(
+    api_client: httpx.AsyncClient, app_fixture: FastAPI
+) -> None:
+    """Собственный валидатор значения важнее общего описания поля."""
+    await _login(api_client, app_fixture)
+
+    resp = await api_client.patch(SETTINGS_PATH, json={"key": "suffix_list", "value": "ab,cd"})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"] == "setting_value_invalid"
+    assert "с точкой" in body["hint"]
+    assert "ab" in body["hint"]
+    assert await _rows(app_fixture) == []
+
+
+@pytest.mark.asyncio
+async def test_patch_accepts_value_own_validator_allows(
+    api_client: httpx.AsyncClient, app_fixture: FastAPI
+) -> None:
+    await _login(api_client, app_fixture)
+
+    resp = await api_client.patch(SETTINGS_PATH, json={"key": "suffix_list", "value": ".ab, .cd"})
+    assert resp.status_code == 200, resp.text[:300]
+    assert resp.json()["value"] == ".ab, .cd"
 
 
 @pytest.mark.asyncio

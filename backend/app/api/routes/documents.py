@@ -25,13 +25,13 @@ from app.api.schemas.document import (
     DocumentResponse,
 )
 from app.auth.dependencies import current_user
-from app.config import Settings
 from app.db.models import Chunk, Corpus, Document, User
 from app.db.session import get_session
 from app.errors import NotFound
 from app.policy.models import WILDCARD
 from app.policy.resolve import resolve_policy
 from app.rag.service import get_document, list_documents, upload_document
+from app.settings.uploads import read_upload_limits
 
 router = APIRouter(
     prefix="/api/corpora",
@@ -168,11 +168,7 @@ async def upload_document_endpoint(
     corpora_patterns = await _resolve_policy_and_check(session, user, require_upload=True)
     await _check_corpus_visibility(session, corpora_patterns, corpus_id, workspace_id)
 
-    settings = Settings()
-    max_size_bytes = settings.max_upload_size_mb * 1024 * 1024
-    allowed_extensions = [
-        ext.strip() for ext in settings.allowed_upload_extensions.split(",") if ext.strip()
-    ]
+    limits = await read_upload_limits(session, workspace_id)
 
     blob_store = request.app.state.blob_store
 
@@ -184,8 +180,8 @@ async def upload_document_endpoint(
         filename=file.filename or "unknown",
         mime=file.content_type or "application/octet-stream",
         content=_file_to_async_iterator(file),
-        max_size_bytes=max_size_bytes,
-        allowed_extensions=allowed_extensions,
+        max_size_bytes=limits.max_file_size_bytes,
+        allowed_extensions=limits.allowed_extensions,
     )
 
     return _to_response(result.document)

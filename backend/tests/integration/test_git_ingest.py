@@ -23,6 +23,11 @@ from app.rag.git_ingest import GitIngestResult, ingest_git_repository
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+#: Ограничения на файл передаются явно: встроенных значений по умолчанию у
+#: ``ingest_git_repository`` нет, действующие знает вызывающий код.
+_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+_ALL_EXTENSIONS = (".csv", ".json", ".md", ".py", ".sql", ".txt")
+
 
 async def _make_workspace(session: AsyncSession) -> str:
     ws = Workspace(name="test")
@@ -99,6 +104,8 @@ async def test_ingest_git_basic(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -150,6 +157,8 @@ async def test_ingest_git_re_run_no_duplicates(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -163,6 +172,8 @@ async def test_ingest_git_re_run_no_duplicates(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -197,6 +208,8 @@ async def test_ingest_git_re_run_with_changes(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -220,6 +233,8 @@ async def test_ingest_git_re_run_with_changes(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -256,6 +271,7 @@ async def test_ingest_git_extension_filter(
         corpus_id=corpus_id,
         repo_url=repo_dir,
         allowed_extensions=[".py", ".md"],
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -300,6 +316,8 @@ async def test_ingest_git_filename_preserves_path(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -343,6 +361,8 @@ async def test_ingest_git_clone_size_limit(
             workspace_id=workspace_id,
             corpus_id=corpus_id,
             repo_url=repo_dir,
+            allowed_extensions=_ALL_EXTENSIONS,
+            max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
             clone_timeout_seconds=30,
             max_clone_size_mb=1,  # 1 MB лимит
         )
@@ -366,6 +386,8 @@ async def test_ingest_git_invalid_url(
             workspace_id=workspace_id,
             corpus_id=corpus_id,
             repo_url="/nonexistent/path/to/repo",
+            allowed_extensions=_ALL_EXTENSIONS,
+            max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
             clone_timeout_seconds=10,
             max_clone_size_mb=100,
         )
@@ -395,6 +417,8 @@ async def test_ingest_git_empty_repo(
             workspace_id=workspace_id,
             corpus_id=corpus_id,
             repo_url=repo_dir,
+            allowed_extensions=_ALL_EXTENSIONS,
+            max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
             clone_timeout_seconds=30,
             max_clone_size_mb=100,
         )
@@ -433,6 +457,8 @@ async def test_ingest_git_result_dataclass(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,
     )
@@ -477,6 +503,8 @@ async def test_ingest_git_shallow_clone_depth(
         workspace_id=workspace_id,
         corpus_id=corpus_id,
         repo_url=repo_dir,
+        allowed_extensions=_ALL_EXTENSIONS,
+        max_file_size_bytes=_MAX_FILE_SIZE_BYTES,
         depth=1,
         clone_timeout_seconds=30,
         max_clone_size_mb=100,

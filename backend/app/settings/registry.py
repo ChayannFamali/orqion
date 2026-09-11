@@ -28,7 +28,7 @@ from __future__ import annotations
 from types import NoneType, UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from app.config import Settings
 
@@ -182,6 +182,81 @@ SETTINGS_REGISTRY[SESSION_TTL_KEY] = SettingSpec(
     category="Сессии и безопасность",
     value_model=SessionTtlValue,
     default_from_env=SESSION_TTL_KEY,
+)
+
+
+#: Верхний предел размера загружаемого файла, МБ.
+#:
+#: Разбор документа держит файл целиком в памяти, поэтому значение выше
+#: этой границы уронило бы сервис исчерпанием памяти. Предел ограничивает
+#: настройку, а не желание оператора: выбрать нерабочее значение нельзя.
+MAX_UPLOAD_SIZE_MB_LIMIT = 1024
+
+#: Предел длины списка расширений в символах.
+EXTENSIONS_MAX_LENGTH = 1024
+
+
+class MaxUploadSizeValue(BaseModel):
+    """Размер одного загружаемого файла в мегабайтах."""
+
+    value: int = Field(ge=1, le=MAX_UPLOAD_SIZE_MB_LIMIT)
+
+
+class AllowedUploadExtensionsValue(BaseModel):
+    """Разрешённые расширения файлов списком через запятую."""
+
+    value: str = Field(max_length=EXTENSIONS_MAX_LENGTH)
+
+    @field_validator(VALUE_FIELD)
+    @classmethod
+    def _check_dotted(cls, raw: str) -> str:
+        """Каждое расширение — с точкой.
+
+        Совпадение проверяется по концу имени файла, поэтому «pdf» без
+        точки не совпало бы ни с одним файлом и выглядело бы как
+        сломавшаяся загрузка, а не как ошибка в списке. Пробелы вокруг
+        элементов списком не считаются.
+        """
+        items = [item.strip() for item in raw.split(",") if item.strip()]
+        wrong = [item for item in items if not item.startswith(".")]
+        if wrong:
+            raise ValueError(f"расширения указываются с точкой: {', '.join(wrong)}")
+        return raw
+
+
+#: Ключ настройки: предел размера загружаемого файла.
+MAX_UPLOAD_SIZE_KEY = "max_upload_size_mb"
+
+#: Ключ настройки: разрешённые расширения загружаемых файлов.
+ALLOWED_UPLOAD_EXTENSIONS_KEY = "allowed_upload_extensions"
+
+#: Категория настроек загрузки: одна вкладка интерфейса на оба ключа.
+FILES_CATEGORY = "Файлы и хранение"
+
+SETTINGS_REGISTRY[MAX_UPLOAD_SIZE_KEY] = SettingSpec(
+    key=MAX_UPLOAD_SIZE_KEY,
+    title="Максимальный размер файла (МБ)",
+    description=(
+        "Предел размера одного загружаемого файла. Действует и на загрузку "
+        "через интерфейс, и на импорт git-репозитория. Верхняя граница не "
+        "произвольная: разбор документа держит файл целиком в памяти."
+    ),
+    category=FILES_CATEGORY,
+    value_model=MaxUploadSizeValue,
+    default_from_env=MAX_UPLOAD_SIZE_KEY,
+)
+
+SETTINGS_REGISTRY[ALLOWED_UPLOAD_EXTENSIONS_KEY] = SettingSpec(
+    key=ALLOWED_UPLOAD_EXTENSIONS_KEY,
+    title="Разрешённые расширения файлов",
+    description=(
+        "Список расширений через запятую, каждое с точкой: .md,.txt,.pdf. "
+        "Действует и на загрузку через интерфейс, и на импорт "
+        "git-репозитория. Пустая строка запрещает загрузку всех файлов."
+    ),
+    category=FILES_CATEGORY,
+    value_model=AllowedUploadExtensionsValue,
+    default_from_env=ALLOWED_UPLOAD_EXTENSIONS_KEY,
 )
 
 

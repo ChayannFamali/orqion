@@ -55,7 +55,7 @@ def main() -> None:
     git_parser.add_argument(
         "--extensions",
         default=None,
-        help="Список расширений через запятую (по умолчанию: .py,.ts,.go,...)",
+        help=("Список расширений через запятую. Если не указан — из настроек рабочей области."),
     )
     git_parser.add_argument(
         "--depth",
@@ -78,8 +78,10 @@ def main() -> None:
     git_parser.add_argument(
         "--max-file-size",
         type=int,
-        default=50,
-        help="Максимальный размер одного файла в MB (default: 50)",
+        default=None,
+        help=(
+            "Максимальный размер одного файла в MB. Если не указан — из настроек рабочей области."
+        ),
     )
     git_parser.add_argument(
         "--build-index",
@@ -300,7 +302,7 @@ async def _run_ingest_git(
     depth: int,
     clone_timeout: int,
     max_clone_size: int,
-    max_file_size: int,
+    max_file_size: int | None,
     build_index: bool,
 ) -> None:
     """Индексирует git-репозиторий: clone → upload_document → (опц.) build_index."""
@@ -312,7 +314,8 @@ async def _run_ingest_git(
     from app.db.models import Corpus
     from app.db.workspace import ensure_default_workspace
     from app.rag.blob import LocalBlobStore
-    from app.rag.git_ingest import DEFAULT_EXTENSIONS, ingest_git_repository
+    from app.rag.git_ingest import ingest_git_repository
+    from app.settings.uploads import BYTES_PER_MB, parse_extensions, read_upload_limits
 
     settings = Settings()
     engine = create_engine(settings)
@@ -325,18 +328,37 @@ async def _run_ingest_git(
         name = re.sub(r"\.git$", "", name)
         corpus_name = name or "git-import"
 
-    # Парсинг расширений
-    if extensions_str is not None:
-        extensions = [e.strip() for e in extensions_str.split(",") if e.strip()]
-    else:
-        extensions = list(DEFAULT_EXTENSIONS)
-
-    max_file_size_bytes = max_file_size * 1024 * 1024
-
     print(f"Cloning: {url} (depth={depth})", flush=True)
 
     async with session_factory() as session:
         workspace_id = await ensure_default_workspace(session)
+
+        # Ограничения на файл: без явного флага действуют настройки рабочей
+        # области — те же, что при загрузке через интерфейс. Действующее
+        # значение печатается вместе с источником: иначе отказ в импорте
+        # неотличим от сбоя клонирования.
+        limits = await read_upload_limits(session, workspace_id, app_settings=settings)
+        if max_file_size is not None:
+            max_file_size_bytes = max_file_size * BYTES_PER_MB
+            size_source = "--max-file-size"
+        else:
+            max_file_size_bytes = limits.max_file_size_bytes
+            size_source = "workspace settings"
+        if extensions_str is not None:
+            extensions = parse_extensions(extensions_str)
+            extensions_source = "--extensions"
+        else:
+            extensions = limits.allowed_extensions
+            extensions_source = "workspace settings"
+
+        print(
+            f"File size limit: {max_file_size_bytes // BYTES_PER_MB} MB (from {size_source})",
+            flush=True,
+        )
+        print(
+            f"Extensions: {', '.join(extensions) or 'none allowed'} (from {extensions_source})",
+            flush=True,
+        )
 
         # Поиск или создание корпуса
         corpus_result = await session.execute(
