@@ -22,6 +22,7 @@ from app.rag.git_ingest import GitIngestResult
 from app.settings.registry import ALLOWED_UPLOAD_EXTENSIONS_KEY, MAX_UPLOAD_SIZE_KEY
 from app.settings.uploads import BYTES_PER_MB
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.fixtures.database import EnvFreeSettings
 
@@ -408,6 +409,7 @@ async def test_git_import_reads_the_same_resolved_values(
 
 @pytest.mark.asyncio
 async def test_cli_without_flags_uses_workspace_settings(
+    test_engine: AsyncEngine,
     test_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -418,7 +420,7 @@ async def test_cli_without_flags_uses_workspace_settings(
     settings = _cli_settings(test_settings, ENV_SIZE_MB, ENV_EXTENSIONS)
     monkeypatch.setattr("app.cli.Settings", lambda: settings)
     captured, workspace_id = await _prepare_workspace_rows(
-        settings,
+        test_engine,
         monkeypatch,
         size_mb=3,
         extensions=".md, .sql",
@@ -437,6 +439,7 @@ async def test_cli_without_flags_uses_workspace_settings(
 
 @pytest.mark.asyncio
 async def test_cli_explicit_flags_override_settings(
+    test_engine: AsyncEngine,
     test_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -446,7 +449,9 @@ async def test_cli_explicit_flags_override_settings(
 
     settings = _cli_settings(test_settings, ENV_SIZE_MB, ENV_EXTENSIONS)
     monkeypatch.setattr("app.cli.Settings", lambda: settings)
-    captured, _ = await _prepare_workspace_rows(settings, monkeypatch, size_mb=3, extensions=".md")
+    captured, _ = await _prepare_workspace_rows(
+        test_engine, monkeypatch, size_mb=3, extensions=".md"
+    )
 
     await _run_ingest_git(**_cli_args(max_file_size=7, extensions_str=".py,.go"))
 
@@ -474,26 +479,26 @@ def _cli_args(**overrides: Any) -> dict[str, Any]:
 
 
 async def _prepare_workspace_rows(
-    settings: Settings,
+    engine: AsyncEngine,
     monkeypatch: pytest.MonkeyPatch,
     *,
     size_mb: int,
     extensions: str,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Отдельная БД CLI с записями настроек.
+    """Записи настроек в базе теста и перехват аргументов импорта.
 
-    Возвращает список для перехвата аргументов импорта и id рабочей области.
+    Движок берётся из фикстуры ``test_engine``, а не создаётся своим: только
+    фикстура регистрирует очистку базы после теста. На общей базе (прогон
+    против PostgreSQL) собственный движок оставлял записи следующему тесту,
+    и вторая вставка того же ключа падала на нарушении первичного ключа.
+
     Сам импорт подменяется: проверяется резолв ограничений, а не клонирование.
     """
-    from app.db.base import Base
-    from app.db.engine import create_engine, create_session_factory
+    from app.db.engine import create_session_factory
     from app.db.models import WorkspaceSetting
     from app.db.workspace import ensure_default_workspace
 
-    engine = create_engine(settings)
     factory = create_session_factory(engine)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     async with factory() as session:
         workspace_id = await ensure_default_workspace(session)
         session.add_all(
@@ -511,7 +516,6 @@ async def _prepare_workspace_rows(
             ]
         )
         await session.commit()
-    await engine.dispose()
 
     captured: list[dict[str, Any]] = []
 

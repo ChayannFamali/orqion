@@ -620,6 +620,7 @@ async def test_profile_cannot_be_overridden_in_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Решение 2: переопределение модели/скилла в запросе — явный 400."""
+    pytest.importorskip("langgraph")
     await _login(api_client, app_fixture, "developer", email_suffix="dev-override")
     ids = await _seed_models(app_fixture)
     profile_id = await _seed_profile(app_fixture, ids[_MODEL_A], name="Непереопределяемый")
@@ -680,6 +681,7 @@ async def test_run_from_unknown_or_disabled_profile_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fail-closed по образцу скиллов: призрак и отключённый профиль — 400."""
+    pytest.importorskip("langgraph")
     await _login(api_client, app_fixture, "developer", email_suffix="dev-failclosed")
     ids = await _seed_models(app_fixture)
     disabled_id = await _seed_profile(app_fixture, ids[_MODEL_A], name="Выключенный", enabled=False)
