@@ -11,6 +11,9 @@ CONTRIBUTING.md):
 - [ ] `ruff check backend/` и `ruff format --check backend/`
 - [ ] `python -m mypy`
 - [ ] `python -m pytest backend/tests -q`
+- [ ] если изменение касается необязательных дополнений (`agent`, `mcp`,
+      `graph`, `oidc`, `metrics`, `full`) — тесты прогнаны с нужным
+      дополнением, число пропусков в выводе сверено
 - [ ] фронтенд: `npx tsc --noEmit`, `npx vitest run`, `npm run build`
 - [ ] если менялся API — типы фронтенда пересобраны
   (`export_openapi.py` + `gen:types`)
