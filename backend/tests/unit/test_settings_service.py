@@ -249,6 +249,45 @@ async def test_read_setting_as_does_not_confuse_bool_with_int(
 # create_session: фактический срок новых сессий
 # ---------------------------------------------------------------------------
 
+#: Допуск на округление при хранении: срок сравнивается в днях, поэтому
+#: секунда не маскирует ошибку, но снимает зависимость от того, как диалект
+#: округлил метку при записи.
+_TTL_TOLERANCE = timedelta(seconds=1)
+
+
+async def _assert_session_ttl(
+    db_session: AsyncSession,
+    user_id: str,
+    workspace_id: str,
+    settings: Settings,
+    *,
+    ttl_days: int,
+) -> str:
+    """Выдаёт сессию и проверяет, что её срок — ``ttl_days``. Возвращает её id.
+
+    Срок берётся в отрезок между двумя отметками времени вокруг вызова, а не
+    сравнивается с «сейчас» после факта. Причина: разрешение системного
+    таймера Windows зависит от нагрузки, и если часы не сдвинулись между
+    созданием сессии и сравнением, разница оказывается **ровно** равной TTL —
+    строгое ``<`` падало без единой правки прод-кода (замер: 499 из 500 пар
+    ``datetime.now()`` через ``await`` идентичны). Границы отрезка включены,
+    поэтому отсутствие хода часов больше не имеет значения, а подмену TTL
+    (значение из env вместо записи реестра) проверка ловит: расхождение
+    измеряется днями.
+    """
+    before = datetime.now(UTC)
+    session_id = await create_session(db_session, user_id, workspace_id, settings)
+    after = datetime.now(UTC)
+
+    record = (
+        await db_session.execute(select(SessionModel).where(SessionModel.id == session_id))
+    ).scalar_one()
+    expires_at = _as_utc(record.expires_at)
+
+    ttl = timedelta(days=ttl_days)
+    assert before + ttl - _TTL_TOLERANCE <= expires_at <= after + ttl + _TTL_TOLERANCE
+    return session_id
+
 
 @pytest.mark.asyncio
 async def test_create_session_uses_env_default_without_db_row(
@@ -256,13 +295,7 @@ async def test_create_session_uses_env_default_without_db_row(
 ) -> None:
     workspace_id, user_id = await _seed(db_session)
 
-    session_id = await create_session(db_session, user_id, workspace_id, _ttl_settings(9))
-    record = (
-        await db_session.execute(select(SessionModel).where(SessionModel.id == session_id))
-    ).scalar_one()
-
-    delta = _as_utc(record.expires_at) - datetime.now(UTC)
-    assert timedelta(days=9) - timedelta(minutes=5) < delta < timedelta(days=9)
+    await _assert_session_ttl(db_session, user_id, workspace_id, _ttl_settings(9), ttl_days=9)
 
 
 @pytest.mark.asyncio
@@ -273,13 +306,7 @@ async def test_create_session_uses_db_value(
     workspace_id, user_id = await _seed(db_session)
     await _write(db_session, workspace_id, SESSION_TTL_KEY, 2)
 
-    session_id = await create_session(db_session, user_id, workspace_id, _ttl_settings(9))
-    record = (
-        await db_session.execute(select(SessionModel).where(SessionModel.id == session_id))
-    ).scalar_one()
-
-    delta = _as_utc(record.expires_at) - datetime.now(UTC)
-    assert timedelta(days=2) - timedelta(minutes=5) < delta < timedelta(days=2)
+    await _assert_session_ttl(db_session, user_id, workspace_id, _ttl_settings(9), ttl_days=2)
 
 
 @pytest.mark.asyncio
@@ -289,7 +316,9 @@ async def test_setting_change_does_not_touch_issued_sessions(
     """Настройка действует на новые сессии; выданные остаются со своим сроком."""
     workspace_id, user_id = await _seed(db_session)
     await _write(db_session, workspace_id, SESSION_TTL_KEY, 10)
-    old_id = await create_session(db_session, user_id, workspace_id, test_settings)
+    old_id = await _assert_session_ttl(
+        db_session, user_id, workspace_id, test_settings, ttl_days=10
+    )
     old_expires = _as_utc(
         (await db_session.execute(select(SessionModel).where(SessionModel.id == old_id)))
         .scalar_one()
@@ -297,7 +326,7 @@ async def test_setting_change_does_not_touch_issued_sessions(
     )
 
     await _write(db_session, workspace_id, SESSION_TTL_KEY, 1)
-    new_id = await create_session(db_session, user_id, workspace_id, test_settings)
+    new_id = await _assert_session_ttl(db_session, user_id, workspace_id, test_settings, ttl_days=1)
 
     rows = (
         (
@@ -309,6 +338,7 @@ async def test_setting_change_does_not_touch_issued_sessions(
         .all()
     )
     by_id = {row.id: row for row in rows}
+    # Выданная раньше сессия срок сохранила: настройка не переписывает уже
+    # выданные, а действует только на новые.
     assert _as_utc(by_id[old_id].expires_at) == old_expires
-    new_delta = _as_utc(by_id[new_id].expires_at) - datetime.now(UTC)
-    assert timedelta(days=1) - timedelta(minutes=5) < new_delta < timedelta(days=1)
+    assert _as_utc(by_id[new_id].expires_at) != old_expires
