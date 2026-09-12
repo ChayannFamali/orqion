@@ -188,6 +188,7 @@ async def _make_tctx(
         model=model,
         provider=provider,
         trace_ctx=_trace(workspace_id),
+        temperature=0.3,
         conversation_id=None,
     )
 

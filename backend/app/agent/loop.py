@@ -86,6 +86,10 @@ class AgentRunConfig:
     trace_ctx: TraceContext
     max_steps: int
     max_tokens_per_run: int
+    # Температура вызовов модели одного прогона. Разрешает эндпоинт из
+    # настройки рабочей области — в агентном запросе своего поля
+    # температуры нет. Цикл и сохранение сообщений используют одно число.
+    temperature: float
     # Единый реестр инструментов прогона (Т-503): встроенные + внешние
     # с меткой источника; собирает эндпоинт до запуска цикла. При выборе
     # скилла (Т-508) реестр уже сужен ``apply_skill`` до его инструментов.
@@ -279,7 +283,7 @@ async def _call_model_once(
                 model=cfg.model.upstream_name,
                 tools=tools_schema,
                 max_tokens=cfg.model.max_output_tokens,
-                temperature=0.7,
+                temperature=cfg.temperature,
             )
         except Exception as exc:
             err = normalize_error(exc)
@@ -496,6 +500,7 @@ async def run_agent_loop(
         model=cfg.model,
         provider=cfg.provider,
         trace_ctx=cfg.trace_ctx,
+        temperature=cfg.temperature,
         conversation_id=cfg.conversation_id,
     )
     rs = _RunState(cfg=cfg, tctx=tctx, result=result)

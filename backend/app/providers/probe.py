@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 PROBE_TIMEOUT = 15.0
 PROBE_MAX_TOKENS = 5
 PROBE_MESSAGES = [{"role": "user", "content": "Hi"}]
+# Зонд измеряет доступность и способности провайдера, а не качество
+# генерации, поэтому температура фиксирована и не берётся из настроек
+# рабочей области: результат воспроизводим между прогонами.
+PROBE_TEMPERATURE = 0.0
 
 
 class ModelStatus(BaseModel):
@@ -105,7 +109,7 @@ async def probe_provider(
                 messages=PROBE_MESSAGES,
                 model=candidate.upstream_name,
                 max_tokens=PROBE_MAX_TOKENS,
-                temperature=0.0,
+                temperature=PROBE_TEMPERATURE,
             )
         except Exception:
             logger.debug(
@@ -136,6 +140,7 @@ async def _probe_streaming(client: ProviderClient, model: str) -> bool:
             messages=PROBE_MESSAGES,
             model=model,
             max_tokens=PROBE_MAX_TOKENS,
+            temperature=PROBE_TEMPERATURE,
         ):
             break  # первый токен получен — стриминг работает
         return True
@@ -160,6 +165,7 @@ async def _probe_parallel(
                 messages=PROBE_MESSAGES,
                 model=model.upstream_name,
                 max_tokens=PROBE_MAX_TOKENS,
+                temperature=PROBE_TEMPERATURE,
             )
             return True
         except Exception:  # noqa: BLE001 — probe не должен падать

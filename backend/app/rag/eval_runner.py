@@ -5,7 +5,8 @@ arch.md §8.4: метрики recall@k, MRR, доля процитированн
 Приёмка: прогон воспроизводим; состав конвейера и версия индекса зафиксированы.
 
 pipeline_config: не только имена шагов, но и алиасы моделей (generate_model_alias,
-rewrite_model_alias если rewrite включён, reranker_enabled) — для воспроизводимости.
+rewrite_model_alias если rewrite включён, reranker_enabled) и температура генерации
+— для воспроизводимости.
 
 grounded_refusal_ratio: эвристическая проверка содержимого ответа на маркеры
 отказа («не найдено», «нет информации» и т.д.). Ограничение: LLM формулирует
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Chunk, EvalItem, EvalRun, EvalSet, Model, Provider
 from app.rag.pipeline import PIPELINE, RagContext, RagState, run_pipeline
+from app.settings.generation import read_default_temperature
 
 logger = logging.getLogger("orqion.rag.eval_runner")
 
@@ -166,10 +168,13 @@ def build_pipeline_config(
     generate_model_alias: str = "",
     rewrite_model_alias: str | None = None,
     reranker_enabled: bool = True,
+    temperature: float | None = None,
 ) -> dict[str, object]:
     """Строит pipeline_config для записи в eval_run.
 
-    Фиксирует не только шаги, но и модели — для воспроизводимости.
+    Фиксирует не только шаги, но и модели и температуру генерации — для
+    воспроизводимости: два прогона при разных настройках должны отличаться
+    в записи, а не только в результатах.
     """
     step_names = (
         steps
@@ -183,6 +188,8 @@ def build_pipeline_config(
     }
     if rewrite_model_alias is not None:
         config["rewrite_model_alias"] = rewrite_model_alias
+    if temperature is not None:
+        config["temperature"] = temperature
     return config
 
 
@@ -239,6 +246,12 @@ async def run_eval(
     all_chunks = list(chunk_result.scalars().all())
     chunk_to_doc: dict[str, str] = {c.id: c.document_id for c in all_chunks}
 
+    # Температура генерации — настройка рабочей области: прогон оценки
+    # измеряет то же поведение, что и прод, а записанное значение делает
+    # его воспроизводимым (ADR-10). Без записи два прогона при разных
+    # настройках были бы несопоставимы молча.
+    temperature = await read_default_temperature(session, workspace_id, app_settings=settings)
+
     # Pipeline config
     pipeline_config = build_pipeline_config(
         steps=steps,
@@ -247,6 +260,7 @@ async def run_eval(
         if getattr(settings, "rag_query_reformulation_enabled", False)
         else None,
         reranker_enabled=True,
+        temperature=temperature,
     )
 
     # Прогон каждого вопроса
@@ -263,6 +277,7 @@ async def run_eval(
             index_version_id=index_version_id,
             model=model,
             provider=provider,
+            temperature=temperature,
         )
 
         try:

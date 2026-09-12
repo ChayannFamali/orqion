@@ -159,6 +159,7 @@ def _make_config(
         trace_ctx=TraceContext(trace_id="trace-loop", workspace_id=workspace_id),
         max_steps=max_steps,
         max_tokens_per_run=max_tokens_per_run,
+        temperature=0.3,
         tools_registry=registry,
     )
 

@@ -197,6 +197,39 @@ describe("Настройки — вкладка «Общие»", () => {
     expect(screen.getByTestId("setting-field-login_note")).toHaveAttribute("type", "text");
   });
 
+  it("дробный ключ: шаг ввода не ограничивает сеткой, дробное значение уходит на сервер", () => {
+    mockSettings([
+      setting({
+        key: "session_days",
+        type: "integer",
+        value: 7,
+        min: 1,
+        max: 365,
+      }),
+      setting({
+        key: "sample_ratio",
+        title: "Доля выборки",
+        type: "number",
+        value: 0.7,
+        min: 0,
+        max: 2,
+      }),
+    ]);
+    openGeneralTab();
+
+    expect(screen.getByTestId("setting-field-session_days")).toHaveAttribute("step", "1");
+    // Без «any» браузер допускает только значения сетки шага и подсвечивает
+    // дробное как ошибку, хотя сервер его принимает.
+    expect(screen.getByTestId("setting-field-sample_ratio")).toHaveAttribute("step", "any");
+
+    const input = screen.getByTestId("setting-field-sample_ratio");
+    fireEvent.change(input, { target: { value: "0.35" } });
+    fireEvent.blur(input);
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate.mock.calls[0][0]).toEqual({ key: "sample_ratio", value: 0.35 });
+  });
+
   it("показывает заголовок и описание из ответа, а не из кода", () => {
     mockSettings(ALL_TYPES);
     openGeneralTab();

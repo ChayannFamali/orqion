@@ -41,6 +41,7 @@ from app.policy.rate_limiter import RateLimiter
 from app.policy.resolve import resolve_policy
 from app.rag.pipeline import RagContext, RagState, run_pipeline
 from app.rag.service import resolve_corpora, strictest_data_class
+from app.settings.generation import read_default_temperature
 from app.trace.service import TraceContext, create_trace, finalize_trace, span
 from app.usage.service import UsageRecord, calculate_cost, record_usage
 
@@ -193,6 +194,14 @@ async def chat(
                 )
             model_alias = pinned_model.alias
 
+    # Температура запроса разрешается один раз: явное значение клиента
+    # побеждает, при его отсутствии действует настройка рабочей области.
+    # Одно значение уходит и в подготовку чата, и в конвейер по документам —
+    # иначе путь с корпусами и путь без него отвечали бы по-разному.
+    temperature = body.temperature
+    if temperature is None:
+        temperature = await read_default_temperature(session, workspace_id)
+
     async with span(trace_ctx, "prepare"):
         try:
             chat_ctx, model, provider, fallbacks = await prepare_chat(
@@ -203,7 +212,7 @@ async def chat(
                 messages=messages_dicts,
                 model_alias=model_alias,
                 max_tokens=body.max_tokens,
-                temperature=body.temperature,
+                temperature=temperature,
                 stream=body.stream,
                 corpus_data_class=corpus_data_class,
                 corpus_names=requested_names or None,
@@ -282,6 +291,7 @@ async def chat(
             corpus_attribution={c.active_index_version_id or "": (c.id, c.name) for c in corpora},
             model=model,
             provider=provider,
+            temperature=temperature,
             trace_ctx=trace_ctx,
             messages=messages_dicts,
         )

@@ -73,6 +73,7 @@ from app.mcp.registry import resolve_tools
 from app.policy.enforce import enforce_all
 from app.policy.resolve import resolve_policy
 from app.rag.service import resolve_corpora, strictest_data_class
+from app.settings.generation import read_default_temperature
 from app.trace.service import create_trace, finalize_trace, span
 from app.utils.tokens import count_tokens
 
@@ -377,6 +378,12 @@ async def agent_chat(
         ):
             pass
 
+    # Температура прогона: в агентном запросе своего поля температуры нет,
+    # поэтому вызовы модели идут с настройкой рабочей области. Разрешается
+    # один раз на прогон — значение не изменится между шагами, даже если
+    # настройку поправят во время длинного прогона.
+    temperature = await read_default_temperature(session, workspace_id)
+
     cfg = AgentRunConfig(
         session=session,
         settings=request.app.state.settings,
@@ -396,6 +403,7 @@ async def agent_chat(
         trace_ctx=trace_ctx,
         max_steps=request.app.state.settings.agent_max_steps,
         max_tokens_per_run=request.app.state.settings.agent_max_tokens_per_run,
+        temperature=temperature,
         tools_registry=tools_registry,
         skill_prompt=(skill.prompt_text if skill is not None else None),
         skill_name=(skill.name if skill is not None else None),
@@ -613,7 +621,7 @@ def _build_chat_context(
         messages=messages_dicts,
         model_alias=cfg.model.alias,
         max_tokens=None,
-        temperature=0.7,
+        temperature=cfg.temperature,
         stream=False,
         corpus_data_class=cfg.corpus_data_class,
         corpus_names=cfg.corpus_names or None,

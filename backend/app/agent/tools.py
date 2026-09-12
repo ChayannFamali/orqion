@@ -198,6 +198,10 @@ class ToolRunContext:
     model: Model
     provider: Provider
     trace_ctx: TraceContext
+    # Температура одного прогона. Поиск по корпусу шаг генерации не
+    # выполняет, но контекст конвейера общий для всех шагов и значение в
+    # нём обязано быть явным — тем же числом, что и у вызовов модели.
+    temperature: float
     conversation_id: str | None = None
 
 
@@ -322,6 +326,7 @@ async def execute_search_corpus(query: str, tctx: ToolRunContext) -> ToolOutcome
         corpus_attribution={c.active_index_version_id or "": (c.id, c.name) for c in tctx.corpora},
         model=tctx.model,
         provider=tctx.provider,
+        temperature=tctx.temperature,
         trace_ctx=tctx.trace_ctx,
     )
     rag_state = await run_pipeline(

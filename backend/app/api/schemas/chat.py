@@ -15,7 +15,9 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     model_alias: str | None = None
     max_tokens: int | None = None
-    temperature: float = 0.7
+    # None означает «температура по умолчанию для рабочей области» — она
+    # берётся из служебных настроек. Явное значение в запросе побеждает.
+    temperature: float | None = None
     stream: bool = True
     corpus_data_class: str | None = None
     corpus_name: str | None = None

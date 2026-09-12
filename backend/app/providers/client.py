@@ -80,10 +80,17 @@ class ProviderClient:
         self,
         messages: list[dict[str, str]],
         model: str,
+        *,
+        temperature: float,
         max_tokens: int | None = None,
-        temperature: float = 0.7,
     ) -> dict[str, Any]:
-        """POST /v1/chat/completions — обычный (не потоковый) режим."""
+        """POST /v1/chat/completions — обычный (не потоковый) режим.
+
+        Температура обязательна во всех трёх методах запроса: единственный
+        дефолт генерации живёт в настройках рабочей области, транспорт своё
+        значение не придумывает. Служебные детерминированные вызовы
+        (зонды, заголовок диалога, переформулировка) передают 0.0 явно.
+        """
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -110,8 +117,9 @@ class ProviderClient:
         messages: list[dict[str, Any]],
         model: str,
         tools: list[dict[str, Any]],
+        *,
+        temperature: float,
         max_tokens: int | None = None,
-        temperature: float = 0.7,
     ) -> dict[str, Any]:
         """POST /v1/chat/completions с tools — агентный модуль (Т-502).
 
@@ -148,8 +156,9 @@ class ProviderClient:
         self,
         messages: list[dict[str, str]],
         model: str,
+        *,
+        temperature: float,
         max_tokens: int | None = None,
-        temperature: float = 0.7,
     ) -> AsyncGenerator[dict[str, str], None]:
         """POST /v1/chat/completions с stream=true — потоковый режим.
 

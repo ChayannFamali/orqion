@@ -160,6 +160,50 @@ describe("useChat RAG non-streaming", () => {
     expect(result.current.ragDegraded).toBe(false);
   });
 
+  it("не отправляет температуру: её задаёт настройка рабочей области", async () => {
+    // В этом describe нет afterEach, поэтому подмена глобальных функций
+    // возвращается здесь же — иначе она утекает в соседние тесты.
+    const originalRAF = globalThis.requestAnimationFrame;
+    const originalCancelRAF = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = vi.fn((_cb: FrameRequestCallback) => 1);
+    globalThis.cancelAnimationFrame = vi.fn();
+    const mockGen = async function* () {
+      yield { type: "token" as const, v: "ok" };
+    };
+    vi.mocked(streamChat).mockReturnValue(mockGen() as any);
+    vi.mocked(completeChat).mockResolvedValue({
+      type: "complete" as const,
+      content: "ok",
+      conversation_id: "conv-temp",
+      sources: [],
+      rag_degraded: false,
+      rag_errors: [],
+    });
+
+    try {
+      const { result } = renderHook(() => useChat());
+
+      await act(async () => {
+        result.current.sendMessage({
+          messages: [{ role: "user", content: "hi" }] as ChatMessage[],
+        });
+      });
+      await act(async () => {
+        result.current.sendMessage({
+          messages: [{ role: "user", content: "question" }] as ChatMessage[],
+          corpusNames: ["my-corpus"],
+        });
+      });
+
+      // Явное поле в запросе отменило бы настройку области на каждом запросе.
+      expect(vi.mocked(streamChat).mock.calls[0][0]).not.toHaveProperty("temperature");
+      expect(vi.mocked(completeChat).mock.calls[0][0]).not.toHaveProperty("temperature");
+    } finally {
+      globalThis.requestAnimationFrame = originalRAF;
+      globalThis.cancelAnimationFrame = originalCancelRAF;
+    }
+  });
+
   it("stores ragDegraded flag when RAG pipeline degrades", async () => {
     const mockResult = {
       type: "complete" as const,

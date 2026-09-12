@@ -29,6 +29,9 @@ from app.rag.pipeline import (
 from app.rag.reranker import RerankOutput, RerankResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+#: Температура в контексте конвейера: дефолта у RagContext нет, значение выбирает тест.
+TEST_TEMPERATURE = 0.3
+
 
 def _rr(chunk_id: str, score: float) -> RerankResult:
     return RerankResult(chunk_id=chunk_id, score=score, text=f"text-{chunk_id}", original_rank=1)
@@ -123,6 +126,7 @@ def _make_ctx(
         index_version_id=index_version_ids[0],
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
         reranker=object(),  # не None — create_reranker() не вызывается
         index_version_ids=index_version_ids,
     )

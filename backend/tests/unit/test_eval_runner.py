@@ -212,6 +212,17 @@ def test_build_pipeline_config() -> None:
     assert config["generate_model_alias"] == "local/test-model"
     assert config["reranker_enabled"] is True
     assert "rewrite_model_alias" not in config
+    # Температура не передана — ключа нет: старые прогоны остаются сравнимы.
+    assert "temperature" not in config
+
+
+def test_build_pipeline_config_records_temperature() -> None:
+    """Температура генерации фиксируется для воспроизводимости прогона."""
+    config = build_pipeline_config(
+        generate_model_alias="local/test-model",
+        temperature=0.9,
+    )
+    assert config["temperature"] == 0.9
 
 
 def test_build_pipeline_config_with_rewrite() -> None:

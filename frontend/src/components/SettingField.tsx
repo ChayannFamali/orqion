@@ -129,7 +129,9 @@ export function SettingField({ setting, error, pending, onCommit }: SettingField
           value={draft}
           min={setting.min ?? undefined}
           max={setting.max ?? undefined}
-          step={setting.type === "integer" ? 1 : undefined}
+          // Целому ключу шаг 1; дробному — «any», иначе браузер считает
+          // допустимыми только значения сетки и подсветит 0.35 как ошибку.
+          step={setting.type === "integer" ? 1 : "any"}
           disabled={!setting.editable || pending}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitNumber}

@@ -5607,9 +5607,15 @@
             "title": "Max Tokens"
           },
           "temperature": {
-            "type": "number",
-            "title": "Temperature",
-            "default": 0.7
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
           },
           "stream": {
             "type": "boolean",

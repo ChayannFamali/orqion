@@ -36,6 +36,9 @@ from app.rag.pipeline import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+#: Температура в контексте конвейера: дефолта у RagContext нет, значение выбирает тест.
+TEST_TEMPERATURE = 0.3
+
 # ---------------------------------------------------------------------------
 # Хелперы
 # ---------------------------------------------------------------------------
@@ -136,6 +139,7 @@ async def test_pipeline_full_run(
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     # Replace steps with stubs that don't need real vector_store
@@ -191,6 +195,7 @@ async def test_pipeline_rewrite_degraded(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     async def _failing_rewrite(s: RagState, c: RagContext) -> RagState:
@@ -256,6 +261,7 @@ async def test_pipeline_search_uses_rewritten(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     await run_pipeline(state, ctx, steps=[_stub_rewrite, _capturing_search])
@@ -294,6 +300,7 @@ async def test_pipeline_search_falls_back_to_query(db_session: AsyncSession) -> 
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     await run_pipeline(state, ctx, steps=[_stub_rewrite, _capturing_search])
@@ -345,6 +352,7 @@ async def test_pipeline_rerank_degraded(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     steps = [_stub_rewrite, _stub_search, _degraded_rerank, _stub_build_context, _stub_generate]
@@ -397,6 +405,7 @@ async def test_pipeline_build_context_truncation(db_session: AsyncSession) -> No
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     steps = [_stub_rewrite, _stub_search, _stub_rerank, _truncating_build_context, _stub_generate]
@@ -418,6 +427,7 @@ async def test_pipeline_generate_uses_context(
     await db_session.flush()
 
     captured: list[list[dict[str, str]]] = []
+    captured_temps: list[float] = []
 
     async def _complete(
         self: ProviderClient,
@@ -427,6 +437,7 @@ async def test_pipeline_generate_uses_context(
         temperature: float = 0.7,
     ) -> dict[str, Any]:
         captured.append(messages)
+        captured_temps.append(temperature)
         return _stub_complete_response("Answer based on context")
 
     monkeypatch.setattr(ProviderClient, "complete", _complete)
@@ -459,6 +470,7 @@ async def test_pipeline_generate_uses_context(
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     steps = [_stub_rewrite, _stub_search, _stub_rerank, _stub_build_context, step_generate]
@@ -469,6 +481,8 @@ async def test_pipeline_generate_uses_context(
     assert captured[0][0]["role"] == "system"
     assert "answer only from context" in captured[0][0]["content"]
     assert captured[0][1]["role"] == "user"
+    # Температура шага — из контекста конвейера, не захардкожена.
+    assert captured_temps == [TEST_TEMPERATURE]
 
 
 async def test_pipeline_generate_zero_fragments_still_calls_model(
@@ -524,6 +538,7 @@ async def test_pipeline_generate_zero_fragments_still_calls_model(
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     steps = [_stub_rewrite, _stub_search, _stub_rerank, _empty_build_context, step_generate]
@@ -591,6 +606,7 @@ async def test_pipeline_trace_spans(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
         trace_ctx=trace_ctx,
     )
 
@@ -638,6 +654,7 @@ async def test_pipeline_step_replaceable(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     await run_pipeline(state, ctx, steps=[_custom_rewrite, _stub_search])
@@ -681,6 +698,7 @@ async def test_pipeline_error_continues(db_session: AsyncSession) -> None:
         index_version_id="iv-1",
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     steps = [step_rewrite, _failing_search, _stub_rerank, _stub_build_context, _stub_generate]
@@ -752,6 +770,7 @@ async def test_step_search_multi_corpus_second_level_rrf(
         corpus_attribution={"iv-a": ("corp-a", "corpus-a"), "iv-b": ("corp-b", "corpus-b")},
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     result = await step_search(state, ctx)
@@ -805,6 +824,7 @@ async def test_step_search_multi_corpus_capped_at_top_50(
         index_version_ids=["iv-a", "iv-b"],
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     result = await step_search(state, ctx)
@@ -846,6 +866,7 @@ async def test_step_search_single_corpus_attribution(
         corpus_attribution={"iv-a": ("corp-a", "corpus-a")},
         model=model,
         provider=provider,
+        temperature=TEST_TEMPERATURE,
     )
 
     result = await step_search(state, ctx)

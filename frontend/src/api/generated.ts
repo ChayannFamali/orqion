@@ -2143,11 +2143,8 @@ export interface components {
             model_alias?: string | null;
             /** Max Tokens */
             max_tokens?: number | null;
-            /**
-             * Temperature
-             * @default 0.7
-             */
-            temperature: number;
+            /** Temperature */
+            temperature?: number | null;
             /**
              * Stream
              * @default true

@@ -196,6 +196,7 @@ def _make_config(
         trace_ctx=TraceContext(trace_id="trace-profiles", workspace_id=workspace_id),
         max_steps=5,
         max_tokens_per_run=100_000,
+        temperature=0.3,
         tools_registry=registry,
     )
 

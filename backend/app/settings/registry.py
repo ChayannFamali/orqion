@@ -260,6 +260,41 @@ SETTINGS_REGISTRY[ALLOWED_UPLOAD_EXTENSIONS_KEY] = SettingSpec(
 )
 
 
+#: Верхняя граница температуры генерации.
+#:
+#: Не произвольная: OpenAI-совместимые API принимают 0–2, значение выше
+#: даёт отказ апстрима, то есть нерабочий чат, а не «более свободный»
+#: ответ. Настройка ограничена рабочим диапазоном, а не желанием оператора.
+TEMPERATURE_MAX = 2.0
+
+
+class DefaultTemperatureValue(BaseModel):
+    """Температура генерации по умолчанию."""
+
+    value: float = Field(ge=0.0, le=TEMPERATURE_MAX)
+
+
+#: Ключ настройки: температура генерации по умолчанию.
+DEFAULT_TEMPERATURE_KEY = "default_temperature"
+
+#: Категория настроек генерации: вкладка интерфейса.
+GENERATION_CATEGORY = "Модель по умолчанию"
+
+SETTINGS_REGISTRY[DEFAULT_TEMPERATURE_KEY] = SettingSpec(
+    key=DEFAULT_TEMPERATURE_KEY,
+    title="Температура генерации по умолчанию",
+    description=(
+        "Температура запросов к модели, когда она не задана в самом "
+        "запросе: 0 — наиболее предсказуемый ответ, 2 — наиболее "
+        "свободный. Действует на чат, ответы по документам и агентные "
+        "прогоны. Явное значение в запросе пользователя побеждает."
+    ),
+    category=GENERATION_CATEGORY,
+    value_model=DefaultTemperatureValue,
+    default_from_env=DEFAULT_TEMPERATURE_KEY,
+)
+
+
 def get_spec(key: str) -> SettingSpec | None:
     """Спека ключа или None, если ключ не зарегистрирован."""
     return SETTINGS_REGISTRY.get(key)

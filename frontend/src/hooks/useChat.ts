@@ -84,6 +84,8 @@ export function useChat(): UseChatResult {
       pendingContentRef.current = "";
       pendingReasoningRef.current = "";
 
+      // Температуру намеренно не отправляем: сервер подставляет значение из
+      // настроек рабочей области только когда поля в запросе нет.
       if (corpusNames && corpusNames.length > 0) {
         // RAG-ветка: non-streaming, JSON-ответ с sources
         (async () => {
@@ -93,7 +95,6 @@ export function useChat(): UseChatResult {
                 messages,
                 model_alias: modelAlias ?? null,
                 conversation_id: conversationId ?? null,
-                temperature: 0.7,
                 stream: false,
                 corpus_names: corpusNames,
                 reasoning_mode: reasoningMode ?? null,
@@ -133,7 +134,6 @@ export function useChat(): UseChatResult {
               messages,
               model_alias: modelAlias ?? null,
               conversation_id: conversationId ?? null,
-              temperature: 0.7,
               stream: true,
               reasoning_mode: reasoningMode ?? null,
             },

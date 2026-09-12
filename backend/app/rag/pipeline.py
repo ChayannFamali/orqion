@@ -84,6 +84,10 @@ class RagContext:
     index_version_id: str
     model: Model
     provider: Provider
+    # Температура шага генерации. Обязательное поле без дефолта: значение
+    # разрешает вызывающий код (настройка рабочей области или явное в
+    # запросе), поэтому конвейер физически не может подставить своё.
+    temperature: float
     trace_ctx: TraceContext | None = None
     messages: list[dict[str, str]] | None = None
     reranker: Any = None  # LocalReranker | None
@@ -317,7 +321,7 @@ async def step_generate(state: RagState, ctx: RagContext) -> RagState:
         messages=messages,
         model=ctx.model.upstream_name,
         max_tokens=ctx.model.max_output_tokens,
-        temperature=0.7,
+        temperature=ctx.temperature,
     )
     message = result.get("choices", [{}])[0].get("message", {})
     content = message.get("content", "")

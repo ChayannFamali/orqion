@@ -69,6 +69,9 @@ async def test_complete() -> None:
         body = json.loads(request.content)
         assert body["stream"] is False
         assert body["model"] == "qwen3-8b"
+        # Транспорт ничего не придумывает: в запрос уходит ровно то число,
+        # которое передал вызывающий код.
+        assert body["temperature"] == 0.4
         return httpx.Response(
             200,
             json={
@@ -93,6 +96,7 @@ async def test_complete() -> None:
     result = await client.complete(
         messages=[{"role": "user", "content": "Hi"}],
         model="qwen3-8b",
+        temperature=0.4,
     )
     assert result["choices"][0]["message"]["content"] == "Hello!"
 
@@ -127,7 +131,9 @@ async def test_stream() -> None:
 
     chunks: list[dict[str, str]] = []
     async for event in client.stream(
-        messages=[{"role": "user", "content": "Hi"}], model="qwen3-8b"
+        messages=[{"role": "user", "content": "Hi"}],
+        model="qwen3-8b",
+        temperature=0.4,
     ):
         chunks.append(event)
 
@@ -165,7 +171,9 @@ async def test_stream_with_reasoning_content() -> None:
 
     events: list[dict[str, str]] = []
     async for event in client.stream(
-        messages=[{"role": "user", "content": "Hi"}], model="qwen3-8b"
+        messages=[{"role": "user", "content": "Hi"}],
+        model="qwen3-8b",
+        temperature=0.4,
     ):
         events.append(event)
 
