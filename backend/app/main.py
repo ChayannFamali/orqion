@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -20,6 +21,11 @@ from app.policy.rate_limiter import RateLimiter
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Фиксируется до миграций, чтобы аптайм в диагностике окружения
+    # включал и сам запуск: модуль импортируется раньше, чем приложение
+    # начинает обслуживать запросы, и сам время старта знать не может.
+    app.state.started_at = datetime.now(UTC)
+
     settings = Settings()
     setup_logging(settings.log_level)
     app.state.settings = settings
@@ -277,8 +283,6 @@ def _mount_static(app: FastAPI) -> None:
     if dist.exists():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="static")
 
-
-from datetime import UTC
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

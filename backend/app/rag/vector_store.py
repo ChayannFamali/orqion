@@ -94,6 +94,25 @@ def _loadable_path() -> str:
     return path
 
 
+def sqlite_vec_status() -> tuple[bool, str | None]:
+    """Доступно ли расширение sqlite-vec: (доступно, причина отказа).
+
+    Критерий тот же, что у `_loadable_path()`, которым хранилище грузит
+    расширение: диагностика обязана сообщать «недоступно» ровно в тех
+    случаях, когда хранилище действительно не сможет работать, и наоборот.
+    Отдельная копия проверки здесь разошлась бы с реальной.
+    """
+    try:
+        path = _loadable_path()
+    except ImportError:
+        return False, "Пакет sqlite-vec не установлен — установите orqion[full]"
+    except OSError as exc:
+        return False, f"Расширение sqlite-vec не читается: {exc}"
+    if not os.path.exists(path):
+        return False, f"Бинарник расширения не найден: {path}"
+    return True, None
+
+
 class SQLiteVectorStore:
     """Векторное хранилище на sqlite-vec (dense) + FTS5 (sparse).
 

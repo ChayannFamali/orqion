@@ -2467,6 +2467,30 @@ export interface components {
             avg_latency_ms: number | null;
         };
         /**
+         * DiskDiagnostics
+         * @description Свободное место для одной точки хранения.
+         *
+         *     ``measured_path`` заполнен, только когда измерение выполнено по
+         *     ближайшему существующему предку: на свежей установке каталога
+         *     хранилища ещё нет, но том уже известен.
+         */
+        DiskDiagnostics: {
+            /** Label */
+            label: string;
+            /** Path */
+            path: string;
+            /** Measured Path */
+            measured_path?: string | null;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Free Bytes */
+            free_bytes?: number | null;
+            /** Total Bytes */
+            total_bytes?: number | null;
+        };
+        /**
          * DocumentDeleteResponse
          * @description Результат удаления документа (механизм отложенного удаления, BUG-020).
          *
@@ -2649,6 +2673,17 @@ export interface components {
             nvidia: components["schemas"]["NvidiaDiagnostics"];
             /** Vendor Url */
             vendor_url?: string | null;
+            host: components["schemas"]["HostDiagnostics"];
+            /**
+             * Services
+             * @default []
+             */
+            services: components["schemas"]["ExternalServiceDiagnostics"][];
+            /**
+             * Components
+             * @default []
+             */
+            components: components["schemas"]["LocalComponentDiagnostics"][];
         };
         /**
          * EvalCompareRequest
@@ -2807,6 +2842,45 @@ export interface components {
             items: components["schemas"]["EvalItemRead"][];
         };
         /**
+         * ExternalServiceDiagnostics
+         * @description Доступность внешнего сервиса по накопленному результату зонда.
+         *
+         *     Собственного запроса здесь нет: статус берётся из
+         *     ``Provider.last_probe_at``/``capabilities``, которые пишет периодический
+         *     зонд провайдеров. Отсюда отдельное состояние «ещё не проверялся» —
+         *     это не «недоступен».
+         *
+         *     Статуса «отказ» нет намеренно: причина неудачи зонда в БД не
+         *     сохраняется, поэтому «зонд не ответил» и «зонд ответил нулём моделей»
+         *     неразличимы. Оба дают ``no_models`` с пояснением в ``reason``.
+         */
+        ExternalServiceDiagnostics: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind?: string | null;
+            /** Role */
+            role: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Status */
+            status: string;
+            /** Last Probe At */
+            last_probe_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Model Count
+             * @default 0
+             */
+            model_count: number;
+            /**
+             * Available Model Count
+             * @default 0
+             */
+            available_model_count: number;
+        };
+        /**
          * GpuInfo
          * @description Метрики одного GPU; поле = null, если метрика не читается.
          */
@@ -2826,6 +2900,30 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HostDiagnostics
+         * @description ОС, Python и время работы процесса.
+         *
+         *     ``started_at``/``uptime_seconds`` = null, если приложение собрано без
+         *     запуска lifespan (тесты, CLI) — честное «неизвестно», не ноль.
+         */
+        HostDiagnostics: {
+            /** Os Name */
+            os_name: string;
+            /** Os Version */
+            os_version: string;
+            /** Python Version */
+            python_version: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Uptime Seconds */
+            uptime_seconds?: number | null;
+            /**
+             * Disks
+             * @default []
+             */
+            disks: components["schemas"]["DiskDiagnostics"][];
         };
         /**
          * ImportResultResponse
@@ -2913,6 +3011,24 @@ export interface components {
             created_at: string;
         };
         JsonValue: unknown;
+        /**
+         * LocalComponentDiagnostics
+         * @description Локальная зависимость или хранилище.
+         *
+         *     ``available`` трёхзначно: True/False — факт проверки, None — компонент
+         *     не используется в этой конфигурации, ещё не создан, либо его проверка
+         *     требует сетевого запроса, которого в разделе нет.
+         */
+        LocalComponentDiagnostics: {
+            /** Name */
+            name: string;
+            /** Available */
+            available?: boolean | null;
+            /** Reason */
+            reason?: string | null;
+            /** Detail */
+            detail?: string | null;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */

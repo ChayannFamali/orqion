@@ -44,11 +44,17 @@ export type AvailableCorpusEntry = components["schemas"]["AvailableCorpusEntry"]
 export type AvailableCorporaResponse = components["schemas"]["AvailableCorporaResponse"];
 /** Результат удаления корпуса. */
 export type CorpusDeleteResponse = components["schemas"]["CorpusDeleteResponse"];
-/** Диагностика окружения хоста (T-444, только чтение). */
+/** Диагностика окружения хоста (T-444, T-511, только чтение). */
 export type EnvironmentDiagnosticsResponse =
   components["schemas"]["EnvironmentDiagnosticsResponse"];
 export type NvidiaDiagnostics = components["schemas"]["NvidiaDiagnostics"];
 export type GpuInfo = components["schemas"]["GpuInfo"];
+export type HostDiagnostics = components["schemas"]["HostDiagnostics"];
+export type DiskDiagnostics = components["schemas"]["DiskDiagnostics"];
+export type ExternalServiceDiagnostics =
+  components["schemas"]["ExternalServiceDiagnostics"];
+export type LocalComponentDiagnostics =
+  components["schemas"]["LocalComponentDiagnostics"];
 export type SpanResponse = components["schemas"]["SpanResponse"];
 export type TraceSummaryResponse = components["schemas"]["TraceSummaryResponse"];
 export type TraceListResponse = components["schemas"]["TraceListResponse"];

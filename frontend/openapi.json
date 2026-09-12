@@ -6470,6 +6470,74 @@
         "title": "DailyBreakdown",
         "description": "Разбивка по дням."
       },
+      "DiskDiagnostics": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "measured_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Path"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "path",
+          "available"
+        ],
+        "title": "DiskDiagnostics",
+        "description": "Свободное место для одной точки хранения.\n\n``measured_path`` заполнен, только когда измерение выполнено по\nближайшему существующему предку: на свежей установке каталога\nхранилища ещё нет, но том уже известен."
+      },
       "DocumentDeleteResponse": {
         "properties": {
           "deleted": {
@@ -6914,11 +6982,31 @@
               }
             ],
             "title": "Vendor Url"
+          },
+          "host": {
+            "$ref": "#/components/schemas/HostDiagnostics"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalServiceDiagnostics"
+            },
+            "type": "array",
+            "title": "Services",
+            "default": []
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/LocalComponentDiagnostics"
+            },
+            "type": "array",
+            "title": "Components",
+            "default": []
           }
         },
         "type": "object",
         "required": [
-          "nvidia"
+          "nvidia",
+          "host"
         ],
         "title": "EnvironmentDiagnosticsResponse",
         "description": "Ответ GET /api/diagnostics/environment."
@@ -7295,6 +7383,85 @@
         "title": "EvalSetReadWithItems",
         "description": "Набор с элементами (GET /api/eval-sets/{id})."
       },
+      "ExternalServiceDiagnostics": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_probe_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Probe At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "model_count": {
+            "type": "integer",
+            "title": "Model Count",
+            "default": 0
+          },
+          "available_model_count": {
+            "type": "integer",
+            "title": "Available Model Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "status"
+        ],
+        "title": "ExternalServiceDiagnostics",
+        "description": "Доступность внешнего сервиса по накопленному результату зонда.\n\nСобственного запроса здесь нет: статус берётся из\n``Provider.last_probe_at``/``capabilities``, которые пишет периодический\nзонд провайдеров. Отсюда отдельное состояние «ещё не проверялся» —\nэто не «недоступен».\n\nСтатуса «отказ» нет намеренно: причина неудачи зонда в БД не\nсохраняется, поэтому «зонд не ответил» и «зонд ответил нулём моделей»\nнеразличимы. Оба дают ``no_models`` с пояснением в ``reason``."
+      },
       "GpuInfo": {
         "properties": {
           "name": {
@@ -7369,6 +7536,61 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HostDiagnostics": {
+        "properties": {
+          "os_name": {
+            "type": "string",
+            "title": "Os Name"
+          },
+          "os_version": {
+            "type": "string",
+            "title": "Os Version"
+          },
+          "python_version": {
+            "type": "string",
+            "title": "Python Version"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "uptime_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uptime Seconds"
+          },
+          "disks": {
+            "items": {
+              "$ref": "#/components/schemas/DiskDiagnostics"
+            },
+            "type": "array",
+            "title": "Disks",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "os_name",
+          "os_version",
+          "python_version"
+        ],
+        "title": "HostDiagnostics",
+        "description": "ОС, Python и время работы процесса.\n\n``started_at``/``uptime_seconds`` = null, если приложение собрано без\nзапуска lifespan (тесты, CLI) — честное «неизвестно», не ноль."
       },
       "ImportResultResponse": {
         "properties": {
@@ -7504,6 +7726,53 @@
         "description": "Версия индекса с прогрессом."
       },
       "JsonValue": {},
+      "LocalComponentDiagnostics": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "LocalComponentDiagnostics",
+        "description": "Локальная зависимость или хранилище.\n\n``available`` трёхзначно: True/False — факт проверки, None — компонент\nне используется в этой конфигурации, ещё не создан, либо его проверка\nтребует сетевого запроса, которого в разделе нет."
+      },
       "LoginRequest": {
         "properties": {
           "email": {

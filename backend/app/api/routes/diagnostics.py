@@ -1,7 +1,13 @@
-"""Диагностика окружения хоста (T-444): только чтение, без управления.
+"""Диагностика окружения хоста (T-444, T-511): только чтение, без управления.
 
 Раздел намеренно read-only (arch.md §14.3): версии драйверов и метрики
 железа — информация, не действия; кнопок «скачать»/«установить» нет.
+
+Ответ собирает четыре группы фактов: GPU, хост (ОС, Python, аптайм,
+свободное место томов хранения), внешние сервисы (статус из накопленного
+результата зонда провайдеров — своих сетевых запросов раздел не делает) и
+локальные компоненты (пакеты и файлы хранилищ). Каждый пункт деградирует
+самостоятельно: недоступность одного не валит остальные.
 
 Access control: capability "view_diagnostics" — по умолчанию только admin
 через "*" (в seed-пресеты не добавляется: раскрываются версии драйверов
@@ -11,7 +17,7 @@ Access control: capability "view_diagnostics" — по умолчанию тол
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.diagnostics import EnvironmentDiagnosticsResponse
@@ -37,6 +43,7 @@ async def _check_view_diagnostics(session: AsyncSession, user: User) -> bool:
 
 @router.get("/environment", response_model=EnvironmentDiagnosticsResponse)
 async def get_environment_diagnostics(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(current_user),
 ) -> EnvironmentDiagnosticsResponse:
@@ -45,4 +52,11 @@ async def get_environment_diagnostics(
             constraint={"object": "diagnostics", "reason": "view_diagnostics required"},
             hint="Нет права на просмотр диагностики окружения",
         )
-    return await collect_environment_diagnostics()
+    # started_at кладёт lifespan; при сборке приложения без него (тесты, CLI)
+    # значения нет — раздел честно отдаёт null, а не ноль.
+    return await collect_environment_diagnostics(
+        settings=request.app.state.settings,
+        session=session,
+        workspace_id=user.workspace_id,
+        started_at=getattr(request.app.state, "started_at", None),
+    )

@@ -1,14 +1,22 @@
-"""T-444: диагностика окружения (read-only).
+"""T-444, T-511: диагностика окружения (read-only).
 
-Приёмка: отсутствие nvidia-smi не ломает страницу (graceful «недоступно»);
-гейт view_diagnostics (по умолчанию только admin через "*"); раздел
-только читает — никаких действий.
+Приёмка T-444: отсутствие nvidia-smi не ломает страницу (graceful
+«недоступно»); гейт view_diagnostics (по умолчанию только admin через "*");
+раздел только читает — никаких действий.
 
-Вызовы подменяются заглушкой — реальный nvidia-smi не запускается.
+Приёмка T-511: хост (ОС, Python, аптайм), свободное место томов хранения,
+статус внешних сервисов по накопленному результату зонда (включая отдельное
+состояние «ещё не проверялся») и локальные компоненты. Недоступность одного
+пункта не валит остальные.
+
+Вызовы подменяются заглушкой — реальный nvidia-smi не запускается, сетевых
+запросов к провайдерам раздел не делает вовсе.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -16,7 +24,8 @@ import pytest
 from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
-from app.db.models import Role, User
+from app.crypto.service import encrypt_api_key
+from app.db.models import Model, Provider, Role, User
 from app.policy.presets import BUILTIN_ROLES
 from fastapi import FastAPI
 
@@ -159,3 +168,342 @@ async def test_environment_partial_row_fields_null(
     gpu = response.json()["nvidia"]["gpus"][0]
     assert gpu["memory_used_mib"] is None
     assert gpu["memory_total_mib"] == 24564
+
+
+# ---------------------------------------------------------------------------
+# T-511: хост, диск, сервисы, локальные компоненты
+# ---------------------------------------------------------------------------
+
+ENVIRONMENT_PATH = "/api/diagnostics/environment"
+
+
+async def _seed_provider(
+    app_fixture: FastAPI,
+    *,
+    kind: str = "openai",
+    base_url: str = "http://stub:1234/v1",
+    enabled: bool = True,
+    last_probe_at: datetime | None = None,
+    capabilities: dict[str, Any] | None = None,
+    model_alias: str | None = None,
+) -> str:
+    """Провайдер (опционально с моделью) в рабочей области фикстуры."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        provider = Provider(
+            workspace_id=workspace_id,
+            kind=kind,
+            base_url=base_url,
+            api_key_enc=encrypt_api_key("sk-test", app_fixture.state.secret_key),
+            enabled=enabled,
+            capabilities=capabilities or {},
+            last_probe_at=last_probe_at,
+        )
+        session.add(provider)
+        await session.flush()
+        if model_alias is not None:
+            session.add(
+                Model(
+                    workspace_id=workspace_id,
+                    provider_id=provider.id,
+                    alias=model_alias,
+                    upstream_name="embed-model",
+                    locality="local",
+                    max_input_tokens=8000,
+                    enabled=True,
+                )
+            )
+        await session.commit()
+        return provider.id
+
+
+async def _environment(api_client: httpx.AsyncClient) -> dict[str, Any]:
+    response = await api_client.get(ENVIRONMENT_PATH)
+    assert response.status_code == 200, response.text[:300]
+    body: dict[str, Any] = response.json()
+    return body
+
+
+@pytest.mark.asyncio
+async def test_environment_returns_host_section(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+
+    host = (await _environment(api_client))["host"]
+
+    assert host["os_name"]
+    assert host["python_version"].count(".") == 2
+
+
+@pytest.mark.asyncio
+async def test_environment_lists_disks_for_local_paths(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Три локальные точки хранения; место измеряется даже до их создания."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+
+    disks = (await _environment(api_client))["host"]["disks"]
+
+    assert [d["label"] for d in disks] == [
+        "Хранилище документов",
+        "Векторный индекс",
+        "База данных",
+    ]
+    assert all(d["available"] is True for d in disks)
+    assert all(d["free_bytes"] > 0 and d["total_bytes"] >= d["free_bytes"] for d in disks)
+    # Если самого пути ещё нет, измерение идёт по существующему предку и это
+    # отражено явно — чужой каталог не выдаётся за своё хранилище.
+    for disk in disks:
+        if not Path(disk["path"]).exists():
+            assert disk["measured_path"] is not None, disk["label"]
+
+
+@pytest.mark.asyncio
+async def test_environment_lists_local_components(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+
+    names = [c["name"] for c in (await _environment(api_client))["components"]]
+
+    assert names == [
+        "Эмбеддинги (локальный пакет)",
+        "Реранкинг (локальный пакет)",
+        "sqlite-vec (векторный поиск)",
+        "Векторное хранилище",
+        "Хранилище документов",
+        "База данных",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_environment_absent_files_are_unknown_not_broken(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Свежая установка: файлов хранилищ ещё нет — available=null, не false."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+
+    components = {c["name"]: c for c in (await _environment(api_client))["components"]}
+
+    vector = components["Векторное хранилище"]
+    assert vector["available"] is None
+    assert vector["reason"] is not None and "ещё не создан" in vector["reason"]
+
+
+@pytest.mark.asyncio
+async def test_environment_service_never_probed_is_not_unavailable(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Зонд спит перед первым прогоном — отдельное состояние, не «недоступен»."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    provider_id = await _seed_provider(app_fixture)
+
+    services = (await _environment(api_client))["services"]
+    entry = next(s for s in services if s["id"] == provider_id)
+
+    assert entry["status"] == "never_probed"
+    assert entry["last_probe_at"] is None
+    assert entry["reason"] is not None and "спит" in entry["reason"]
+    assert entry["role"] == "llm"
+    assert entry["kind"] == "openai"
+    assert entry["base_url"] == "http://stub:1234/v1"
+
+
+@pytest.mark.asyncio
+async def test_environment_service_ok_after_probe(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    probed_at = datetime.now(UTC)
+    provider_id = await _seed_provider(
+        app_fixture,
+        last_probe_at=probed_at,
+        capabilities={"available_models": ["qwen3-8b", "bge-m3"]},
+    )
+
+    entry = next(s for s in (await _environment(api_client))["services"] if s["id"] == provider_id)
+
+    assert entry["status"] == "ok"
+    assert entry["available_model_count"] == 2
+    assert entry["last_probe_at"] is not None
+    assert entry["reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_environment_service_no_models_explains_limitation(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Зонд прошёл, моделей ноль: причина отказа в БД не хранится — это сказано."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    provider_id = await _seed_provider(
+        app_fixture, last_probe_at=datetime.now(UTC), capabilities={"available_models": []}
+    )
+
+    entry = next(s for s in (await _environment(api_client))["services"] if s["id"] == provider_id)
+
+    assert entry["status"] == "no_models"
+    assert entry["reason"] is not None and "«Проверить»" in entry["reason"]
+
+
+@pytest.mark.asyncio
+async def test_environment_service_disabled_is_not_a_failure(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    provider_id = await _seed_provider(app_fixture, enabled=False)
+
+    entry = next(s for s in (await _environment(api_client))["services"] if s["id"] == provider_id)
+
+    assert entry["status"] == "disabled"
+    assert entry["reason"] is not None and "отключён" in entry["reason"]
+
+
+@pytest.mark.asyncio
+async def test_environment_counts_registered_models(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сколько моделей зарегистрировано в orqion — отдельно от ответа зонда."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    provider_id = await _seed_provider(app_fixture, model_alias="local/embed")
+
+    entry = next(s for s in (await _environment(api_client))["services"] if s["id"] == provider_id)
+
+    assert entry["model_count"] == 1
+    assert entry["available_model_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_environment_marks_embedder_role(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Провайдер, через который идут эмбеддинги, помечен ролью."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    provider_id = await _seed_provider(
+        app_fixture,
+        base_url="http://embed-stub:1234/v1",
+        model_alias="local/embed-model",
+        last_probe_at=datetime.now(UTC),
+        capabilities={"available_models": ["embed-model"]},
+    )
+    # Только два поля эмбеддингов: остальная конфигурация (включая ключ и БД)
+    # остаётся прежней, иначе проверка сессии перестанет работать.
+    app_fixture.state.settings = app_fixture.state.settings.model_copy(
+        update={
+            "embeddings_backend": "provider",
+            "embeddings_model_alias": "local/embed-model",
+        }
+    )
+
+    services = (await _environment(api_client))["services"]
+    entry = next(s for s in services if s["id"] == provider_id)
+
+    assert entry["role"] == "embedder"
+    assert entry["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_environment_reports_unresolvable_embedder(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Эмбеддинги настроены на провайдера, но модели нет — это видно как причина."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    app_fixture.state.settings = app_fixture.state.settings.model_copy(
+        update={
+            "embeddings_backend": "provider",
+            "embeddings_model_alias": "local/несуществующая",
+        }
+    )
+
+    services = (await _environment(api_client))["services"]
+    entry = next(s for s in services if s["role"] == "embedder")
+
+    assert entry["status"] == "not_configured"
+    assert entry["id"] == "embeddings"
+    assert entry["reason"] is not None and "не найдена" in entry["reason"]
+
+
+@pytest.mark.asyncio
+async def test_environment_uptime_absent_without_lifespan(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Приложение собрано без lifespan — аптайм честно null, а не ноль."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+
+    host = (await _environment(api_client))["host"]
+
+    assert host["started_at"] is None
+    assert host["uptime_seconds"] is None
+
+
+@pytest.mark.asyncio
+async def test_environment_reports_uptime_from_app_state(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """started_at берётся из app.state, куда его кладёт lifespan."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    app_fixture.state.started_at = datetime.now(UTC)
+
+    host = (await _environment(api_client))["host"]
+
+    assert host["started_at"] is not None
+    assert 0 <= host["uptime_seconds"] <= 60
+
+
+@pytest.mark.asyncio
+async def test_environment_sections_survive_missing_gpu(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Приёмка: недоступность одного параметра не валит и не блокирует остальные."""
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    await _seed_provider(app_fixture)
+
+    body = await _environment(api_client)
+
+    assert body["nvidia"]["available"] is False
+    assert body["host"]["disks"]
+    assert body["services"]
+    assert body["components"]
