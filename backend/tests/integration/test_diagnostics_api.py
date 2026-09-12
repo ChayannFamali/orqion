@@ -246,17 +246,30 @@ async def test_environment_lists_disks_for_local_paths(
     app_fixture: FastAPI,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Три локальные точки хранения; место измеряется даже до их создания."""
+    """Локальные точки хранения; место измеряется даже до их создания.
+
+    Файл базы — локальная точка хранения только при SQLite: на PostgreSQL
+    база лежит вне этого хоста, и показать вместо неё свободное место
+    локального тома значило бы выдать чужое хранилище за своё (тот же
+    принцип, что для s3 и внешнего Qdrant). Поэтому состав выводится из
+    диалекта, а не перечисляется жёстко: перечисление верно лишь в одной
+    ноге CI, а в postgres-ноге «Базы данных» в списке нет.
+
+    Критерий взят независимый от кода приложения (префикс URL, а не
+    ``_sqlite_path``), чтобы тест не проходил вместе со сломанным
+    ``_sqlite_path``.
+    """
     await _login(api_client, app_fixture, "admin")
     _patch_query(monkeypatch, None)
 
     disks = (await _environment(api_client))["host"]["disks"]
+    db_is_local_file = app_fixture.state.settings.database_url.startswith("sqlite")
 
-    assert [d["label"] for d in disks] == [
-        "Хранилище документов",
-        "Векторный индекс",
-        "База данных",
-    ]
+    expected_labels = ["Хранилище документов", "Векторный индекс"]
+    if db_is_local_file:
+        expected_labels.append("База данных")
+    assert [d["label"] for d in disks] == expected_labels
+    assert any(d["label"] == "База данных" for d in disks) is db_is_local_file
     assert all(d["available"] is True for d in disks)
     assert all(d["free_bytes"] > 0 and d["total_bytes"] >= d["free_bytes"] for d in disks)
     # Если самого пути ещё нет, измерение идёт по существующему предку и это
@@ -264,6 +277,44 @@ async def test_environment_lists_disks_for_local_paths(
     for disk in disks:
         if not Path(disk["path"]).exists():
             assert disk["measured_path"] is not None, disk["label"]
+
+
+@pytest.mark.asyncio
+async def test_environment_omits_db_disk_when_url_is_not_sqlite(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ветка postgres исполняется и в sqlite-ноге: файла базы в томах нет.
+
+    Подменяется только ``settings.database_url``, который диагностика читает
+    при запросе; само соединение остаётся sqlite-файлом фикстуры. Этого
+    достаточно, потому что состав томов выводится из конфигурации, а не из
+    живого соединения. Без этого теста ветка «СУБД вне хоста» исполнялась
+    только в postgres-ноге CI — именно так жёсткое ожидание трёх томов
+    прошло локальную sqlite-ногу и упало в CI.
+
+    Компонент «База данных» при этом остаётся: он описывает схему соединения,
+    а не локальный том, и пароль из URL наружу не уходит.
+    """
+    await _login(api_client, app_fixture, "admin")
+    _patch_query(monkeypatch, None)
+    monkeypatch.setattr(
+        app_fixture.state.settings,
+        "database_url",
+        "postgresql+asyncpg://orqion:secret@db.internal:5432/orqion",
+    )
+
+    body = await _environment(api_client)
+
+    assert [disk["label"] for disk in body["host"]["disks"]] == [
+        "Хранилище документов",
+        "Векторный индекс",
+    ]
+    db_component = next(c for c in body["components"] if c["name"] == "База данных")
+    assert db_component["available"] is None
+    assert db_component["detail"] == "postgresql+asyncpg"
+    assert "secret" not in str(db_component)
 
 
 @pytest.mark.asyncio
