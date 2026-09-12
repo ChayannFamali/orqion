@@ -165,6 +165,10 @@ orqion serve                  # запускает сервер на 127.0.0.1:8
 
 - [Быстрый старт](guide/user/quickstart.md)
 - [Подключение локальных моделей](guide/user/local-models.md)
+- [Корпуса и документы](guide/user/corpora.md)
+- [Агентные диалоги](guide/user/agents.md)
+- [Оценка качества поиска](guide/user/evaluation.md)
+- [Настройки и профиль](guide/user/settings.md)
 - [Руководство администратора](guide/admin/)
 - [Журнал изменений](CHANGELOG.md)
 - [Как участвовать в разработке](CONTRIBUTING.md)
