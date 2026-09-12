@@ -21,6 +21,16 @@
 единственного поля ``value`` модели значения. Спека без ни того ни другого
 отвергается при создании: настройка без значения до первой записи
 неотличима от сломанной.
+
+Три функции ниже — общий контракт значения настройки, а не принадлежность
+служебных настроек: ``require_value_field`` (соглашение о единственном поле
+``value``), ``coerce_value_model`` (валидация и приведение к JSON-виду) и
+``describe_value_model`` (описание поля для интерфейса). Реестр личных
+настроек пользователя (``app/preferences/registry.py``) пользуется ими же,
+поэтому тип поля и требование к значению рисуются в интерфейсе одинаково в
+обоих разделах. Обёртки ``coerce_value``/``describe_value_field``/
+``default_value`` принимают спеку и остаются точкой входа для маршрутов
+служебных настроек.
 """
 
 from __future__ import annotations
@@ -56,6 +66,21 @@ def _is_json_annotation(annotation: Any) -> bool:
         return False
     branches = [item for item in get_args(annotation) if item is not NoneType]
     return bool(branches) and all(item in _JSON_ANNOTATIONS for item in branches)
+
+
+def require_value_field(key: str, value_model: type[BaseModel]) -> None:
+    """Проверяет, что модель значения описывает ровно одно поле ``value``.
+
+    Общее требование обоих реестров настроек: иначе непонятно, что
+    валидировать при записи и что возвращать при чтении. Отказ — при
+    создании спеки, а не в момент запроса: проверяется опечатка в коде.
+    """
+    fields = set(value_model.model_fields)
+    if fields != {VALUE_FIELD}:
+        raise ValueError(
+            f"Модель значения настройки {key!r} должна содержать ровно одно "
+            f"поле {VALUE_FIELD!r}, найдено: {sorted(fields)}"
+        )
 
 
 #: Способность на запись ключей реестра первой версии.
@@ -119,12 +144,7 @@ class SettingSpec(BaseModel):
         существовать и быть JSON-совместимым, а при его отсутствии у поля
         значения обязан быть дефолт.
         """
-        fields = set(self.value_model.model_fields)
-        if fields != {VALUE_FIELD}:
-            raise ValueError(
-                f"Модель значения настройки {self.key!r} должна содержать ровно одно "
-                f"поле {VALUE_FIELD!r}, найдено: {sorted(fields)}"
-            )
+        require_value_field(self.key, self.value_model)
 
         if self.default_from_env is not None:
             field = Settings.model_fields.get(self.default_from_env)
@@ -310,6 +330,15 @@ def ordered_specs() -> list[SettingSpec]:
     return sorted(SETTINGS_REGISTRY.values(), key=lambda spec: (spec.category, spec.key))
 
 
+def model_default(value_model: type[BaseModel]) -> JsonValue:
+    """Дефолт единственного поля модели значения, в JSON-виде.
+
+    Значение до первой записи в БД у настройки, которая не заменяет собой
+    параметр env-конфига: источник один — объявленный в модели дефолт.
+    """
+    return cast(JsonValue, value_model.model_fields[VALUE_FIELD].get_default())
+
+
 def default_value(spec: SettingSpec, settings: Settings) -> JsonValue:
     """Значение ключа до первой записи в БД: env-конфиг или дефолт модели.
 
@@ -318,11 +347,11 @@ def default_value(spec: SettingSpec, settings: Settings) -> JsonValue:
     """
     if spec.default_from_env is not None:
         return cast(JsonValue, getattr(settings, spec.default_from_env))
-    return cast(JsonValue, spec.value_model.model_fields[VALUE_FIELD].get_default())
+    return model_default(spec.value_model)
 
 
-def coerce_value(spec: SettingSpec, raw: JsonValue) -> JsonValue:
-    """Проверяет значение моделью спеки и возвращает его в JSON-виде.
+def coerce_value_model(value_model: type[BaseModel], raw: JsonValue) -> JsonValue:
+    """Проверяет значение моделью и возвращает его в JSON-виде.
 
     ``ValidationError`` не перехватывается: маршрут переводит его в 422,
     а здесь исключение означает ровно «значение не прошло валидацию».
@@ -330,13 +359,18 @@ def coerce_value(spec: SettingSpec, raw: JsonValue) -> JsonValue:
     иначе в БД и в аудит легли бы, например, член перечисления вместо
     строки или ``5.0`` вместо ``5``.
     """
-    validated = spec.value_model.model_validate({VALUE_FIELD: raw})
+    validated = value_model.model_validate({VALUE_FIELD: raw})
     return cast(JsonValue, validated.model_dump(mode="json")[VALUE_FIELD])
 
 
-def describe_value_field(spec: SettingSpec) -> ValueFieldDescription:
+def coerce_value(spec: SettingSpec, raw: JsonValue) -> JsonValue:
+    """То же, что ``coerce_value_model``, по модели значения из спеки."""
+    return coerce_value_model(spec.value_model, raw)
+
+
+def describe_value_model(value_model: type[BaseModel]) -> ValueFieldDescription:
     """Описание поля значения для интерфейса — из JSON Schema модели."""
-    prop = _value_property_schema(spec.value_model)
+    prop = _value_property_schema(value_model)
     prop = _unwrap_alternatives(prop)
 
     enum_values = prop.get("enum")
@@ -356,6 +390,11 @@ def describe_value_field(spec: SettingSpec) -> ValueFieldDescription:
         min=float(minimum) if minimum is not None else None,
         max=float(maximum) if maximum is not None else None,
     )
+
+
+def describe_value_field(spec: SettingSpec) -> ValueFieldDescription:
+    """То же, что ``describe_value_model``, по модели значения из спеки."""
+    return describe_value_model(spec.value_model)
 
 
 def _value_property_schema(value_model: type[BaseModel]) -> dict[str, Any]:

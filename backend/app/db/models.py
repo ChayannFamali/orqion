@@ -99,6 +99,50 @@ class WorkspaceSetting(Base):
     )
 
 
+class UserPreference(Base):
+    """Личная настройка пользователя из реестра ``app/preferences`` (Т-512).
+
+    Область действия — владелец строки, а не рабочая область: значение
+    видно и меняется только им. Как и у ``WorkspaceSetting``, описание
+    ключей живёт в коде, а в БД хранится только факт записи.
+
+    PK составной ``(workspace_id, user_id, key)`` — ``IdMixin`` не
+    применяется: личность строки и есть эта тройка, она же даёт
+    единственность записи на ключ у владельца. Порядок колонок заодно
+    покрывает выборку всех настроек пользователя индексом по префиксу,
+    поэтому отдельный индекс не объявлен. ``WorkspaceMixin`` не
+    применяется по той же причине, что у ``WorkspaceSetting``: он
+    объявляет ``workspace_id`` без ``primary_key``, а переопределение
+    колонки миксина в подклассе декларативная база не допускает.
+
+    Колонки ``updated_by`` нет: строку пишет только её владелец, актор
+    всегда равен ``user_id``.
+    """
+
+    __tablename__ = "user_preferences"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workspace.id"),
+        primary_key=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("user.id"),
+        primary_key=True,
+    )
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[Any] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
+    )
+
+
 class PromptTemplate(Base, IdMixin, TimestampMixin, WorkspaceMixin):
     """Личный сохранённый промпт пользователя (Т-507).
 

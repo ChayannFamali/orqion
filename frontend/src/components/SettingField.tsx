@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
-import type { WorkspaceSettingResponse } from "../api/types";
+import type { UserPreferenceResponse, WorkspaceSettingResponse } from "../api/types";
 
 /** Значение настройки в терминах запроса: скаляр, который принимает JSON. */
 export type SettingValue = string | number | boolean;
 
+/**
+ * Настройка, которую умеет рисовать поле: служебная (рабочая область) или
+ * личная (профиль пользователя).
+ *
+ * Оба ответа описывают поле одинаково — тип, опции, границы, право на
+ * запись, — поэтому рисует их один компонент. Отличие одно: у личной
+ * настройки есть подписи вариантов перечисления (`enum_labels`).
+ */
+export type SettingFieldInput = WorkspaceSettingResponse | UserPreferenceResponse;
+
 interface SettingFieldProps {
-  setting: WorkspaceSettingResponse;
+  setting: SettingFieldInput;
   /** Текст ошибки сохранения именно этого ключа; null — ошибки нет. */
   error: string | null;
   /** Идёт ли запись этого ключа прямо сейчас. */
@@ -18,7 +28,8 @@ const inputClass =
   "focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60";
 
 /**
- * Универсальное поле служебной настройки.
+ * Универсальное поле настройки — служебной (рабочая область) или личной
+ * (профиль пользователя).
  *
  * Вид поля целиком определяется ответом API: тип, опции перечисления,
  * границы и право на запись приходят в описании ключа, поэтому новая
@@ -34,6 +45,13 @@ export function SettingField({ setting, error, pending, onCommit }: SettingField
   const serverValue = setting.value;
   const [draft, setDraft] = useState(() => toDraft(serverValue));
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Подписи вариантов перечисления приходят только у личных настроек:
+  // машинное значение (`enter`) в списке выбора не показывается, вместо
+  // него — объяснение поведения. Без подписи остаётся само значение, чтобы
+  // список не пустел.
+  const enumLabels = "enum_labels" in setting ? setting.enum_labels : null;
+  const optionLabel = (option: string) => enumLabels?.[option] ?? option;
 
   // Сервер — источник правды: после сохранения или чужой записи черновик
   // сходится с пришедшим значением. Зависимость от самого значения, а не от
@@ -118,7 +136,7 @@ export function SettingField({ setting, error, pending, onCommit }: SettingField
         >
           {(setting.enum_values ?? []).map((option) => (
             <option key={option} value={option}>
-              {option}
+              {optionLabel(option)}
             </option>
           ))}
         </select>

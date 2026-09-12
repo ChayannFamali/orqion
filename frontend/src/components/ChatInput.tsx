@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent } from "react";
 import { FileText } from "lucide-react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+import type { SendKeyMode } from "../api/profile";
 
 /** Шаблон промпта для быстрого выбора (Т-507). */
 export interface PromptTemplateOption {
@@ -19,6 +20,12 @@ interface ChatInputProps {
   contextUsage?: { used: number; max: number | null } | null;
   /** Т-507: личные сохранённые промпты пользователя. */
   templates?: PromptTemplateOption[];
+  /**
+   * Т-512: какое сочетание клавиш отправляет сообщение. Значение приходит из
+   * личных настроек пользователя; без него — Enter, то есть поведение до
+   * появления настройки. Второе сочетание всегда вставляет перенос строки.
+   */
+  sendMode?: SendKeyMode;
 }
 
 export function ChatInput({
@@ -28,9 +35,11 @@ export function ChatInput({
   disabled,
   contextUsage,
   templates,
+  sendMode,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const sendOnEnter = sendMode !== "shift_enter";
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -40,7 +49,10 @@ export function ChatInput({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key !== "Enter") return;
+    // Отправка — тем сочетанием, которое выбрал пользователь; второе
+    // сочетание не перехватывается, и textarea вставляет перенос строки сама.
+    if (e.shiftKey === !sendOnEnter) {
       e.preventDefault();
       handleSend();
     }
@@ -111,7 +123,11 @@ export function ChatInput({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Введите сообщение… (Enter — отправить, Shift+Enter — новая строка)"
+            placeholder={
+              sendOnEnter
+                ? "Введите сообщение… (Enter — отправить, Shift+Enter — новая строка)"
+                : "Введите сообщение… (Shift+Enter — отправить, Enter — новая строка)"
+            }
             rows={2}
             disabled={disabled}
             className="min-h-[44px] flex-1"

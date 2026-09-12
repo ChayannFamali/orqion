@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ChatInput } from "../components/ChatInput";
+import type { SendKeyMode } from "../api/profile";
 
 /**
  * Т-507: быстрый выбор сохранённых промптов у поля ввода чата.
@@ -82,5 +83,94 @@ describe("ChatInput — выбор шаблонов промптов (Т-507)", 
     fireEvent.click(screen.getByText("Отправить"));
 
     expect(onSend).toHaveBeenCalledWith("Суммируй документ");
+  });
+});
+
+/**
+ * Т-512: способ отправки сообщения — личная настройка пользователя.
+ *
+ * Приёмка: значение приходит пропсом; Enter отправляет по умолчанию и при
+ * явном ``enter``; при ``shift_enter`` отправляет Shift+Enter, а чистый
+ * Enter остаётся переносом строки (событие не перехватывается); подсказка в
+ * поле соответствует выбранному режиму. Кнопка «Отправить» работает
+ * одинаково в обоих режимах.
+ */
+function renderInputWithMode(sendMode?: SendKeyMode) {
+  const onSend = vi.fn();
+  render(
+    <ChatInput onSend={onSend} onAbort={vi.fn()} isStreaming={false} sendMode={sendMode} />,
+  );
+  return { onSend, textarea: screen.getByTestId("chat-input-textarea") };
+}
+
+describe("ChatInput — способ отправки сообщения (Т-512)", () => {
+  it("по умолчанию Enter отправляет, Shift+Enter — перенос строки", () => {
+    const { onSend, textarea } = renderInputWithMode();
+
+    fireEvent.change(textarea, { target: { value: "привет" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+    expect(onSend).toHaveBeenCalledWith("привет");
+  });
+
+  it("явный режим enter повторяет поведение по умолчанию", () => {
+    const { onSend, textarea } = renderInputWithMode("enter");
+
+    fireEvent.change(textarea, { target: { value: "привет" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledWith("привет");
+  });
+
+  it("режим shift_enter: Shift+Enter отправляет, чистый Enter — нет", () => {
+    const { onSend, textarea } = renderInputWithMode("shift_enter");
+
+    fireEvent.change(textarea, { target: { value: "первая\nвторая" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+    expect(onSend).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(onSend).toHaveBeenCalledWith("первая\nвторая");
+  });
+
+  it("чистый Enter в режиме shift_enter не перехватывается (перенос строки)", () => {
+    const { textarea } = renderInputWithMode("shift_enter");
+
+    fireEvent.change(textarea, { target: { value: "текст" } });
+    // fireEvent возвращает false, если обработчик отменил событие —
+    // неотменённый Enter доходит до textarea как перенос строки.
+    expect(fireEvent.keyDown(textarea, { key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true })).toBe(false);
+  });
+
+  it("кнопка «Отправить» работает в обоих режимах", () => {
+    for (const mode of [undefined, "enter", "shift_enter"] as const) {
+      cleanup();
+      const { onSend, textarea } = renderInputWithMode(mode);
+      fireEvent.change(textarea, { target: { value: "текст" } });
+      fireEvent.click(screen.getByText("Отправить"));
+      expect(onSend).toHaveBeenCalledWith("текст");
+    }
+  });
+
+  it("подсказка соответствует выбранному режиму", () => {
+    const { textarea: enterField } = renderInputWithMode("enter");
+    expect(enterField.getAttribute("placeholder")).toContain("Enter — отправить");
+
+    cleanup();
+    const { textarea: shiftField } = renderInputWithMode("shift_enter");
+    expect(shiftField.getAttribute("placeholder")).toContain("Shift+Enter — отправить");
+  });
+
+  it("другие клавиши не отправляют сообщение", () => {
+    const { onSend, textarea } = renderInputWithMode("shift_enter");
+
+    fireEvent.change(textarea, { target: { value: "текст" } });
+    fireEvent.keyDown(textarea, { key: "a", shiftKey: true });
+    fireEvent.keyDown(textarea, { key: "Shift" });
+
+    expect(onSend).not.toHaveBeenCalled();
   });
 });

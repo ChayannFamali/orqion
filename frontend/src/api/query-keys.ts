@@ -93,4 +93,7 @@ export const queryKeys = {
   workspaceSettings: {
     all: ["workspace-settings"] as const,
   },
+  profilePreferences: {
+    all: ["profile-preferences"] as const,
+  },
 } as const;

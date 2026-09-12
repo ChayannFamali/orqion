@@ -34,7 +34,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,18 +48,17 @@ from app.auth.dependencies import current_user
 from app.config import Settings
 from app.db.models import User, WorkspaceSetting
 from app.db.session import get_session
-from app.errors import NotFound, SettingValueInvalid
+from app.errors import NotFound
 from app.policy.models import WILDCARD, Policy
 from app.policy.resolve import resolve_policy
 from app.settings.registry import (
     SettingSpec,
-    ValueFieldDescription,
-    coerce_value,
     default_value,
     describe_value_field,
     get_spec,
     ordered_specs,
 )
+from app.settings.value_errors import validate_value
 
 router = APIRouter(
     prefix="/api/workspace/settings",
@@ -68,70 +66,10 @@ router = APIRouter(
     dependencies=[Depends(current_user)],
 )
 
-_TYPE_NAMES: dict[str, str] = {
-    "integer": "целое число",
-    "number": "число",
-    "boolean": "значение да или нет",
-    "string": "строка",
-    "enum": "одно из значений списка",
-}
-
 
 def _can_write(policy: Policy, spec: SettingSpec) -> bool:
     """Право на запись именно этого ключа (wildcard или явная способность)."""
     return WILDCARD in policy.capabilities or spec.write_capability in policy.capabilities
-
-
-def _number_text(value: float) -> str:
-    """Целое без «.0» — границы диапазона читаются как в описании настройки."""
-    return str(int(value)) if float(value).is_integer() else str(value)
-
-
-def _value_hint(field: ValueFieldDescription) -> str:
-    """Требование к значению на русском — из описания поля спеки."""
-    kind = _TYPE_NAMES.get(field.type, "значение")
-    if field.type == "enum" and field.enum_values:
-        return f"Ожидается {kind}: {', '.join(field.enum_values)}"
-    if field.min is not None and field.max is not None:
-        return f"Ожидается {kind} от {_number_text(field.min)} до {_number_text(field.max)}"
-    if field.min is not None:
-        return f"Ожидается {kind} не меньше {_number_text(field.min)}"
-    if field.max is not None:
-        return f"Ожидается {kind} не больше {_number_text(field.max)}"
-    return f"Ожидается {kind}"
-
-
-def _validator_messages(exc: ValidationError) -> list[str]:
-    """Сообщения собственных валидаторов модели значения.
-
-    Берутся только они: остальные ошибки pydantic описаны по-английски, а
-    требование к значению пользователь читает на языке интерфейса. Свои
-    валидаторы пишутся сразу по-русски, поэтому показывается их текст.
-    """
-    return [
-        str(error["msg"]).removeprefix("Value error, ")
-        for error in exc.errors()
-        if error.get("type") == "value_error"
-    ]
-
-
-def _validate_value(spec: SettingSpec, raw: Any) -> Any:
-    """Проверяет значение моделью спеки; отказ — 422 с требованием в ``hint``."""
-    try:
-        return coerce_value(spec, raw)
-    except ValidationError as exc:
-        field = describe_value_field(spec)
-        messages = _validator_messages(exc)
-        raise SettingValueInvalid(
-            constraint={
-                "key": spec.key,
-                "expected": field.type,
-                "min": field.min,
-                "max": field.max,
-                "enum_values": field.enum_values,
-            },
-            hint="; ".join(messages) if messages else _value_hint(field),
-        ) from exc
 
 
 def _to_response(
@@ -216,7 +154,7 @@ async def update_workspace_setting(
             hint="Нет права на изменение этой настройки",
         )
 
-    new_value = _validate_value(spec, body.value)
+    new_value = validate_value(spec.key, spec.value_model, body.value)
     app_settings = Settings()
     row = await session.get(WorkspaceSetting, (workspace_id, spec.key))
     old_value: Any = row.value if row is not None else default_value(spec, app_settings)

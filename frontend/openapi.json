@@ -3529,6 +3529,68 @@
         }
       }
     },
+    "/api/profile/preferences": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "List User Preferences",
+        "description": "Все зарегистрированные ключи с резолвнутым значением и меткой источника.",
+        "operationId": "list_user_preferences_api_profile_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferenceListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Update User Preference",
+        "description": "Запись одного ключа: валидация по спеке, владение по ``user_id``.\n\nБатча нет намеренно — при отказе по одному из ключей непонятно, какое\nименно поле его вызвало.",
+        "operationId": "update_user_preference_api_profile_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPreferenceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prompt-templates": {
       "get": {
         "tags": [
@@ -10284,6 +10346,150 @@
         ],
         "title": "UserListResponse",
         "description": "Список пользователей."
+      },
+      "UserPreferenceListResponse": {
+        "properties": {
+          "preferences": {
+            "items": {
+              "$ref": "#/components/schemas/UserPreferenceResponse"
+            },
+            "type": "array",
+            "title": "Preferences"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preferences"
+        ],
+        "title": "UserPreferenceListResponse"
+      },
+      "UserPreferenceResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "integer",
+              "number",
+              "boolean",
+              "string",
+              "enum"
+            ],
+            "title": "Type"
+          },
+          "enum_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enum Values"
+          },
+          "enum_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enum Labels"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "default",
+              "db"
+            ],
+            "title": "Source"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "description",
+          "category",
+          "type",
+          "source",
+          "editable"
+        ],
+        "title": "UserPreferenceResponse",
+        "description": "Один ключ реестра с резолвнутым значением и описанием поля."
+      },
+      "UserPreferenceUpdate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "UserPreferenceUpdate",
+        "description": "Запись одного ключа за вызов.\n\nБатча нет намеренно: при отказе по одному из ключей непонятно, какое\nименно поле его вызвало. Причина та же, что у служебных настроек."
       },
       "UserResponse": {
         "properties": {

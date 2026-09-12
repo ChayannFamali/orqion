@@ -71,6 +71,14 @@ vi.mock("../api/agent-profiles", () => ({
   }),
 }));
 
+// Т-512: ChatPage читает личные настройки (способ отправки сообщения). Без
+// мока ушёл бы настоящий fetch; пустой список даёт поведение по умолчанию.
+vi.mock("../api/profile", () => ({
+  CHAT_SEND_KEY: "chat_send_key",
+  apiGetUserPreferences: vi.fn().mockResolvedValue({ preferences: [] }),
+  apiUpdateUserPreference: vi.fn(),
+}));
+
 /** Модель с флагом инструментов и модель без него. */
 const AGENT_MODEL = {
   id: "m1",

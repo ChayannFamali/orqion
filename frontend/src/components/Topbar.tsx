@@ -1,6 +1,5 @@
-import { Menu, Sun, Moon, LogOut } from "lucide-react";
+import { Menu, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
-import { useTheme } from "../hooks/useTheme";
 import { useLogout } from "../hooks/useAuth";
 import { UsageWidget } from "./UsageWidget";
 
@@ -9,8 +8,15 @@ interface TopbarProps {
   onToggleSidebar: () => void;
 }
 
+/**
+ * Верхняя панель: переключение сайдбара, использование, выход.
+ *
+ * Переключателя темы здесь нет (Т-512): оформление — личная настройка,
+ * единственный переключатель живёт в разделе «Профиль». Два независимых
+ * потребителя темы рассинхронизировались бы — иконка в шапке показывала бы
+ * не то состояние, которое выбрал пользователь в профиле.
+ */
 export function Topbar({ email, onToggleSidebar }: TopbarProps) {
-  const { theme, toggle } = useTheme();
   const logout = useLogout();
 
   return (
@@ -20,9 +26,6 @@ export function Topbar({ email, onToggleSidebar }: TopbarProps) {
       </Button>
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={toggle} aria-label="Переключить тему">
-          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </Button>
         <UsageWidget />
         <span className="text-sm text-muted-foreground">{email}</span>
         <Button

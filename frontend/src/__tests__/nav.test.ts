@@ -4,19 +4,25 @@ import { navItems, isNavVisible } from "../lib/nav";
 describe("isNavVisible", () => {
   it("shows items without capability requirement when capabilities is empty", () => {
     const visible = navItems.filter((item) => isNavVisible(item, []));
-    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings", "profile"]);
   });
 
   it("shows only chat and settings for support-level capabilities", () => {
     const visible = navItems.filter((item) => isNavVisible(item, ["chat"]));
-    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "settings", "profile"]);
   });
 
   it("shows chat, corpora and settings for architect-level capabilities", () => {
     const visible = navItems.filter((item) =>
       isNavVisible(item, ["chat", "upload", "custom_prompts", "manage_corpora", "share"]),
     );
-    expect(visible.map((i) => i.key)).toEqual(["chat", "agents", "corpora", "settings"]);
+    expect(visible.map((i) => i.key)).toEqual([
+      "chat",
+      "agents",
+      "corpora",
+      "settings",
+      "profile",
+    ]);
   });
 
   it("shows chat, corpora, analytics and settings for manager-level capabilities", () => {
@@ -29,6 +35,7 @@ describe("isNavVisible", () => {
       "corpora",
       "analytics",
       "settings",
+      "profile",
     ]);
   });
 
@@ -50,6 +57,7 @@ describe("isNavVisible", () => {
       "mcp-servers",
       "skills",
       "settings",
+      "profile",
     ]);
   });
 
@@ -124,13 +132,28 @@ describe("isNavVisible", () => {
     expect(keys.indexOf("agents")).toBe(keys.indexOf("chat") + 1);
   });
 
-  it("T-506: настройки — последний раздел, видны всем без права", () => {
-    const item = navItems[navItems.length - 1];
-    expect(item.key).toBe("settings");
+  it("T-506: настройки видны всем без права", () => {
+    const item = navItems.find((i) => i.key === "settings")!;
+    expect(item.label).toBe("Настройки");
     expect(item.capability).toBeUndefined();
     expect(isNavVisible(item, [])).toBe(true);
     expect(isNavVisible(item, ["chat"])).toBe(true);
     expect(isNavVisible(item, ["*"])).toBe(true);
+  });
+
+  it("Т-512: «Профиль» — последний раздел, виден всем без права", () => {
+    const item = navItems[navItems.length - 1];
+    expect(item.key).toBe("profile");
+    expect(item.label).toBe("Профиль");
+    // Личные настройки принадлежат самому пользователю: гейта по способности
+    // нет, доступ ограничивает владение строкой на сервере.
+    expect(item.capability).toBeUndefined();
+    expect(isNavVisible(item, [])).toBe(true);
+    expect(isNavVisible(item, ["chat"])).toBe(true);
+    expect(isNavVisible(item, ["*"])).toBe(true);
+    // Раздел личных настроек стоит сразу за служебными настройками области.
+    const keys = navItems.map((i) => i.key);
+    expect(keys.indexOf("profile")).toBe(keys.indexOf("settings") + 1);
   });
 
   it("does not show item when capability is missing from list", () => {

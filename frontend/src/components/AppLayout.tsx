@@ -20,6 +20,8 @@ import { McpServersPage } from "../pages/McpServersPage";
 import { SkillsPage } from "../pages/SkillsPage";
 import { AgentProfilesPage } from "../pages/AgentProfilesPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { ProfilePage } from "../pages/ProfilePage";
+import { useTheme } from "../hooks/useTheme";
 import { useExitImpersonation } from "../hooks/useUsers";
 
 /** Допустимые ключи разделов (из реестра навигации). */
@@ -44,6 +46,10 @@ export function AppLayout({
   isImpersonating,
   impersonatedByEmail,
 }: AppLayoutProps) {
+  // Тема оформления применяется при входе (класс на <html>), а её
+  // переключатель живёт в разделе «Профиль»: хук вызывается здесь, чтобы
+  // сохранённое оформление восстанавливалось до открытия этого раздела.
+  useTheme();
   const [collapsed, setCollapsed] = useState(false);
   // Раздел сохраняется в адресе страницы (#/corpora): после обновления
   // пользователь остаётся там, где был, и работают кнопки браузера
@@ -130,6 +136,9 @@ export function AppLayout({
     }
     if (activeSection === "settings") {
       return <SettingsPage capabilities={capabilities} />;
+    }
+    if (activeSection === "profile") {
+      return <ProfilePage />;
     }
     if (activeSection === "traces") {
       if (selectedTraceId) {

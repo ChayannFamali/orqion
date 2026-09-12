@@ -36,6 +36,14 @@ vi.mock("../api/chat", () => ({
   completeChat: vi.fn(),
 }));
 
+// Т-512: раздел чата читает личные настройки (способ отправки сообщения).
+// Без мока вызов ушёл бы в apiFetch, которого нет в моке ../api/client.
+vi.mock("../api/profile", () => ({
+  CHAT_SEND_KEY: "chat_send_key",
+  apiGetUserPreferences: vi.fn().mockResolvedValue({ preferences: [] }),
+  apiUpdateUserPreference: vi.fn(),
+}));
+
 import { apiGetMe } from "../api/auth";
 
 describe("App", () => {

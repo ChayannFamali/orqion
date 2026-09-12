@@ -143,3 +143,8 @@ export type WorkspaceSettingResponse = components["schemas"]["WorkspaceSettingRe
 export type WorkspaceSettingListResponse =
   components["schemas"]["WorkspaceSettingListResponse"];
 export type WorkspaceSettingUpdate = components["schemas"]["WorkspaceSettingUpdate"];
+/** Личные настройки пользователя (раздел «Профиль»). */
+export type UserPreferenceResponse = components["schemas"]["UserPreferenceResponse"];
+export type UserPreferenceListResponse =
+  components["schemas"]["UserPreferenceListResponse"];
+export type UserPreferenceUpdate = components["schemas"]["UserPreferenceUpdate"];

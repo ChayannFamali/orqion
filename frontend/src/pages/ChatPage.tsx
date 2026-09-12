@@ -14,6 +14,7 @@ import { useChat } from "../hooks/useChat";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useCurrentUser } from "../hooks/useAuth";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
+import { useSendKeyMode } from "../hooks/useUserPreferences";
 import { useAvailableSkills } from "../hooks/useSkills";
 import { useAvailableAgentProfiles } from "../hooks/useAgentProfiles";
 import { ConversationList } from "../components/ConversationList";
@@ -73,6 +74,11 @@ export function ChatPage({ agentStart }: ChatPageProps = {}) {
   const canPrompts =
     capabilities.includes("*") || capabilities.includes("custom_prompts");
   const promptTemplates = usePromptTemplates(canPrompts);
+
+  // Т-512: способ отправки сообщения — личная настройка пользователя. До
+  // ответа сервера хук отдаёт поведение по умолчанию (Enter), поэтому ввод
+  // не ждёт загрузки настроек.
+  const sendMode = useSendKeyMode();
 
   const conversations = useConversations();
   const conversation = useConversation(activeId);
@@ -682,6 +688,7 @@ export function ChatPage({ agentStart }: ChatPageProps = {}) {
             disabled={!modelReady || (agentMode && !!agent.pendingConfirmation)}
             contextUsage={contextUsage}
             templates={canPrompts ? (promptTemplates.data?.templates ?? []) : []}
+            sendMode={sendMode}
           />
         )}
       </main>

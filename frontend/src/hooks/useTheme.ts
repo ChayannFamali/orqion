@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark";
 
 const STORAGE_KEY = "orqion-theme";
 
@@ -28,7 +28,7 @@ function applyTheme(theme: Theme): void {
 }
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [theme, applyState] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
     applyTheme(theme);
@@ -36,8 +36,14 @@ export function useTheme() {
   }, [theme]);
 
   const toggle = () => {
-    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+    applyState((prev) => (prev === "light" ? "dark" : "light"));
   };
 
-  return { theme, toggle };
+  // Выбор конкретного варианта, а не переключение: в разделе «Профиль» тема
+  // выбирается из списка, где видно оба значения.
+  const setTheme = (next: Theme) => {
+    applyState(next);
+  };
+
+  return { theme, toggle, setTheme };
 }

@@ -1376,6 +1376,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/profile/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Preferences
+         * @description Все зарегистрированные ключи с резолвнутым значением и меткой источника.
+         */
+        get: operations["list_user_preferences_api_profile_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update User Preference
+         * @description Запись одного ключа: валидация по спеке, владение по ``user_id``.
+         *
+         *     Батча нет намеренно — при отказе по одному из ключей непонятно, какое
+         *     именно поле его вызвало.
+         */
+        patch: operations["update_user_preference_api_profile_preferences_patch"];
+        trace?: never;
+    };
     "/api/prompt-templates": {
         parameters: {
             query?: never;
@@ -3948,6 +3975,60 @@ export interface components {
             /** Users */
             users: components["schemas"]["UserListItem"][];
         };
+        /** UserPreferenceListResponse */
+        UserPreferenceListResponse: {
+            /** Preferences */
+            preferences: components["schemas"]["UserPreferenceResponse"][];
+        };
+        /**
+         * UserPreferenceResponse
+         * @description Один ключ реестра с резолвнутым значением и описанием поля.
+         */
+        UserPreferenceResponse: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Category */
+            category: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "integer" | "number" | "boolean" | "string" | "enum";
+            /** Enum Values */
+            enum_values?: string[] | null;
+            /** Enum Labels */
+            enum_labels?: {
+                [key: string]: string;
+            } | null;
+            value?: components["schemas"]["JsonValue"];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "default" | "db";
+            /** Editable */
+            editable: boolean;
+            /** Min */
+            min?: number | null;
+            /** Max */
+            max?: number | null;
+        };
+        /**
+         * UserPreferenceUpdate
+         * @description Запись одного ключа за вызов.
+         *
+         *     Батча нет намеренно: при отказе по одному из ключей непонятно, какое
+         *     именно поле его вызвало. Причина та же, что у служебных настроек.
+         */
+        UserPreferenceUpdate: {
+            /** Key */
+            key: string;
+            value?: components["schemas"]["JsonValue"];
+        };
         /** UserResponse */
         UserResponse: {
             /** Id */
@@ -6400,6 +6481,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DownloadStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_preferences_api_profile_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreferenceListResponse"];
+                };
+            };
+        };
+    };
+    update_user_preference_api_profile_preferences_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPreferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreferenceResponse"];
                 };
             };
             /** @description Validation Error */

@@ -18,6 +18,7 @@ from app.api.routes.eval import router as eval_router
 from app.api.routes.index_versions import router as index_versions_router
 from app.api.routes.mcp_servers import router as mcp_servers_router
 from app.api.routes.models import router as models_router
+from app.api.routes.profile import router as profile_router
 from app.api.routes.prompt_templates import router as prompt_templates_router
 from app.api.routes.providers import router as providers_router
 from app.api.routes.rag_settings import router as rag_settings_router
@@ -47,6 +48,7 @@ __all__ = [
     "index_versions_router",
     "mcp_servers_router",
     "models_router",
+    "profile_router",
     "prompt_templates_router",
     "providers_router",
     "rag_settings_router",
