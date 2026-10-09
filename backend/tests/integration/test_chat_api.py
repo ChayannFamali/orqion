@@ -15,11 +15,11 @@ from app.auth.passwords import hash_password
 from app.auth.sessions import COOKIE_NAME, create_session
 from app.config import Settings
 from app.crypto.service import encrypt_api_key
-from app.db.models import Model, Provider, Role, Span, Trace, User
+from app.db.models import Model, Provider, Role, RoutingRule, Span, Trace, User
 from app.policy.presets import BUILTIN_ROLES
 from app.providers.client import ProviderClient
 from fastapi import FastAPI
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 
 async def _login_as_admin(
@@ -687,3 +687,65 @@ async def test_selected_model_alias_becomes_primary(
         assert len(routing_spans) == 1
         assert routing_spans[0].payload["model"] == "local/second"
         assert routing_spans[0].payload["reason"] == "user selection (local/second)"
+
+
+async def _seed_role_scoped_rules(app_fixture: FastAPI) -> None:
+    """Правило для роли support поверх общего; штатные правила удаляются."""
+    factory = app_fixture.state.db_session_factory
+    workspace_id = app_fixture.state.workspace_id
+    async with factory() as session:
+        await session.execute(delete(RoutingRule).where(RoutingRule.workspace_id == workspace_id))
+        session.add(
+            RoutingRule(
+                workspace_id=workspace_id,
+                order=0,
+                is_terminal=True,
+                when_role="support",
+                to_models=["local/support-only"],
+                reason="support-only-rule",
+            )
+        )
+        session.add(
+            RoutingRule(
+                workspace_id=workspace_id,
+                order=1,
+                is_terminal=True,
+                to_models=["local/any"],
+                reason="any-role-rule",
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_chat_passes_role_name_to_routing(
+    api_client: httpx.AsyncClient,
+    app_fixture: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Имя роли пользователя доходит до маршрутизации (условие when_role).
+
+    Общее правило стоит вторым и ловит любую роль, поэтому support уходит в
+    local/support-only только если маршрут передал именно имя роли: id, None
+    или пустая строка дали бы local/any для обоих пользователей.
+    """
+    await _seed_provider_and_model(app_fixture, "local/support-only", "support-upstream")
+    await _seed_provider_and_model(app_fixture, "local/any", "any-upstream")
+    await _seed_role_scoped_rules(app_fixture)
+    _patch_provider_client(monkeypatch, "ok")
+
+    await _login_as_admin(api_client, app_fixture, "support")
+    support_response = await api_client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": False},
+    )
+    assert support_response.status_code == 200
+    assert support_response.json()["model"] == "local/support-only"
+
+    await _login_as_admin(api_client, app_fixture, "developer")
+    developer_response = await api_client.post(
+        "/api/chat",
+        json={"messages": [{"role": "user", "content": "hi"}], "stream": False},
+    )
+    assert developer_response.status_code == 200
+    assert developer_response.json()["model"] == "local/any"

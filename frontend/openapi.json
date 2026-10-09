@@ -1108,7 +1108,7 @@
           "chat"
         ],
         "summary": "Chat",
-        "description": "Обработка чат-запроса. Стриминг или обычный режим.\n\nПолный конвейер §7.1:\n1. resolve_policy(user)\n2. enforce (класс данных, модель, контекст, rate limits)\n3. маршрутизация → выбор модели\n4. выполнение запроса\n5. сохранение сообщений + usage_event + trace",
+        "description": "Обработка чат-запроса. Стриминг или обычный режим.\n\nПолный конвейер §7.1:\n1. resolve_role(user) → policy_of(role)\n2. enforce (класс данных, модель, контекст, rate limits)\n3. маршрутизация → выбор модели\n4. выполнение запроса\n5. сохранение сообщений + usage_event + trace",
         "operationId": "chat_api_chat_post",
         "requestBody": {
           "content": {

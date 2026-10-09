@@ -450,7 +450,7 @@ export interface paths {
          * @description Обработка чат-запроса. Стриминг или обычный режим.
          *
          *     Полный конвейер §7.1:
-         *     1. resolve_policy(user)
+         *     1. resolve_role(user) → policy_of(role)
          *     2. enforce (класс данных, модель, контекст, rate limits)
          *     3. маршрутизация → выбор модели
          *     4. выполнение запроса

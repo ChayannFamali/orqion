@@ -1,6 +1,7 @@
 """POST /api/chat — полный конвейер arch.md §7.1.
 
-Порядок: аутентификация → resolve_policy → enforce → маршрутизация → стрим/complete → save + usage + trace.
+Порядок: аутентификация → роль и политика → enforce → маршрутизация →
+стрим/complete → save + usage + trace.
 S-13: обрыв не теряет учёт, ошибка — событием, не разрывом.
 ADR-14: trace + span для каждого запроса.
 """
@@ -28,7 +29,7 @@ from app.chat.service import (
     save_messages,
 )
 from app.config import Settings
-from app.db.models import Corpus, Model, Provider, Role, User
+from app.db.models import Corpus, Model, Provider, User
 from app.db.session import get_session
 from app.errors import (
     BadRequest,
@@ -38,7 +39,7 @@ from app.errors import (
 )
 from app.metrics.registry import record_chat_request, record_rag_query
 from app.policy.rate_limiter import RateLimiter
-from app.policy.resolve import resolve_policy
+from app.policy.resolve import policy_of, resolve_role
 from app.rag.pipeline import RagContext, RagState, run_pipeline
 from app.rag.service import resolve_corpora, strictest_data_class
 from app.settings.generation import read_default_temperature
@@ -111,7 +112,7 @@ async def chat(
     """Обработка чат-запроса. Стриминг или обычный режим.
 
     Полный конвейер §7.1:
-    1. resolve_policy(user)
+    1. resolve_role(user) → policy_of(role)
     2. enforce (класс данных, модель, контекст, rate limits)
     3. маршрутизация → выбор модели
     4. выполнение запроса
@@ -124,10 +125,8 @@ async def chat(
     # Создаём trace
     trace_ctx = await create_trace(session, workspace_id, user_id=user.id)
 
-    policy = await resolve_policy(session, user)
-
-    role_result = await session.execute(select(Role).where(Role.id == user.role_id))
-    role = role_result.scalar_one()
+    role = await resolve_role(session, user)
+    policy = policy_of(role)
 
     messages_dicts: list[dict[str, str]] = [
         {"role": m.role, "content": m.content} for m in body.messages

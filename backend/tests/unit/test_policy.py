@@ -18,7 +18,7 @@ from app.policy.enforce import enforce
 from app.policy.models import Budget, Policy
 from app.policy.presets import BUILTIN_ROLES
 from app.policy.rate_limiter import RateLimiter
-from app.policy.resolve import resolve_policy
+from app.policy.resolve import policy_of, resolve_policy, resolve_role
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -344,6 +344,36 @@ class TestResolvePolicy:
         policy = await resolve_policy(db_session, user)
         assert policy.max_input_tokens == 64000
         assert "external/*" in policy.models
+
+    @pytest.mark.asyncio
+    async def test_resolve_policy_is_policy_of_resolve_role(self, db_session: AsyncSession) -> None:
+        """resolve_policy = policy_of(resolve_role(...)): состав пары не разъезжается."""
+        ws_id = await ensure_default_workspace(db_session)
+        await db_session.flush()
+
+        role = Role(
+            workspace_id=ws_id,
+            name="custom-pair",
+            is_builtin=False,
+            policy=BUILTIN_ROLES["developer"].model_dump(),
+        )
+        db_session.add(role)
+        await db_session.flush()
+
+        user = User(
+            workspace_id=ws_id,
+            email="pair@orqion.local",
+            password_hash="$argon2id$stub",
+            role_id=role.id,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
+        resolved_role = await resolve_role(db_session, user)
+        composed = await resolve_policy(db_session, user)
+
+        assert resolved_role.name == "custom-pair"
+        assert policy_of(resolved_role) == composed
 
 
 class TestEnforceCorpusVisibility:
