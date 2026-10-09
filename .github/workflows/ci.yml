@@ -121,61 +121,11 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev,s3,metrics,oidc,graph,agent,mcp]"
       - name: Check all dependencies are permissively licensed
-        run: |
-          python -c "
-          import json, subprocess, sys
-          sys.path.insert(0, 'backend/scripts')
-          BANNED = {'GPL', 'GPLv2', 'GPLv3', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0', 'SSPL', 'BUSL', 'Sustainable Use License'}
-          # Packages with dual-license where one option is LGPL.
-          # LGPL is NOT opened as a category — only these specific packages are allowed
-          # under their permissive alternative license.
-          LGPL_DUAL_LICENSE = {'psycopg2-binary'}  # dual-licensed LGPL-3.0 OR Python-2.0
-          # Packages with permissive licenses that pip-licenses cannot classify
-          # (PEP 639 License-Expression, not in trove classifiers or metadata).
-          # Each entry manually verified — see backend/scripts/license_allowlist.py
-          # for license, source URL, and verification date.
-          # When adding a new dependency with UNKNOWN license: add it to license_allowlist.py
-          # with verification source, then add the name here.
-          from license_allowlist import ALLOWED_UNKNOWN_VERIFIED
-          ALLOWED_UNKNOWN = set(ALLOWED_UNKNOWN_VERIFIED.keys())
-          result = subprocess.run(
-              [sys.executable, '-m', 'piplicenses', '--from', 'mixed', '--format', 'json', '--with-system'],
-              capture_output=True, text=True
-          )
-          if result.returncode != 0:
-              print('pip-licenses failed:', result.stderr)
-              sys.exit(1)
-          packages = json.loads(result.stdout)
-          violations = []
-          unknown = []
-          for pkg in packages:
-              name = pkg.get('Name', '').lower()
-              if name == 'orqion':
-                  continue
-              license_str = pkg.get('License', '') or ''
-              if license_str in ('UNKNOWN', '', 'None'):
-                  if name not in ALLOWED_UNKNOWN:
-                      unknown.append(name)
-                  continue
-              # Dual-licensed packages with LGPL: allowed under permissive alternative
-              if name in LGPL_DUAL_LICENSE and 'lgpl' in license_str.lower():
-                  continue
-              for banned in BANNED:
-                  if banned.lower() in license_str.lower():
-                      violations.append(f'{name}: {license_str}')
-                      break
-          if unknown:
-              print('PACKAGES WITH UNKNOWN LICENSE (add to license_allowlist.py with verification):')
-              for u in unknown:
-                  print(f'  - {u}')
-              sys.exit(1)
-          if violations:
-              print('BANNED LICENSES FOUND:')
-              for v in violations:
-                  print(f'  - {v}')
-              sys.exit(1)
-          print(f'All {len(packages)} packages passed license check')
-          "
+        # Та же команда, что и локально: политика лицензий живёт в скрипте и
+        # покрыта юнит-тестами, а не инлайн-кодом внутри пайплайна.
+        run: python -m scripts.license_check
+        env:
+          PYTHONPATH: backend
 
   frontend:
     name: Frontend (tsc + vitest + types sync)
